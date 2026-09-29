@@ -36,7 +36,11 @@ pub struct DifficultySample {
     pub solve_time: u64,
 }
 
-pub fn next_target(previous_target: Hash32, samples: &[DifficultySample], pow_limit: Hash32) -> Hash32 {
+pub fn next_target(
+    previous_target: Hash32,
+    samples: &[DifficultySample],
+    pow_limit: Hash32,
+) -> Hash32 {
     if samples.is_empty() {
         return previous_target;
     }
