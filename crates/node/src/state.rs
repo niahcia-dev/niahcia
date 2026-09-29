@@ -188,6 +188,24 @@ impl StateStore {
         self.load_chain_block(block_id)
     }
 
+    pub fn is_on_best_chain(&self, block_id: Hash32) -> Result<bool, String> {
+        let Some(mut cursor) = self.best_chain_head()? else {
+            return Ok(false);
+        };
+
+        loop {
+            if cursor.block_id() == block_id {
+                return Ok(true);
+            }
+            if cursor.header.height == 0 {
+                return Ok(false);
+            }
+            cursor = self
+                .load_chain_block(cursor.header.parent_hash)?
+                .ok_or_else(|| "best-chain ancestry references missing parent".to_string())?;
+        }
+    }
+
     pub fn insert_chain_block(&self, header: BlockHeaderV1) -> Result<PersistedChainBlock, String> {
         let parent_work = if header.height == 0 {
             if header.parent_hash != [0_u8; 32] {
@@ -430,6 +448,10 @@ mod tests {
                 store.best_chain_head().unwrap().unwrap().block_id(),
                 hard_child_id
             );
+            assert!(store.is_on_best_chain(genesis_id).unwrap());
+            assert!(store.is_on_best_chain(hard_child_id).unwrap());
+            assert!(!store.is_on_best_chain(easy.block_id()).unwrap());
+            assert!(store.load_chain_block(easy.block_id()).unwrap().is_some());
         }
 
         {
@@ -437,6 +459,7 @@ mod tests {
             let best = reopened.best_chain_head().unwrap().unwrap();
             assert_eq!(best.block_id(), hard_child_id);
             assert_eq!(best.header.height, 1);
+            assert!(reopened.is_on_best_chain(hard_child_id).unwrap());
             assert_eq!(
                 reopened
                     .load_chain_block(genesis_id)
