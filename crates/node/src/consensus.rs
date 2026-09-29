@@ -68,20 +68,25 @@ pub fn next_target(
     biguint_to_hash32(&bounded)
 }
 
+/// Compute the target for the block *after* `current_height`.
+///
+/// `current_time` is the timestamp of an already-accepted NIAHCIA block.
+/// A candidate block never gets to choose its own target by choosing its own
+/// timestamp; miners receive a target derived entirely from the parent chain.
 pub fn asert_next_target(
     anchor_target: Hash32,
     anchor_height: u64,
     anchor_parent_time: u64,
-    evaluation_height: u64,
-    evaluation_time: u64,
+    current_height: u64,
+    current_time: u64,
     pow_limit: Hash32,
 ) -> Result<Hash32, String> {
-    if evaluation_height < anchor_height {
-        return Err("ASERT evaluation height precedes anchor height".into());
+    if current_height < anchor_height {
+        return Err("ASERT current height precedes anchor height".into());
     }
 
-    let time_delta = i128::from(evaluation_time) - i128::from(anchor_parent_time);
-    let height_delta = i128::from(evaluation_height - anchor_height);
+    let time_delta = i128::from(current_time) - i128::from(anchor_parent_time);
+    let height_delta = i128::from(current_height - anchor_height);
     let schedule_delta = time_delta - i128::from(TARGET_BLOCK_INTERVAL) * (height_delta + 1);
 
     // Rust signed integer division truncates toward zero, matching the ASERT requirement.
@@ -316,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn asert_schedule_vectors() {
+    fn asert_next_block_schedule_vectors() {
         let limit = [0xff; 32];
 
         assert_eq!(
