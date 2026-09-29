@@ -1,0 +1,151 @@
+use crate::work::{keccak256, Hash32};
+
+pub const STORAGE_CHALLENGE_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-CHALLENGE/V1";
+pub const STORAGE_SELECT_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-SELECT/V1";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChallengeRange {
+    pub chunk_index: u64,
+    pub offset: u64,
+    pub length: u64,
+}
+
+pub fn storage_challenge_seed(challenge_block_id: Hash32, commitment_id: Hash32) -> Hash32 {
+    let mut preimage =
+        Vec::with_capacity(STORAGE_CHALLENGE_DOMAIN.len() + challenge_block_id.len() + commitment_id.len());
+    preimage.extend_from_slice(STORAGE_CHALLENGE_DOMAIN);
+    preimage.extend_from_slice(&challenge_block_id);
+    preimage.extend_from_slice(&commitment_id);
+    keccak256(&preimage)
+}
+
+/// Deterministically select challenge ranges from a challenge seed.
+///
+/// chunk_lengths is the exact ordered chunk-length list committed by the
+/// storage manifest. requested_ranges controls how many independent samples
+/// are requested. Each selected range is at most max_range_length bytes.
+///
+/// This is service-layer measurement logic; it does not affect PoW consensus.
+pub fn select_storage_ranges(
+    challenge_seed: Hash32,
+    chunk_lengths: &[u64],
+    requested_ranges: usize,
+    max_range_length: u64,
+) -> Result<Vec<ChallengeRange>, String> {
+    if chunk_lengths.is_empty() {
+        return Err("cannot challenge an empty manifest".into());
+    }
+    if requested_ranges == 0 {
+        return Err("requested_ranges must be non-zero".into());
+    }
+    if max_range_length == 0 {
+        return Err("max_range_length must be non-zero".into());
+    }
+    if chunk_lengths.contains(&0) {
+        return Err("chunk lengths must be non-zero".into());
+    }
+
+    let chunk_count = u64::try_from(chunk_lengths.len())
+        .map_err(|_| "chunk count does not fit u64".to_string())?;
+    let mut out = Vec::with_capacity(requested_ranges);
+
+    for counter in 0..requested_ranges {
+        let digest = storage_selection_digest(challenge_seed, counter as u64);
+
+        let chunk_word = u64::from_be_bytes(
+            digest[0..8]
+                .try_into()
+                .map_err(|_| "invalid selection digest".to_string())?,
+        );
+        let offset_word = u64::from_be_bytes(
+            digest[8..16]
+                .try_into()
+                .map_err(|_| "invalid selection digest".to_string())?,
+        );
+
+        let chunk_index = chunk_word % chunk_count;
+        let chunk_length = chunk_lengths[chunk_index as usize];
+        let length = chunk_length.min(max_range_length);
+        let max_offset = chunk_length - length;
+        let offset = if max_offset == 0 {
+            0
+        } else {
+            offset_word % (max_offset + 1)
+        };
+
+        out.push(ChallengeRange {
+            chunk_index,
+            offset,
+            length,
+        });
+    }
+
+    Ok(out)
+}
+
+fn storage_selection_digest(challenge_seed: Hash32, counter: u64) -> Hash32 {
+    let mut preimage =
+        Vec::with_capacity(STORAGE_SELECT_DOMAIN.len() + challenge_seed.len() + 8);
+    preimage.extend_from_slice(STORAGE_SELECT_DOMAIN);
+    preimage.extend_from_slice(&challenge_seed);
+    preimage.extend_from_slice(&counter.to_be_bytes());
+    keccak256(&preimage)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{select_storage_ranges, storage_challenge_seed};
+
+    #[test]
+    fn challenge_seed_is_deterministic_and_domain_separated() {
+        let first = storage_challenge_seed([0x11; 32], [0x22; 32]);
+        let second = storage_challenge_seed([0x11; 32], [0x22; 32]);
+        let changed_block = storage_challenge_seed([0x12; 32], [0x22; 32]);
+        let changed_commitment = storage_challenge_seed([0x11; 32], [0x23; 32]);
+
+        assert_eq!(first, second);
+        assert_ne!(first, changed_block);
+        assert_ne!(first, changed_commitment);
+    }
+
+    #[test]
+    fn selection_is_deterministic_and_in_bounds() {
+        let seed = storage_challenge_seed([0x11; 32], [0x22; 32]);
+        let chunk_lengths = [4096, 4096, 1024, 8192];
+
+        let first = select_storage_ranges(seed, &chunk_lengths, 8, 512).unwrap();
+        let second = select_storage_ranges(seed, &chunk_lengths, 8, 512).unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 8);
+
+        for range in first {
+            let chunk_len = chunk_lengths[range.chunk_index as usize];
+            assert!(range.length > 0);
+            assert!(range.length <= 512);
+            assert!(range.offset + range.length <= chunk_len);
+        }
+    }
+
+    #[test]
+    fn short_chunks_are_challenged_in_full() {
+        let seed = storage_challenge_seed([0x44; 32], [0x55; 32]);
+        let ranges = select_storage_ranges(seed, &[64], 3, 512).unwrap();
+
+        for range in ranges {
+            assert_eq!(range.chunk_index, 0);
+            assert_eq!(range.offset, 0);
+            assert_eq!(range.length, 64);
+        }
+    }
+
+    #[test]
+    fn invalid_selector_inputs_are_rejected() {
+        let seed = [0x77; 32];
+
+        assert!(select_storage_ranges(seed, &[], 1, 512).is_err());
+        assert!(select_storage_ranges(seed, &[4096], 0, 512).is_err());
+        assert!(select_storage_ranges(seed, &[4096], 1, 0).is_err());
+        assert!(select_storage_ranges(seed, &[0, 4096], 1, 512).is_err());
+    }
+}
