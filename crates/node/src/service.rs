@@ -1418,10 +1418,9 @@ mod tests {
         select_storage_segments, service_epoch_report_canonical_bytes,
         service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
         service_evidence_root, sign_service_epoch_report, sign_storage_challenge,
-        sign_storage_commitment, storage_challenge_canonical_bytes,
-        storage_challenge_id_preimage, storage_challenge_seed,
-        storage_challenge_signing_digest, storage_challenge_signing_preimage,
-        storage_commitment_canonical_bytes,
+        sign_storage_commitment, storage_challenge_canonical_bytes, storage_challenge_id_preimage,
+        storage_challenge_seed, storage_challenge_signing_digest,
+        storage_challenge_signing_preimage, storage_commitment_canonical_bytes,
         storage_commitment_id_preimage, storage_commitment_signing_digest,
         storage_commitment_signing_preimage, storage_manifest_leaf, storage_manifest_node,
         storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
@@ -1560,14 +1559,25 @@ mod tests {
                 challenge_block_id: [0x42; 32],
                 challenge_height: 900,
                 requested_ranges: vec![
-                    ChallengeSegment { chunk_index: 2, segment_index: 3, offset: 12_288, length: 4096 },
-                    ChallengeSegment { chunk_index: 5, segment_index: 0, offset: 0, length: 1024 },
+                    ChallengeSegment {
+                        chunk_index: 2,
+                        segment_index: 3,
+                        offset: 12_288,
+                        length: 4096,
+                    },
+                    ChallengeSegment {
+                        chunk_index: 5,
+                        segment_index: 0,
+                        offset: 0,
+                        length: 1024,
+                    },
                 ],
                 issued_at: 1_000_000,
                 response_deadline: 1_000_030,
                 challenger_id,
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(
             hex::encode(challenge.challenge_seed),
