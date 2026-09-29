@@ -360,7 +360,6 @@ pub fn evidence_replay_key(
     keccak256(&preimage)
 }
 
-
 #[derive(Debug, Clone)]
 pub struct ServiceEpochAccumulator {
     pub epoch_start_height: u64,
@@ -442,10 +441,75 @@ impl ServiceEpochAccumulator {
     }
 }
 
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceEligibility {
+    pub eligible: bool,
+    pub weight: u128,
+    pub reason: &'static str,
+}
+
+/// Conservative development-only eligibility rule.
+///
+/// This is service-payment accounting, not consensus. It intentionally uses
+/// hard minimums and no reputation multiplier.
+pub fn evaluate_service_eligibility(
+    epoch: &ServiceEpochAccumulator,
+    min_passed: u64,
+    min_distinct_requesters: usize,
+    min_distinct_challenge_blocks: usize,
+) -> ServiceEligibility {
+    if epoch.challenges_passed < min_passed {
+        return ServiceEligibility {
+            eligible: false,
+            weight: 0,
+            reason: "insufficient successful challenges",
+        };
+    }
+
+    if epoch.distinct_requester_count() < min_distinct_requesters {
+        return ServiceEligibility {
+            eligible: false,
+            weight: 0,
+            reason: "insufficient requester diversity",
+        };
+    }
+
+    if epoch.distinct_challenge_block_count() < min_distinct_challenge_blocks {
+        return ServiceEligibility {
+            eligible: false,
+            weight: 0,
+            reason: "insufficient challenge-block diversity",
+        };
+    }
+
+    if epoch.challenges_failed > epoch.challenges_passed {
+        return ServiceEligibility {
+            eligible: false,
+            weight: 0,
+            reason: "more failed than successful challenges",
+        };
+    }
+
+    if epoch.deadlines_missed > 0 {
+        return ServiceEligibility {
+            eligible: false,
+            weight: 0,
+            reason: "missed response deadline",
+        };
+    }
+
+    ServiceEligibility {
+        eligible: true,
+        weight: epoch.verified_bytes_served.max(u128::from(epoch.challenges_passed)),
+        reason: "eligible",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        evidence_replay_key, select_storage_ranges, select_storage_segments,
+        evaluate_service_eligibility, evidence_replay_key, select_storage_ranges, select_storage_segments,
         storage_challenge_seed, storage_manifest_leaf, storage_manifest_node,
         storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
         verify_response_meta, verify_storage_manifest_proof, verify_storage_range_proof,
@@ -695,6 +759,32 @@ mod tests {
         assert_eq!(epoch.challenges_failed, 1);
         assert_eq!(epoch.deadlines_missed, 1);
         assert_eq!(epoch.evidence_count(), 3);
+    }
+
+    #[test]
+    fn conservative_eligibility_requires_success_diversity_and_no_missed_deadline() {
+        let mut epoch = ServiceEpochAccumulator::new(0, 720).unwrap();
+        epoch
+            .record_success([0x01; 32], [0x10; 32], [0x20; 32], 4096)
+            .unwrap();
+        epoch
+            .record_success([0x02; 32], [0x11; 32], [0x21; 32], 4096)
+            .unwrap();
+        epoch
+            .record_success([0x03; 32], [0x12; 32], [0x22; 32], 4096)
+            .unwrap();
+
+        let eligible = evaluate_service_eligibility(&epoch, 3, 3, 3);
+        assert!(eligible.eligible);
+        assert_eq!(eligible.weight, 12_288);
+
+        let not_diverse = evaluate_service_eligibility(&epoch, 3, 4, 3);
+        assert!(!not_diverse.eligible);
+
+        epoch.record_failure([0x04; 32], true).unwrap();
+        let late = evaluate_service_eligibility(&epoch, 3, 3, 3);
+        assert!(!late.eligible);
+        assert_eq!(late.weight, 0);
     }
 
     #[test]
