@@ -142,7 +142,10 @@ impl StateStore {
         Ok(Self { db })
     }
 
-    pub fn load_chain_block(&self, block_id: Hash32) -> Result<Option<PersistedChainBlock>, String> {
+    pub fn load_chain_block(
+        &self,
+        block_id: Hash32,
+    ) -> Result<Option<PersistedChainBlock>, String> {
         let read = self
             .db
             .begin_read()
@@ -418,7 +421,10 @@ mod tests {
 
             let hard = store.insert_chain_block(hard_child).unwrap();
             assert!(hard.chain_work > easy.chain_work);
-            assert_eq!(store.best_chain_head().unwrap().unwrap().block_id(), hard_child_id);
+            assert_eq!(
+                store.best_chain_head().unwrap().unwrap().block_id(),
+                hard_child_id
+            );
         }
 
         {
