@@ -347,9 +347,7 @@ mod tests {
 
     #[test]
     fn asert_rejects_pre_anchor_evaluation() {
-        assert!(
-            asert_next_target(target_u64(1000), 10, 0, 9, 300, [0xff; 32]).is_err()
-        );
+        assert!(asert_next_target(target_u64(1000), 10, 0, 9, 300, [0xff; 32]).is_err());
     }
 
     #[test]
