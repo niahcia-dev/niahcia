@@ -1058,7 +1058,6 @@ pub fn verify_storage_challenge_signature(
         .map_err(|_| "invalid storage challenge signature".to_string())
 }
 
-
 pub const STORAGE_RESPONSE_OBJECT_TYPE: u64 = 0x0207;
 pub const STORAGE_RESPONSE_SCHEMA_VERSION: u64 = 1;
 
@@ -1234,10 +1233,7 @@ pub fn derive_storage_response_id(network_id: &[u8], response: &StorageResponseV
     )
 }
 
-pub fn storage_response_signing_digest(
-    network_id: &[u8],
-    response: &StorageResponseV1,
-) -> Hash32 {
+pub fn storage_response_signing_digest(network_id: &[u8], response: &StorageResponseV1) -> Hash32 {
     generic_protocol_digest(
         b"SIGN/STORAGE_RESPONSE",
         network_id,
@@ -1364,7 +1360,11 @@ pub fn verify_storage_response_evidence(
     }
 
     let mut verified_bytes = 0_u64;
-    for (proof, requested) in response.range_proofs.iter().zip(&challenge.requested_ranges) {
+    for (proof, requested) in response
+        .range_proofs
+        .iter()
+        .zip(&challenge.requested_ranges)
+    {
         if proof.chunk_index != requested.chunk_index
             || proof.segment_index != requested.segment_index
             || proof.offset != requested.offset
@@ -1760,24 +1760,26 @@ pub fn attach_service_epoch_signature(
 mod tests {
     use super::{
         attach_service_epoch_signature, build_service_epoch_report_v1, build_storage_challenge_v1,
-        build_storage_commitment_v1, build_storage_response_v1, derive_service_epoch_report_id, derive_service_node_id,
-        derive_storage_challenge_id, derive_storage_commitment_id, derive_storage_response_id, evaluate_service_eligibility,
-        evidence_replay_key, finalize_service_epoch_report, select_storage_ranges,
-        select_storage_segments, service_epoch_report_canonical_bytes,
-        service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
-        service_evidence_root, sign_service_epoch_report, sign_storage_challenge,
-        sign_storage_commitment, sign_storage_response, storage_challenge_canonical_bytes, storage_challenge_id_preimage,
-        storage_challenge_seed, storage_challenge_signing_digest,
-        storage_challenge_signing_preimage, storage_commitment_canonical_bytes,
-        storage_commitment_id_preimage, storage_commitment_signing_digest,
-        storage_commitment_signing_preimage, storage_manifest_leaf, storage_manifest_node,
-        storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
-        verify_response_meta, verify_service_epoch_report_signature,
-        verify_storage_challenge_signature, verify_storage_commitment_signature,
-        verify_storage_manifest_proof, verify_storage_range_proof, ChallengeSegment,
-        ExpectedResponseMeta, ManifestProofStep, RangeProofStep, ResponseMeta,
-        ServiceEpochAccumulator, ServiceEpochReportV1, StorageChallengeParams,
-        StorageCommitmentParams, StorageRangeProofV1, StorageResponseParams,
+        build_storage_commitment_v1, build_storage_response_v1, derive_service_epoch_report_id,
+        derive_service_node_id, derive_storage_challenge_id, derive_storage_commitment_id,
+        derive_storage_response_id, evaluate_service_eligibility, evidence_replay_key,
+        finalize_service_epoch_report, select_storage_ranges, select_storage_segments,
+        service_epoch_report_canonical_bytes, service_epoch_report_signing_digest,
+        service_epoch_report_signing_preimage, service_evidence_root, sign_service_epoch_report,
+        sign_storage_challenge, sign_storage_commitment, sign_storage_response,
+        storage_challenge_canonical_bytes, storage_challenge_id_preimage, storage_challenge_seed,
+        storage_challenge_signing_digest, storage_challenge_signing_preimage,
+        storage_commitment_canonical_bytes, storage_commitment_id_preimage,
+        storage_commitment_signing_digest, storage_commitment_signing_preimage,
+        storage_manifest_leaf, storage_manifest_node, storage_manifest_root, storage_range_leaf,
+        storage_range_node, storage_range_root, verify_response_meta,
+        verify_service_epoch_report_signature, verify_storage_challenge_signature,
+        verify_storage_commitment_signature, verify_storage_response_evidence,
+        verify_storage_response_signature, verify_storage_manifest_proof,
+        verify_storage_range_proof, ChallengeSegment, ExpectedResponseMeta, ManifestProofStep,
+        RangeProofStep, ResponseMeta, ServiceEpochAccumulator, ServiceEpochReportV1,
+        StorageChallengeParams, StorageCommitmentParams, StorageRangeProofV1,
+        StorageResponseParams,
     };
 
     #[test]
@@ -1950,12 +1952,8 @@ mod tests {
             derive_storage_response_id(b"niahcia-dev", &response)
         );
         sign_storage_response(b"niahcia-dev", &mut response, &provider_secret).unwrap();
-        verify_storage_response_signature(
-            b"niahcia-dev",
-            &response,
-            provider_public.as_bytes(),
-        )
-        .unwrap();
+        verify_storage_response_signature(b"niahcia-dev", &response, provider_public.as_bytes())
+            .unwrap();
         assert_eq!(
             verify_storage_response_evidence(&response, &challenge, manifest_root).unwrap(),
             8
