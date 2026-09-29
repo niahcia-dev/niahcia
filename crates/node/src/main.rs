@@ -3,6 +3,7 @@ pub mod consensus;
 mod engine;
 mod mining_rpc;
 pub mod service;
+pub mod state;
 pub mod work;
 
 use config::NodeConfig;
