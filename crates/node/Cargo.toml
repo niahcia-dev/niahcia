@@ -9,3 +9,10 @@ description = "NIAHCIA reference node"
 [[bin]]
 name = "niahcia"
 path = "src/main.rs"
+
+[dependencies]
+ctrlc = "3.4"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
