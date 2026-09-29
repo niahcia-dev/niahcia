@@ -1,4 +1,4 @@
-use crate::work::PowWorkTemplate;
+use crate::work::BlockHeaderV1;
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -16,35 +16,35 @@ pub struct WorkManager {
 #[derive(Clone)]
 struct WorkState {
     generation: u64,
-    template: PowWorkTemplate,
+    header: BlockHeaderV1,
 }
 
 impl WorkManager {
-    pub fn new(template: PowWorkTemplate) -> Self {
+    pub fn new(header: BlockHeaderV1) -> Self {
         Self {
             inner: Arc::new(RwLock::new(WorkState {
                 generation: 0,
-                template,
+                header,
             })),
         }
     }
 
-    pub fn current(&self) -> (u64, PowWorkTemplate) {
+    pub fn current(&self) -> (u64, BlockHeaderV1) {
         let state = self.inner.read().expect("work state poisoned");
-        (state.generation, state.template.clone())
+        (state.generation, state.header.clone())
     }
 
     #[cfg(test)]
-    pub fn replace(&self, template: PowWorkTemplate) {
+    pub fn replace(&self, header: BlockHeaderV1) {
         let mut state = self.inner.write().expect("work state poisoned");
         state.generation = state.generation.saturating_add(1);
-        state.template = template;
+        state.header = header;
     }
 
     #[cfg(test)]
     pub fn is_stale(&self, generation: u64, template_id: &[u8; 32]) -> bool {
         let state = self.inner.read().expect("work state poisoned");
-        generation != state.generation || &state.template.template_id() != template_id
+        generation != state.generation || &state.header.mining_template_id() != template_id
     }
 }
 
@@ -112,23 +112,25 @@ fn handle_connection(mut stream: TcpStream, work: &WorkManager) -> Result<(), St
 
     let response = match method {
         "pow_getWork" => {
-            let (generation, template) = work.current();
+            let (generation, header) = work.current();
             json!({
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": {
                     "development": true,
                     "generation": generation,
-                    "template_id": hex::encode(template.template_id()),
-                    "version": template.version,
-                    "height": template.height,
-                    "parent_hash": hex::encode(template.parent_hash),
-                    "execution_commitment": hex::encode(template.execution_commitment),
-                    "timestamp": template.timestamp,
-                    "difficulty": template.difficulty,
-                    "target": hex::encode(template.target),
+                    "template_id": hex::encode(header.mining_template_id()),
+                    "version": header.version,
+                    "parent_hash": hex::encode(header.parent_hash),
+                    "height": header.height,
+                    "timestamp": header.timestamp,
+                    "transactions_root": hex::encode(header.transactions_root),
+                    "execution_root": hex::encode(header.execution_root),
+                    "target": hex::encode(header.target),
                     "nonce_start": 0_u64,
-                    "nonce_end": u64::MAX
+                    "nonce_end": u64::MAX,
+                    "extra_nonce_start": 0_u64,
+                    "extra_nonce_end": u64::MAX
                 }
             })
         }
@@ -159,29 +161,31 @@ fn handle_connection(mut stream: TcpStream, work: &WorkManager) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::WorkManager;
-    use crate::work::PowWorkTemplate;
+    use crate::work::BlockHeaderV1;
 
-    fn template(marker: u8) -> PowWorkTemplate {
-        PowWorkTemplate {
+    fn header(marker: u8) -> BlockHeaderV1 {
+        BlockHeaderV1 {
             version: 1,
-            height: marker as u64,
             parent_hash: [marker; 32],
-            execution_commitment: [marker.wrapping_add(1); 32],
+            height: marker as u64,
             timestamp: 1_800_000_000 + marker as u64,
-            difficulty: 1,
+            transactions_root: [marker.wrapping_add(1); 32],
+            execution_root: [marker.wrapping_add(2); 32],
             target: [0xff; 32],
+            nonce: 0,
+            extra_nonce: 0,
         }
     }
 
     #[test]
     fn replacing_work_marks_previous_generation_stale() {
-        let manager = WorkManager::new(template(1));
+        let manager = WorkManager::new(header(1));
         let (generation, current) = manager.current();
-        let old_id = current.template_id();
+        let old_id = current.mining_template_id();
 
         assert!(!manager.is_stale(generation, &old_id));
 
-        manager.replace(template(2));
+        manager.replace(header(2));
 
         assert!(manager.is_stale(generation, &old_id));
     }
