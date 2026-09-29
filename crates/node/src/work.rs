@@ -10,10 +10,10 @@ const HEADER_DOMAIN: &[u8] = b"NIAHCIA/POW-HEADER/V1";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionPayloadCommitments {
     pub parent_hash: Hash32,
+    pub payload_block_hash: Hash32,
     pub fee_recipient: Address20,
     pub state_root: Hash32,
     pub receipts_root: Hash32,
-    pub transactions_root: Hash32,
     pub block_number: u64,
     pub gas_limit: u64,
     pub gas_used: u64,
@@ -23,13 +23,13 @@ pub struct ExecutionPayloadCommitments {
 
 impl ExecutionPayloadCommitments {
     pub fn canonical_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(EXECUTION_DOMAIN.len() + 32 + 20 + (32 * 5) + (8 * 4));
+        let mut out = Vec::with_capacity(EXECUTION_DOMAIN.len() + (32 * 5) + 20 + (8 * 4));
         out.extend_from_slice(EXECUTION_DOMAIN);
         out.extend_from_slice(&self.parent_hash);
+        out.extend_from_slice(&self.payload_block_hash);
         out.extend_from_slice(&self.fee_recipient);
         out.extend_from_slice(&self.state_root);
         out.extend_from_slice(&self.receipts_root);
-        out.extend_from_slice(&self.transactions_root);
         out.extend_from_slice(&self.block_number.to_be_bytes());
         out.extend_from_slice(&self.gas_limit.to_be_bytes());
         out.extend_from_slice(&self.gas_used.to_be_bytes());
@@ -95,10 +95,10 @@ mod tests {
     fn sample_execution() -> ExecutionPayloadCommitments {
         ExecutionPayloadCommitments {
             parent_hash: [0x11; 32],
-            fee_recipient: [0x22; 20],
-            state_root: [0x33; 32],
-            receipts_root: [0x44; 32],
-            transactions_root: [0x55; 32],
+            payload_block_hash: [0x22; 32],
+            fee_recipient: [0x33; 20],
+            state_root: [0x44; 32],
+            receipts_root: [0x55; 32],
             block_number: 42,
             gas_limit: 30_000_000,
             gas_used: 12_345,
