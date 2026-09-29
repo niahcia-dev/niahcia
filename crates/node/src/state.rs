@@ -236,7 +236,7 @@ impl StateStore {
                 .map_err(|e| format!("failed to persist chain block: {e}"))?;
         }
 
-        let current_best_id = {
+        let current_best_id: Option<Hash32> = {
             let meta = write
                 .open_table(CHAIN_META)
                 .map_err(|e| format!("failed to open chain metadata table: {e}"))?;
