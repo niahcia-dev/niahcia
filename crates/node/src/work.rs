@@ -4,8 +4,10 @@ pub type Hash32 = [u8; 32];
 pub type Address20 = [u8; 20];
 
 const EXECUTION_DOMAIN: &[u8] = b"NIAHCIA/EXECUTION-COMMITMENT/V1";
-const WORK_DOMAIN: &[u8] = b"NIAHCIA/POW-WORK/V1";
-const HEADER_DOMAIN: &[u8] = b"NIAHCIA/POW-HEADER/V1";
+const BLOCK_HEADER_DOMAIN: &[u8] = b"NIAHCIA/BLOCK-HEADER/V1";
+const MINING_TEMPLATE_DOMAIN: &[u8] = b"NIAHCIA/MINING-TEMPLATE/V1";
+
+pub const BLOCK_HEADER_V1_LEN: usize = 164;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionPayloadCommitments {
@@ -13,7 +15,7 @@ pub struct ExecutionPayloadCommitments {
     pub fee_recipient: Address20,
     pub state_root: Hash32,
     pub receipts_root: Hash32,
-    pub transactions_commitment: Hash32,
+    pub transactions_root: Hash32,
     pub block_number: u64,
     pub gas_limit: u64,
     pub gas_used: u64,
@@ -29,7 +31,7 @@ impl ExecutionPayloadCommitments {
         out.extend_from_slice(&self.fee_recipient);
         out.extend_from_slice(&self.state_root);
         out.extend_from_slice(&self.receipts_root);
-        out.extend_from_slice(&self.transactions_commitment);
+        out.extend_from_slice(&self.transactions_root);
         out.extend_from_slice(&self.block_number.to_be_bytes());
         out.extend_from_slice(&self.gas_limit.to_be_bytes());
         out.extend_from_slice(&self.gas_used.to_be_bytes());
@@ -44,41 +46,67 @@ impl ExecutionPayloadCommitments {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PowWorkTemplate {
+pub struct BlockHeaderV1 {
     pub version: u32,
-    pub height: u64,
     pub parent_hash: Hash32,
-    pub execution_commitment: Hash32,
+    pub height: u64,
     pub timestamp: u64,
-    pub difficulty: u64,
+    pub transactions_root: Hash32,
+    pub execution_root: Hash32,
     pub target: Hash32,
+    pub nonce: u64,
+    pub extra_nonce: u64,
 }
 
-impl PowWorkTemplate {
-    pub fn canonical_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(WORK_DOMAIN.len() + 4 + 8 + 32 + 32 + 8 + 8 + 32);
-        out.extend_from_slice(WORK_DOMAIN);
-        out.extend_from_slice(&self.version.to_be_bytes());
-        out.extend_from_slice(&self.height.to_be_bytes());
-        out.extend_from_slice(&self.parent_hash);
-        out.extend_from_slice(&self.execution_commitment);
-        out.extend_from_slice(&self.timestamp.to_be_bytes());
-        out.extend_from_slice(&self.difficulty.to_be_bytes());
-        out.extend_from_slice(&self.target);
+impl BlockHeaderV1 {
+    pub fn canonical_bytes(&self) -> [u8; BLOCK_HEADER_V1_LEN] {
+        let mut out = [0_u8; BLOCK_HEADER_V1_LEN];
+        let mut offset = 0;
+
+        write(&mut out, &mut offset, &self.version.to_be_bytes());
+        write(&mut out, &mut offset, &self.parent_hash);
+        write(&mut out, &mut offset, &self.height.to_be_bytes());
+        write(&mut out, &mut offset, &self.timestamp.to_be_bytes());
+        write(&mut out, &mut offset, &self.transactions_root);
+        write(&mut out, &mut offset, &self.execution_root);
+        write(&mut out, &mut offset, &self.target);
+        write(&mut out, &mut offset, &self.nonce.to_be_bytes());
+        write(&mut out, &mut offset, &self.extra_nonce.to_be_bytes());
+
+        debug_assert_eq!(offset, BLOCK_HEADER_V1_LEN);
         out
     }
 
-    pub fn template_id(&self) -> Hash32 {
-        keccak256(&self.canonical_bytes())
+    pub fn block_id(&self) -> Hash32 {
+        let mut preimage = Vec::with_capacity(BLOCK_HEADER_DOMAIN.len() + BLOCK_HEADER_V1_LEN);
+        preimage.extend_from_slice(BLOCK_HEADER_DOMAIN);
+        preimage.extend_from_slice(&self.canonical_bytes());
+        keccak256(&preimage)
     }
 
-    pub fn header_bytes(&self, nonce: u64) -> Vec<u8> {
-        let mut out = Vec::with_capacity(HEADER_DOMAIN.len() + self.canonical_bytes().len() + 8);
-        out.extend_from_slice(HEADER_DOMAIN);
-        out.extend_from_slice(&self.canonical_bytes());
-        out.extend_from_slice(&nonce.to_be_bytes());
-        out
+    pub fn mining_template_id(&self) -> Hash32 {
+        let mut template = self.clone();
+        template.nonce = 0;
+        template.extra_nonce = 0;
+
+        let mut preimage = Vec::with_capacity(MINING_TEMPLATE_DOMAIN.len() + BLOCK_HEADER_V1_LEN);
+        preimage.extend_from_slice(MINING_TEMPLATE_DOMAIN);
+        preimage.extend_from_slice(&template.canonical_bytes());
+        keccak256(&preimage)
     }
+
+    pub fn with_miner_values(&self, nonce: u64, extra_nonce: u64) -> Self {
+        let mut header = self.clone();
+        header.nonce = nonce;
+        header.extra_nonce = extra_nonce;
+        header
+    }
+}
+
+fn write<const N: usize>(out: &mut [u8; N], offset: &mut usize, value: &[u8]) {
+    let end = *offset + value.len();
+    out[*offset..end].copy_from_slice(value);
+    *offset = end;
 }
 
 pub fn keccak256(bytes: &[u8]) -> Hash32 {
@@ -90,7 +118,7 @@ pub fn keccak256(bytes: &[u8]) -> Hash32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{ExecutionPayloadCommitments, PowWorkTemplate};
+    use super::{BlockHeaderV1, ExecutionPayloadCommitments, BLOCK_HEADER_V1_LEN};
 
     fn sample_execution() -> ExecutionPayloadCommitments {
         ExecutionPayloadCommitments {
@@ -98,7 +126,7 @@ mod tests {
             fee_recipient: [0x22; 20],
             state_root: [0x33; 32],
             receipts_root: [0x44; 32],
-            transactions_commitment: [0x55; 32],
+            transactions_root: [0x55; 32],
             block_number: 42,
             gas_limit: 30_000_000,
             gas_used: 12_345,
@@ -107,63 +135,55 @@ mod tests {
         }
     }
 
-    fn sample_work() -> PowWorkTemplate {
-        PowWorkTemplate {
+    fn sample_header() -> BlockHeaderV1 {
+        BlockHeaderV1 {
             version: 1,
-            height: 42,
             parent_hash: [0x11; 32],
-            execution_commitment: sample_execution().commitment_hash(),
+            height: 42,
             timestamp: 1_800_000_000,
-            difficulty: 1,
+            transactions_root: [0x22; 32],
+            execution_root: sample_execution().commitment_hash(),
             target: [0xff; 32],
+            nonce: 0x0102_0304_0506_0708,
+            extra_nonce: 0x1112_1314_1516_1718,
         }
     }
 
     #[test]
-    fn execution_commitment_is_deterministic() {
-        let execution = sample_execution();
-        assert_eq!(execution.commitment_hash(), execution.commitment_hash());
-        assert_eq!(execution.canonical_bytes(), execution.canonical_bytes());
+    fn block_header_v1_is_exactly_164_bytes() {
+        assert_eq!(sample_header().canonical_bytes().len(), BLOCK_HEADER_V1_LEN);
+        assert_eq!(BLOCK_HEADER_V1_LEN, 164);
     }
 
     #[test]
-    fn template_id_does_not_depend_on_nonce() {
-        let work = sample_work();
-        let template_id = work.template_id();
-
-        let header_a = work.header_bytes(7);
-        let header_b = work.header_bytes(8);
-
-        assert_eq!(template_id, work.template_id());
-        assert_ne!(header_a, header_b);
-        assert_eq!(
-            &header_a[..header_a.len() - 8],
-            &header_b[..header_b.len() - 8]
-        );
+    fn block_header_integer_fields_are_big_endian() {
+        let bytes = sample_header().canonical_bytes();
+        assert_eq!(&bytes[0..4], &1_u32.to_be_bytes());
+        assert_eq!(&bytes[36..44], &42_u64.to_be_bytes());
+        assert_eq!(&bytes[44..52], &1_800_000_000_u64.to_be_bytes());
+        assert_eq!(&bytes[148..156], &0x0102_0304_0506_0708_u64.to_be_bytes());
+        assert_eq!(&bytes[156..164], &0x1112_1314_1516_1718_u64.to_be_bytes());
     }
 
     #[test]
-    fn nonce_is_encoded_as_last_eight_header_bytes() {
-        let work = sample_work();
-        let nonce = 0x0102_0304_0506_0708_u64;
-        let header = work.header_bytes(nonce);
+    fn mining_template_identity_ignores_only_miner_values() {
+        let header = sample_header();
+        let changed = header.with_miner_values(7, 9);
 
-        assert_eq!(&header[header.len() - 8..], &nonce.to_be_bytes());
+        assert_eq!(header.mining_template_id(), changed.mining_template_id());
+        assert_ne!(header.block_id(), changed.block_id());
     }
 
     #[test]
-    fn changing_execution_changes_work_identity() {
-        let first = sample_execution();
+    fn execution_change_changes_block_identity() {
+        let mut first = sample_header();
+        let mut second = sample_header();
 
-        let mut second = first.clone();
-        second.state_root[0] ^= 0xff;
+        second.execution_root[0] ^= 0xff;
 
-        let mut work_a = sample_work();
-        let mut work_b = sample_work();
+        assert_ne!(first.block_id(), second.block_id());
 
-        work_a.execution_commitment = first.commitment_hash();
-        work_b.execution_commitment = second.commitment_hash();
-
-        assert_ne!(work_a.template_id(), work_b.template_id());
+        first.execution_root = second.execution_root;
+        assert_eq!(first.block_id(), second.block_id());
     }
 }
