@@ -445,9 +445,7 @@ impl ServiceEpochAccumulator {
         }
 
         self.challenges_passed = self.challenges_passed.saturating_add(1);
-        self.verified_bytes_served = self
-            .verified_bytes_served
-            .saturating_add(verified_bytes);
+        self.verified_bytes_served = self.verified_bytes_served.saturating_add(verified_bytes);
         self.requester_ids.insert(requester_id);
         self.challenge_block_ids.insert(challenge_block_id);
         Ok(())
@@ -546,9 +544,7 @@ pub fn evaluate_service_eligibility(
 
     ServiceEligibility {
         eligible: true,
-        weight: epoch
-            .verified_bytes_served
-            .max(epoch.challenges_passed),
+        weight: epoch.verified_bytes_served.max(epoch.challenges_passed),
         reason: "eligible",
     }
 }
@@ -598,7 +594,6 @@ pub fn finalize_service_epoch_report(
         eligibility_weight: eligibility.weight,
     }
 }
-
 
 pub const SERVICE_EPOCH_REPORT_OBJECT_TYPE: u64 = 0x0208;
 pub const SERVICE_EPOCH_REPORT_SCHEMA_VERSION: u64 = 1;
@@ -700,7 +695,11 @@ fn cbor_major_len(out: &mut Vec<u8>, major: u8, value: u64) {
     }
 }
 
-fn encode_service_epoch_payload(report: &ServiceEpochReportV1, include_report_id: bool, include_signature: bool) -> Vec<u8> {
+fn encode_service_epoch_payload(
+    report: &ServiceEpochReportV1,
+    include_report_id: bool,
+    include_signature: bool,
+) -> Vec<u8> {
     let mut fields = 16_u64;
     if include_report_id {
         fields += 1;
@@ -822,14 +821,13 @@ pub fn service_epoch_report_signing_digest(
 mod tests {
     use super::{
         derive_service_epoch_report_id, evaluate_service_eligibility, evidence_replay_key,
-        finalize_service_epoch_report,
-        select_storage_ranges, select_storage_segments, service_epoch_report_canonical_bytes,
-        service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
-        service_evidence_root,
-        storage_challenge_seed, storage_manifest_leaf, storage_manifest_node,
-        storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
-        verify_response_meta, verify_storage_manifest_proof, verify_storage_range_proof,
-        ChallengeSegment, ExpectedResponseMeta, ManifestProofStep, RangeProofStep, ResponseMeta,
+        finalize_service_epoch_report, select_storage_ranges, select_storage_segments,
+        service_epoch_report_canonical_bytes, service_epoch_report_signing_digest,
+        service_epoch_report_signing_preimage, service_evidence_root, storage_challenge_seed,
+        storage_manifest_leaf, storage_manifest_node, storage_manifest_root, storage_range_leaf,
+        storage_range_node, storage_range_root, verify_response_meta,
+        verify_storage_manifest_proof, verify_storage_range_proof, ChallengeSegment,
+        ExpectedResponseMeta, ManifestProofStep, RangeProofStep, ResponseMeta,
         ServiceEpochAccumulator, ServiceEpochReportV1,
     };
 
@@ -1133,8 +1131,7 @@ mod tests {
         report.report_id = id;
 
         let signing_preimage = service_epoch_report_signing_preimage(&report);
-        let signing_digest =
-            service_epoch_report_signing_digest(b"devnet/prototype0", &report);
+        let signing_digest = service_epoch_report_signing_digest(b"devnet/prototype0", &report);
         let other_network_digest =
             service_epoch_report_signing_digest(b"testnet/prototype0", &report);
 
