@@ -1901,9 +1901,8 @@ mod tests {
         verify_storage_range_proof, verify_storage_response_evidence,
         verify_storage_response_signature, ChallengeSegment, ExpectedResponseMeta,
         ManifestProofStep, PersistentStorageResponseContext, RangeProofStep, ResponseMeta,
-        ServiceEpochAccumulator,
-        ServiceEpochReportV1, StorageChallengeParams, StorageCommitmentParams, StorageRangeProofV1,
-        StorageResponseParams,
+        ServiceEpochAccumulator, ServiceEpochReportV1, StorageChallengeParams,
+        StorageCommitmentParams, StorageRangeProofV1, StorageResponseParams,
     };
 
     #[test]
