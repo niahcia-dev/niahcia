@@ -1,98 +1,89 @@
-# Execution Payload and PoW Work Types
+# NIAHCIA Block Header and Mining Work
 
 ## Purpose
 
-The first NIAHCIA mining boundary separates:
+NIAHCIA now uses the provisional Protocol v1 block header directly as the mining-work foundation.
 
-1. execution results produced by Reth,
-2. immutable PoW work selected by NIAHCIA consensus,
-3. the nonce searched by a CPU miner.
+The critical rule remains:
 
-The critical rule is:
+> Changing miner-controlled search values must not require EVM re-execution.
 
-> Changing the mining nonce must not require EVM re-execution.
+## BlockHeaderV1
 
-## Execution commitment
-
-`ExecutionPayloadCommitments` contains the execution-layer values that the PoW layer needs to bind into a block candidate:
-
-- parent hash
-- fee recipient
-- state root
-- receipts root
-- transactions root
-- block number
-- gas limit
-- gas used
-- timestamp
-- base fee
-
-The current development encoding is explicit, fixed-order binary data using big-endian integers.
-
-Its Keccak-256 digest becomes the `execution_commitment` carried by a PoW work template.
-
-## PoW work template
-
-`PowWorkTemplate` currently contains:
-
-- version
-- block height
-- parent hash
-- execution commitment
-- timestamp
-- difficulty
-- target
-
-These fields are immutable for one work-template identity.
-
-The template ID is:
+The node implements the 164-byte fixed-width header defined by `niahcia-protocol/spec/block-header-v1.md`:
 
 ```text
-keccak256(canonical_work_bytes)
+version             u32
+parent_hash         bytes32
+height              u64
+timestamp           u64
+transactions_root   bytes32
+execution_root      bytes32
+target              bytes32
+nonce               u64
+extra_nonce         u64
 ```
 
-## Mining header
+All integer fields are big-endian.
 
-The mutable nonce is appended only when producing the bytes to be hashed:
+## Block identity
 
 ```text
-NIAHCIA/POW-HEADER/V1
-||
-canonical_work_bytes
-||
-nonce_u64_be
+block_id =
+  keccak256(
+    "NIAHCIA/BLOCK-HEADER/V1"
+    ||
+    canonical_header_164_bytes
+  )
 ```
 
-Therefore:
+The block ID belongs entirely to NIAHCIA.
+
+Reth's execution payload block hash is not included.
+
+## Mining template identity
+
+Mining work is an unfinished `BlockHeaderV1`.
+
+The miner may vary:
 
 ```text
-same execution
-+ same work template
-+ different nonce
-= no EVM rerun
+nonce
+extra_nonce
 ```
 
-## Domain separation
-
-Current development domains:
+The template ID is computed after zeroing those two fields:
 
 ```text
-NIAHCIA/EXECUTION-COMMITMENT/V1
-NIAHCIA/POW-WORK/V1
-NIAHCIA/POW-HEADER/V1
+keccak256(
+  "NIAHCIA/MINING-TEMPLATE/V1"
+  ||
+  header_with_zero_nonce_and_extra_nonce
+)
 ```
 
-## Tests
+Therefore changing either miner value does not alter template identity and does not require execution to run again.
 
-The module currently verifies that:
+## Transaction root
 
-- execution commitments are deterministic,
-- template identity does not depend on the nonce,
-- only the final eight header bytes change when the nonce changes,
-- changing the execution state commitment changes the work-template identity.
+The header now carries a NIAHCIA-native binary Merkle root over the ordered raw transaction bytes.
+
+It does not use Reth's execution block hash and does not use Ethereum's transaction trie as NIAHCIA block identity.
+
+## Execution root
+
+`execution_root` commits to the execution results NIAHCIA requires from the EVM engine, including state and receipt roots plus execution metadata.
+
+Reth is currently adapter #1 for producing those results.
+
+## Target
+
+Only the 256-bit target is consensus header data.
+
+Human-readable difficulty is derived from target and is no longer carried as a separate mining-template field.
 
 ## Status
 
-These are **development types for v0.1.0**, not frozen mainnet consensus serialization.
+This is the agreed Protocol v1 consensus candidate.
 
-Before a public consensus network exists, the final block-header encoding and numeric difficulty/target representation must be specified and test-vectored in `niahcia-protocol`.
+RandomX seed derivation, timestamp validity, target adjustment, genesis/network parameters, and final execution-record encoding remain to be specified before a public testnet is considered consensus-stable.
