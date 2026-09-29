@@ -17,6 +17,7 @@ pub const SERVICE_EVIDENCE_LEAF_DOMAIN: &[u8] = b"NIAHCIA/SERVICE-EVIDENCE-LEAF/
 pub const SERVICE_EVIDENCE_NODE_DOMAIN: &[u8] = b"NIAHCIA/SERVICE-EVIDENCE-NODE/V1";
 pub const SERVICE_EVIDENCE_EMPTY_DOMAIN: &[u8] = b"NIAHCIA/SERVICE-EVIDENCE-EMPTY/V1";
 pub const SERVICE_NODE_ID_DOMAIN: &[u8] = b"NIAHCIA/SERVICE-NODE-ID/V1";
+pub const STORAGE_RESPONSE_BYTES_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-RESPONSE-BYTES/V1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChallengeRange {
@@ -1057,6 +1058,353 @@ pub fn verify_storage_challenge_signature(
         .map_err(|_| "invalid storage challenge signature".to_string())
 }
 
+
+pub const STORAGE_RESPONSE_OBJECT_TYPE: u64 = 0x0207;
+pub const STORAGE_RESPONSE_SCHEMA_VERSION: u64 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageRangeProofV1 {
+    pub chunk_index: u64,
+    pub segment_index: u64,
+    pub offset: u64,
+    pub length: u64,
+    pub returned_bytes: Vec<u8>,
+    pub chunk_length: u64,
+    pub chunk_hash: Hash32,
+    pub range_root: Hash32,
+    pub range_proof: Vec<RangeProofStep>,
+    pub manifest_proof: Vec<ManifestProofStep>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageResponseV1 {
+    pub response_id: Hash32,
+    pub challenge_id: Hash32,
+    pub commitment_id: Hash32,
+    pub service_node_id: Hash32,
+    pub answered_at: u64,
+    pub range_proofs: Vec<StorageRangeProofV1>,
+    pub response_bytes_hash: Hash32,
+    pub signature: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageResponseParams {
+    pub challenge_id: Hash32,
+    pub commitment_id: Hash32,
+    pub service_node_id: Hash32,
+    pub answered_at: u64,
+    pub range_proofs: Vec<StorageRangeProofV1>,
+}
+
+fn cbor_bool(out: &mut Vec<u8>, value: bool) {
+    out.push(if value { 0xf5 } else { 0xf4 });
+}
+
+fn cbor_merkle_steps(out: &mut Vec<u8>, steps: &[(Hash32, bool)]) {
+    cbor_major_len(out, 4, steps.len() as u64);
+    for (sibling, sibling_is_left) in steps {
+        cbor_major_len(out, 4, 2);
+        cbor_bytes(out, sibling);
+        cbor_bool(out, *sibling_is_left);
+    }
+}
+
+fn cbor_storage_range_proofs(out: &mut Vec<u8>, proofs: &[StorageRangeProofV1]) {
+    cbor_major_len(out, 4, proofs.len() as u64);
+    for proof in proofs {
+        cbor_major_len(out, 4, 10);
+        cbor_uint(out, proof.chunk_index);
+        cbor_uint(out, proof.segment_index);
+        cbor_uint(out, proof.offset);
+        cbor_uint(out, proof.length);
+        cbor_bytes(out, &proof.returned_bytes);
+        cbor_uint(out, proof.chunk_length);
+        cbor_bytes(out, &proof.chunk_hash);
+        cbor_bytes(out, &proof.range_root);
+
+        let range_steps: Vec<(Hash32, bool)> = proof
+            .range_proof
+            .iter()
+            .map(|step| (step.sibling, step.sibling_is_left))
+            .collect();
+        cbor_merkle_steps(out, &range_steps);
+
+        let manifest_steps: Vec<(Hash32, bool)> = proof
+            .manifest_proof
+            .iter()
+            .map(|step| (step.sibling, step.sibling_is_left))
+            .collect();
+        cbor_merkle_steps(out, &manifest_steps);
+    }
+}
+
+pub fn storage_response_bytes_hash(proofs: &[StorageRangeProofV1]) -> Hash32 {
+    let mut canonical = Vec::new();
+    cbor_major_len(&mut canonical, 4, proofs.len() as u64);
+    for proof in proofs {
+        cbor_major_len(&mut canonical, 4, 5);
+        cbor_uint(&mut canonical, proof.chunk_index);
+        cbor_uint(&mut canonical, proof.segment_index);
+        cbor_uint(&mut canonical, proof.offset);
+        cbor_uint(&mut canonical, proof.length);
+        cbor_bytes(&mut canonical, &proof.returned_bytes);
+    }
+
+    let mut preimage = Vec::with_capacity(STORAGE_RESPONSE_BYTES_DOMAIN.len() + canonical.len());
+    preimage.extend_from_slice(STORAGE_RESPONSE_BYTES_DOMAIN);
+    preimage.extend_from_slice(&canonical);
+    keccak256(&preimage)
+}
+
+fn encode_storage_response_payload(
+    response: &StorageResponseV1,
+    include_response_id: bool,
+    include_signature: bool,
+) -> Vec<u8> {
+    let mut fields = 7_u64;
+    if include_response_id {
+        fields += 1;
+    }
+    if include_signature {
+        fields += 1;
+    }
+
+    let mut out = Vec::new();
+    cbor_map_len(&mut out, fields);
+
+    cbor_uint(&mut out, 1);
+    cbor_uint(&mut out, STORAGE_RESPONSE_SCHEMA_VERSION);
+
+    if include_response_id {
+        cbor_uint(&mut out, 2);
+        cbor_bytes(&mut out, &response.response_id);
+    }
+
+    cbor_uint(&mut out, 3);
+    cbor_bytes(&mut out, &response.challenge_id);
+    cbor_uint(&mut out, 4);
+    cbor_bytes(&mut out, &response.commitment_id);
+    cbor_uint(&mut out, 5);
+    cbor_bytes(&mut out, &response.service_node_id);
+    cbor_uint(&mut out, 6);
+    cbor_uint(&mut out, response.answered_at);
+    cbor_uint(&mut out, 7);
+    cbor_storage_range_proofs(&mut out, &response.range_proofs);
+    cbor_uint(&mut out, 8);
+    cbor_bytes(&mut out, &response.response_bytes_hash);
+
+    if include_signature {
+        cbor_uint(&mut out, 9);
+        cbor_bytes(&mut out, &response.signature);
+    }
+
+    out
+}
+
+pub fn storage_response_id_preimage(response: &StorageResponseV1) -> Vec<u8> {
+    encode_nce_envelope(
+        STORAGE_RESPONSE_OBJECT_TYPE,
+        STORAGE_RESPONSE_SCHEMA_VERSION,
+        &encode_storage_response_payload(response, false, false),
+    )
+}
+
+pub fn storage_response_signing_preimage(response: &StorageResponseV1) -> Vec<u8> {
+    encode_nce_envelope(
+        STORAGE_RESPONSE_OBJECT_TYPE,
+        STORAGE_RESPONSE_SCHEMA_VERSION,
+        &encode_storage_response_payload(response, true, false),
+    )
+}
+
+pub fn storage_response_canonical_bytes(response: &StorageResponseV1) -> Vec<u8> {
+    encode_nce_envelope(
+        STORAGE_RESPONSE_OBJECT_TYPE,
+        STORAGE_RESPONSE_SCHEMA_VERSION,
+        &encode_storage_response_payload(response, true, true),
+    )
+}
+
+pub fn derive_storage_response_id(network_id: &[u8], response: &StorageResponseV1) -> Hash32 {
+    generic_protocol_digest(
+        b"ID/STORAGE_RESPONSE",
+        network_id,
+        &storage_response_id_preimage(response),
+    )
+}
+
+pub fn storage_response_signing_digest(
+    network_id: &[u8],
+    response: &StorageResponseV1,
+) -> Hash32 {
+    generic_protocol_digest(
+        b"SIGN/STORAGE_RESPONSE",
+        network_id,
+        &storage_response_signing_preimage(response),
+    )
+}
+
+pub fn build_storage_response_v1(
+    network_id: &[u8],
+    params: StorageResponseParams,
+) -> Result<StorageResponseV1, String> {
+    if params.range_proofs.is_empty() {
+        return Err("storage response must contain at least one range proof".into());
+    }
+    if params
+        .range_proofs
+        .iter()
+        .any(|proof| proof.length == 0 || proof.returned_bytes.len() as u64 != proof.length)
+    {
+        return Err("storage response range proof length mismatch".into());
+    }
+
+    let response_bytes_hash = storage_response_bytes_hash(&params.range_proofs);
+    let mut response = StorageResponseV1 {
+        response_id: [0_u8; 32],
+        challenge_id: params.challenge_id,
+        commitment_id: params.commitment_id,
+        service_node_id: params.service_node_id,
+        answered_at: params.answered_at,
+        range_proofs: params.range_proofs,
+        response_bytes_hash,
+        signature: Vec::new(),
+    };
+    response.response_id = derive_storage_response_id(network_id, &response);
+    Ok(response)
+}
+
+pub fn sign_storage_response(
+    network_id: &[u8],
+    response: &mut StorageResponseV1,
+    secret_key: &[u8; 32],
+) -> Result<(), String> {
+    let signing_key = SigningKey::from_slice(secret_key)
+        .map_err(|_| "invalid secp256k1 storage response signing key".to_string())?;
+    let public_key = signing_key.verifying_key().to_encoded_point(true);
+    verify_service_node_identity(response.service_node_id, public_key.as_bytes())?;
+
+    if response.response_bytes_hash != storage_response_bytes_hash(&response.range_proofs) {
+        return Err("storage response bytes hash does not match returned bytes".into());
+    }
+
+    let expected_id = derive_storage_response_id(network_id, response);
+    if response.response_id != expected_id {
+        return Err("storage response_id does not match response contents".into());
+    }
+
+    let digest = storage_response_signing_digest(network_id, response);
+    let signature: Signature = signing_key
+        .sign_prehash(&digest)
+        .map_err(|_| "failed to sign storage response".to_string())?;
+    response.signature = signature.to_bytes().to_vec();
+    Ok(())
+}
+
+pub fn verify_storage_response_signature(
+    network_id: &[u8],
+    response: &StorageResponseV1,
+    public_key_sec1: &[u8],
+) -> Result<(), String> {
+    verify_service_node_identity(response.service_node_id, public_key_sec1)?;
+
+    if response.range_proofs.is_empty()
+        || response
+            .range_proofs
+            .iter()
+            .any(|proof| proof.length == 0 || proof.returned_bytes.len() as u64 != proof.length)
+    {
+        return Err("storage response contains invalid range proof lengths".into());
+    }
+
+    if response.response_bytes_hash != storage_response_bytes_hash(&response.range_proofs) {
+        return Err("storage response bytes hash does not match returned bytes".into());
+    }
+
+    let expected_id = derive_storage_response_id(network_id, response);
+    if response.response_id != expected_id {
+        return Err("storage response_id does not match response contents".into());
+    }
+    if response.signature.len() != 64 {
+        return Err("storage response signature must be 64-byte compact ECDSA".into());
+    }
+
+    let verifying_key = VerifyingKey::from_sec1_bytes(public_key_sec1)
+        .map_err(|_| "invalid secp256k1 storage response public key".to_string())?;
+    let signature = Signature::from_slice(&response.signature)
+        .map_err(|_| "invalid secp256k1 storage response signature".to_string())?;
+    let digest = storage_response_signing_digest(network_id, response);
+
+    verifying_key
+        .verify_prehash(&digest, &signature)
+        .map_err(|_| "invalid storage response signature".to_string())
+}
+
+pub fn verify_storage_response_evidence(
+    response: &StorageResponseV1,
+    challenge: &StorageChallengeV1,
+    manifest_root: Hash32,
+) -> Result<u64, String> {
+    verify_response_meta(
+        &ExpectedResponseMeta {
+            challenge_id: challenge.challenge_id,
+            commitment_id: challenge.commitment_id,
+            response_deadline: challenge.response_deadline,
+        },
+        &ResponseMeta {
+            challenge_id: response.challenge_id,
+            commitment_id: response.commitment_id,
+            answered_at: response.answered_at,
+        },
+    )?;
+
+    if response.range_proofs.len() != challenge.requested_ranges.len() {
+        return Err("storage response proof count does not match challenge".into());
+    }
+
+    let mut verified_bytes = 0_u64;
+    for (proof, requested) in response.range_proofs.iter().zip(&challenge.requested_ranges) {
+        if proof.chunk_index != requested.chunk_index
+            || proof.segment_index != requested.segment_index
+            || proof.offset != requested.offset
+            || proof.length != requested.length
+        {
+            return Err("storage response proof does not match requested segment order".into());
+        }
+
+        if proof.returned_bytes.len() as u64 != proof.length {
+            return Err("storage response returned byte length mismatch".into());
+        }
+
+        if !verify_storage_range_proof(
+            proof.range_root,
+            proof.segment_index,
+            &proof.returned_bytes,
+            &proof.range_proof,
+        ) {
+            return Err("invalid storage range proof".into());
+        }
+
+        if !verify_storage_manifest_proof(
+            manifest_root,
+            proof.chunk_index,
+            proof.chunk_length,
+            proof.chunk_hash,
+            proof.range_root,
+            &proof.manifest_proof,
+        ) {
+            return Err("invalid storage manifest proof".into());
+        }
+
+        verified_bytes = verified_bytes
+            .checked_add(proof.length)
+            .ok_or_else(|| "verified byte count overflow".to_string())?;
+    }
+
+    Ok(verified_bytes)
+}
+
 pub const SERVICE_EPOCH_REPORT_OBJECT_TYPE: u64 = 0x0208;
 pub const SERVICE_EPOCH_REPORT_SCHEMA_VERSION: u64 = 1;
 
@@ -1412,13 +1760,13 @@ pub fn attach_service_epoch_signature(
 mod tests {
     use super::{
         attach_service_epoch_signature, build_service_epoch_report_v1, build_storage_challenge_v1,
-        build_storage_commitment_v1, derive_service_epoch_report_id, derive_service_node_id,
-        derive_storage_challenge_id, derive_storage_commitment_id, evaluate_service_eligibility,
+        build_storage_commitment_v1, build_storage_response_v1, derive_service_epoch_report_id, derive_service_node_id,
+        derive_storage_challenge_id, derive_storage_commitment_id, derive_storage_response_id, evaluate_service_eligibility,
         evidence_replay_key, finalize_service_epoch_report, select_storage_ranges,
         select_storage_segments, service_epoch_report_canonical_bytes,
         service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
         service_evidence_root, sign_service_epoch_report, sign_storage_challenge,
-        sign_storage_commitment, storage_challenge_canonical_bytes, storage_challenge_id_preimage,
+        sign_storage_commitment, sign_storage_response, storage_challenge_canonical_bytes, storage_challenge_id_preimage,
         storage_challenge_seed, storage_challenge_signing_digest,
         storage_challenge_signing_preimage, storage_commitment_canonical_bytes,
         storage_commitment_id_preimage, storage_commitment_signing_digest,
@@ -1429,7 +1777,7 @@ mod tests {
         verify_storage_manifest_proof, verify_storage_range_proof, ChallengeSegment,
         ExpectedResponseMeta, ManifestProofStep, RangeProofStep, ResponseMeta,
         ServiceEpochAccumulator, ServiceEpochReportV1, StorageChallengeParams,
-        StorageCommitmentParams,
+        StorageCommitmentParams, StorageRangeProofV1, StorageResponseParams,
     };
 
     #[test]
@@ -1537,6 +1885,152 @@ mod tests {
         )
         .is_err());
     }
+    #[test]
+    fn storage_response_is_signed_network_bound_and_verifies_evidence() {
+        let provider_secret = [0x0b_u8; 32];
+        let provider_key = k256::ecdsa::SigningKey::from_slice(&provider_secret).unwrap();
+        let provider_public = provider_key.verifying_key().to_encoded_point(true);
+        let service_node_id = derive_service_node_id(provider_public.as_bytes()).unwrap();
+
+        let segment0 = b"abcdefgh";
+        let segment1 = b"ijklmnop";
+        let leaf0 = storage_range_leaf(0, segment0);
+        let leaf1 = storage_range_leaf(1, segment1);
+        let range_root = storage_range_node(leaf0, leaf1);
+        let chunk_hash = [0x70; 32];
+        let manifest_root = storage_manifest_leaf(0, 16, chunk_hash, range_root);
+
+        let challenge = build_storage_challenge_v1(
+            b"niahcia-dev",
+            StorageChallengeParams {
+                commitment_id: [0x31; 32],
+                challenge_block_id: [0x42; 32],
+                challenge_height: 900,
+                requested_ranges: vec![ChallengeSegment {
+                    chunk_index: 0,
+                    segment_index: 1,
+                    offset: 8,
+                    length: 8,
+                }],
+                issued_at: 100,
+                response_deadline: 130,
+                challenger_id: [0x53; 32],
+            },
+        )
+        .unwrap();
+
+        let mut response = build_storage_response_v1(
+            b"niahcia-dev",
+            StorageResponseParams {
+                challenge_id: challenge.challenge_id,
+                commitment_id: challenge.commitment_id,
+                service_node_id,
+                answered_at: 120,
+                range_proofs: vec![StorageRangeProofV1 {
+                    chunk_index: 0,
+                    segment_index: 1,
+                    offset: 8,
+                    length: 8,
+                    returned_bytes: segment1.to_vec(),
+                    chunk_length: 16,
+                    chunk_hash,
+                    range_root,
+                    range_proof: vec![RangeProofStep {
+                        sibling: leaf0,
+                        sibling_is_left: true,
+                    }],
+                    manifest_proof: Vec::new(),
+                }],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            response.response_id,
+            derive_storage_response_id(b"niahcia-dev", &response)
+        );
+        sign_storage_response(b"niahcia-dev", &mut response, &provider_secret).unwrap();
+        verify_storage_response_signature(
+            b"niahcia-dev",
+            &response,
+            provider_public.as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(
+            verify_storage_response_evidence(&response, &challenge, manifest_root).unwrap(),
+            8
+        );
+
+        let mut tampered = response.clone();
+        tampered.range_proofs[0].returned_bytes[0] ^= 1;
+        assert!(verify_storage_response_signature(
+            b"niahcia-dev",
+            &tampered,
+            provider_public.as_bytes(),
+        )
+        .is_err());
+        assert!(verify_storage_response_signature(
+            b"other-network",
+            &response,
+            provider_public.as_bytes(),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn storage_response_rejects_late_and_wrong_segment_evidence() {
+        let segment = b"abcdefgh";
+        let range_root = storage_range_leaf(0, segment);
+        let chunk_hash = [0x70; 32];
+        let manifest_root = storage_manifest_leaf(0, 8, chunk_hash, range_root);
+        let challenge = build_storage_challenge_v1(
+            b"niahcia-dev",
+            StorageChallengeParams {
+                commitment_id: [0x31; 32],
+                challenge_block_id: [0x42; 32],
+                challenge_height: 900,
+                requested_ranges: vec![ChallengeSegment {
+                    chunk_index: 0,
+                    segment_index: 0,
+                    offset: 0,
+                    length: 8,
+                }],
+                issued_at: 100,
+                response_deadline: 130,
+                challenger_id: [0x53; 32],
+            },
+        )
+        .unwrap();
+
+        let mut response = build_storage_response_v1(
+            b"niahcia-dev",
+            StorageResponseParams {
+                challenge_id: challenge.challenge_id,
+                commitment_id: challenge.commitment_id,
+                service_node_id: [0x60; 32],
+                answered_at: 131,
+                range_proofs: vec![StorageRangeProofV1 {
+                    chunk_index: 0,
+                    segment_index: 0,
+                    offset: 0,
+                    length: 8,
+                    returned_bytes: segment.to_vec(),
+                    chunk_length: 8,
+                    chunk_hash,
+                    range_root,
+                    range_proof: Vec::new(),
+                    manifest_proof: Vec::new(),
+                }],
+            },
+        )
+        .unwrap();
+
+        assert!(verify_storage_response_evidence(&response, &challenge, manifest_root).is_err());
+        response.answered_at = 120;
+        response.range_proofs[0].offset = 1;
+        assert!(verify_storage_response_evidence(&response, &challenge, manifest_root).is_err());
+    }
+
     #[test]
     fn locked_storage_challenge_vector_matches() {
         let secret = [0x0a_u8; 32];
