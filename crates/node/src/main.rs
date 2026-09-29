@@ -1,9 +1,11 @@
 mod config;
+mod consensus;
 mod engine;
 mod mining_rpc;
 pub mod work;
 
 use config::NodeConfig;
+use consensus::{randomx_seed, randomx_seed_height};
 use engine::EngineClient;
 use mining_rpc::WorkManager;
 use std::env;
@@ -186,7 +188,7 @@ fn main() -> ExitCode {
     let execution = &built.commitments;
     let niahcia_parent_hash = [0_u8; 32];
 
-    let work_manager = WorkManager::new(BlockHeaderV1 {
+    let header = BlockHeaderV1 {
         version: 1,
         parent_hash: niahcia_parent_hash,
         height: execution.block_number,
@@ -196,7 +198,12 @@ fn main() -> ExitCode {
         target: [0xff; 32],
         nonce: 0,
         extra_nonce: 0,
-    });
+    };
+
+    let seed_height = randomx_seed_height(header.height);
+    let seed_block_id = niahcia_parent_hash;
+    let seed = randomx_seed(seed_block_id);
+    let work_manager = WorkManager::new(header, seed_height, seed);
 
     info!(
         height = execution.block_number,
@@ -205,6 +212,8 @@ fn main() -> ExitCode {
         execution_payload_hash = %hex::encode(built.execution_payload_hash),
         transactions_root = %hex::encode(execution.transactions_root),
         execution_root = %hex::encode(execution.commitment_hash()),
+        randomx_seed_height = seed_height,
+        randomx_seed = %hex::encode(seed),
         "installed Reth-backed NIAHCIA mining template"
     );
 
