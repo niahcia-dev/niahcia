@@ -617,7 +617,7 @@ pub struct ServiceEpochReportV1 {
     pub verified_bytes_served: u64,
     pub distinct_requester_count: u64,
     pub distinct_challenge_block_count: u64,
-    pub service_classes: Vec<u64>,
+    pub service_classes: Vec<String>,
     pub evidence_root: Hash32,
     pub eligibility_weight: u64,
     pub created_block: Hash32,
@@ -651,10 +651,25 @@ fn cbor_bytes(out: &mut Vec<u8>, bytes: &[u8]) {
     out.extend_from_slice(bytes);
 }
 
-fn cbor_array_u64(out: &mut Vec<u8>, values: &[u64]) {
-    cbor_major_len(out, 4, values.len() as u64);
-    for value in values {
-        cbor_uint(out, *value);
+fn cbor_text(out: &mut Vec<u8>, value: &str) {
+    cbor_major_len(out, 3, value.len() as u64);
+    out.extend_from_slice(value.as_bytes());
+}
+
+fn cbor_service_classes(out: &mut Vec<u8>, values: &[String]) {
+    let mut ordered = values.to_vec();
+    ordered.sort_by(|left, right| {
+        let mut left_encoded = Vec::new();
+        let mut right_encoded = Vec::new();
+        cbor_text(&mut left_encoded, left);
+        cbor_text(&mut right_encoded, right);
+        left_encoded.cmp(&right_encoded)
+    });
+    ordered.dedup();
+
+    cbor_major_len(out, 4, ordered.len() as u64);
+    for value in ordered {
+        cbor_text(out, &value);
     }
 }
 
@@ -728,7 +743,7 @@ fn encode_service_epoch_payload(report: &ServiceEpochReportV1, include_report_id
     cbor_uint(&mut out, 13);
     cbor_uint(&mut out, report.distinct_challenge_block_count);
     cbor_uint(&mut out, 14);
-    cbor_array_u64(&mut out, &report.service_classes);
+    cbor_service_classes(&mut out, &report.service_classes);
     cbor_uint(&mut out, 15);
     cbor_bytes(&mut out, &report.evidence_root);
     cbor_uint(&mut out, 16);
@@ -1106,7 +1121,7 @@ mod tests {
             verified_bytes_served: 28_672,
             distinct_requester_count: 4,
             distinct_challenge_block_count: 7,
-            service_classes: vec![1, 2],
+            service_classes: vec!["ARCHIVE".into(), "MODEL_STORAGE".into()],
             evidence_root: [0x33; 32],
             eligibility_weight: 28_672,
             created_block: [0x44; 32],
