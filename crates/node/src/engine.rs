@@ -10,7 +10,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 #[derive(Debug, Clone)]
 pub struct LatestBlock {
     pub hash: Hash32,
-    pub number: u64,
     pub timestamp: u64,
 }
 
@@ -72,7 +71,6 @@ impl EngineClient {
 
         Ok(LatestBlock {
             hash: parse_hash32(field_str(&result, "hash")?)?,
-            number: parse_quantity(field_str(&result, "number")?)?,
             timestamp: parse_quantity(field_str(&result, "timestamp")?)?,
         })
     }
