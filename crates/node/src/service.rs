@@ -1418,7 +1418,10 @@ mod tests {
         select_storage_segments, service_epoch_report_canonical_bytes,
         service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
         service_evidence_root, sign_service_epoch_report, sign_storage_challenge,
-        sign_storage_commitment, storage_challenge_seed, storage_commitment_canonical_bytes,
+        sign_storage_commitment, storage_challenge_canonical_bytes,
+        storage_challenge_id_preimage, storage_challenge_seed,
+        storage_challenge_signing_digest, storage_challenge_signing_preimage,
+        storage_commitment_canonical_bytes,
         storage_commitment_id_preimage, storage_commitment_signing_digest,
         storage_commitment_signing_preimage, storage_manifest_leaf, storage_manifest_node,
         storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
@@ -1534,6 +1537,70 @@ mod tests {
             },
         )
         .is_err());
+    }
+    #[test]
+    fn locked_storage_challenge_vector_matches() {
+        let secret = [0x0a_u8; 32];
+        let signing_key = k256::ecdsa::SigningKey::from_slice(&secret).unwrap();
+        let public_key = signing_key.verifying_key().to_encoded_point(true);
+        assert_eq!(
+            hex::encode(public_key.as_bytes()),
+            "03f76a39d05686e34a4420897e359371836145dd3973e3982568b60f8433adde6e"
+        );
+        let challenger_id = derive_service_node_id(public_key.as_bytes()).unwrap();
+        assert_eq!(
+            hex::encode(challenger_id),
+            "a53e0f71a08bab3aa14045adc7a535c61b2bc4c87af311547ce620f7fba5f283"
+        );
+
+        let mut challenge = build_storage_challenge_v1(
+            b"niahcia-dev",
+            StorageChallengeParams {
+                commitment_id: [0x31; 32],
+                challenge_block_id: [0x42; 32],
+                challenge_height: 900,
+                requested_ranges: vec![
+                    ChallengeSegment { chunk_index: 2, segment_index: 3, offset: 12_288, length: 4096 },
+                    ChallengeSegment { chunk_index: 5, segment_index: 0, offset: 0, length: 1024 },
+                ],
+                issued_at: 1_000_000,
+                response_deadline: 1_000_030,
+                challenger_id,
+            },
+        ).unwrap();
+
+        assert_eq!(
+            hex::encode(challenge.challenge_seed),
+            "a772492e1fae81dd7610230ae2d288eed165a807719edf5daffbf8d2d6513313"
+        );
+        assert_eq!(
+            hex::encode(storage_challenge_id_preimage(&challenge)),
+            "a4010102190206030104a901010358203131313131313131313131313131313131313131313131313131313131313131045820424242424242424242424242424242424242424242424242424242424242424205190384065820a772492e1fae81dd7610230ae2d288eed165a807719edf5daffbf8d2d6513313078284020319300019100084050000190400081a000f4240091a000f425e0a5820a53e0f71a08bab3aa14045adc7a535c61b2bc4c87af311547ce620f7fba5f283"
+        );
+        assert_eq!(
+            hex::encode(challenge.challenge_id),
+            "5e623e834459f2f73f8a324fdf35c003c9dbf79322dbd68a1e1b56ea25974763"
+        );
+        assert_eq!(
+            hex::encode(storage_challenge_signing_preimage(&challenge)),
+            "a4010102190206030104aa01010258205e623e834459f2f73f8a324fdf35c003c9dbf79322dbd68a1e1b56ea259747630358203131313131313131313131313131313131313131313131313131313131313131045820424242424242424242424242424242424242424242424242424242424242424205190384065820a772492e1fae81dd7610230ae2d288eed165a807719edf5daffbf8d2d6513313078284020319300019100084050000190400081a000f4240091a000f425e0a5820a53e0f71a08bab3aa14045adc7a535c61b2bc4c87af311547ce620f7fba5f283"
+        );
+        assert_eq!(
+            hex::encode(storage_challenge_signing_digest(b"niahcia-dev", &challenge)),
+            "913ae6ddaf54688427d14f1e584e318a823f4873ac8fb8bfe02d5a3f0c0c51e6"
+        );
+
+        sign_storage_challenge(b"niahcia-dev", &mut challenge, &secret).unwrap();
+        assert_eq!(
+            hex::encode(&challenge.signature),
+            "fa68cd03c27aa69e3ba6a444079a0f86397dc24e6b83a04ec8ce4c9275704ea074382503bca56323bf6cc4e544e0a38c8f399a73351e704f13fdba87f8041dbd"
+        );
+        assert_eq!(
+            hex::encode(storage_challenge_canonical_bytes(&challenge)),
+            "a4010102190206030104ab01010258205e623e834459f2f73f8a324fdf35c003c9dbf79322dbd68a1e1b56ea259747630358203131313131313131313131313131313131313131313131313131313131313131045820424242424242424242424242424242424242424242424242424242424242424205190384065820a772492e1fae81dd7610230ae2d288eed165a807719edf5daffbf8d2d6513313078284020319300019100084050000190400081a000f4240091a000f425e0a5820a53e0f71a08bab3aa14045adc7a535c61b2bc4c87af311547ce620f7fba5f2830b5840fa68cd03c27aa69e3ba6a444079a0f86397dc24e6b83a04ec8ce4c9275704ea074382503bca56323bf6cc4e544e0a38c8f399a73351e704f13fdba87f8041dbd"
+        );
+        verify_storage_challenge_signature(b"niahcia-dev", &challenge, public_key.as_bytes())
+            .unwrap();
     }
     #[test]
     fn storage_challenge_is_canonical_signed_seed_bound_and_network_bound() {
