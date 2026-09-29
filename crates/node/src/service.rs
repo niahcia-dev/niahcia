@@ -409,7 +409,7 @@ pub struct ServiceEpochAccumulator {
     pub challenges_passed: u64,
     pub challenges_failed: u64,
     pub deadlines_missed: u64,
-    pub verified_bytes_served: u128,
+    pub verified_bytes_served: u64,
     requester_ids: HashSet<Hash32>,
     challenge_block_ids: HashSet<Hash32>,
 }
@@ -447,7 +447,7 @@ impl ServiceEpochAccumulator {
         self.challenges_passed = self.challenges_passed.saturating_add(1);
         self.verified_bytes_served = self
             .verified_bytes_served
-            .saturating_add(u128::from(verified_bytes));
+            .saturating_add(verified_bytes);
         self.requester_ids.insert(requester_id);
         self.challenge_block_ids.insert(challenge_block_id);
         Ok(())
@@ -490,7 +490,7 @@ impl ServiceEpochAccumulator {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceEligibility {
     pub eligible: bool,
-    pub weight: u128,
+    pub weight: u64,
     pub reason: &'static str,
 }
 
@@ -548,11 +548,10 @@ pub fn evaluate_service_eligibility(
         eligible: true,
         weight: epoch
             .verified_bytes_served
-            .max(u128::from(epoch.challenges_passed)),
+            .max(epoch.challenges_passed),
         reason: "eligible",
     }
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FinalizedServiceEpochReport {
@@ -567,7 +566,7 @@ pub struct FinalizedServiceEpochReport {
     pub distinct_challenge_block_count: u64,
     pub evidence_root: Hash32,
     pub eligible: bool,
-    pub eligibility_weight: u128,
+    pub eligibility_weight: u64,
 }
 
 pub fn finalize_service_epoch_report(
@@ -600,16 +599,223 @@ pub fn finalize_service_epoch_report(
     }
 }
 
+
+pub const SERVICE_EPOCH_REPORT_OBJECT_TYPE: u64 = 0x0208;
+pub const SERVICE_EPOCH_REPORT_SCHEMA_VERSION: u64 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceEpochReportV1 {
+    pub report_id: Hash32,
+    pub service_node_id: Hash32,
+    pub operator_id: Hash32,
+    pub epoch_start_height: u64,
+    pub epoch_end_height: u64,
+    pub commitments_sampled: u64,
+    pub challenges_passed: u64,
+    pub challenges_failed: u64,
+    pub deadlines_missed: u64,
+    pub verified_bytes_served: u64,
+    pub distinct_requester_count: u64,
+    pub distinct_challenge_block_count: u64,
+    pub service_classes: Vec<u64>,
+    pub evidence_root: Hash32,
+    pub eligibility_weight: u64,
+    pub created_block: Hash32,
+    pub signature: Vec<u8>,
+}
+
+fn cbor_uint(out: &mut Vec<u8>, value: u64) {
+    match value {
+        0..=23 => out.push(value as u8),
+        24..=0xff => {
+            out.push(0x18);
+            out.push(value as u8);
+        }
+        0x100..=0xffff => {
+            out.push(0x19);
+            out.extend_from_slice(&(value as u16).to_be_bytes());
+        }
+        0x1_0000..=0xffff_ffff => {
+            out.push(0x1a);
+            out.extend_from_slice(&(value as u32).to_be_bytes());
+        }
+        _ => {
+            out.push(0x1b);
+            out.extend_from_slice(&value.to_be_bytes());
+        }
+    }
+}
+
+fn cbor_bytes(out: &mut Vec<u8>, bytes: &[u8]) {
+    cbor_major_len(out, 2, bytes.len() as u64);
+    out.extend_from_slice(bytes);
+}
+
+fn cbor_array_u64(out: &mut Vec<u8>, values: &[u64]) {
+    cbor_major_len(out, 4, values.len() as u64);
+    for value in values {
+        cbor_uint(out, *value);
+    }
+}
+
+fn cbor_map_len(out: &mut Vec<u8>, len: u64) {
+    cbor_major_len(out, 5, len);
+}
+
+fn cbor_major_len(out: &mut Vec<u8>, major: u8, value: u64) {
+    let prefix = major << 5;
+    match value {
+        0..=23 => out.push(prefix | value as u8),
+        24..=0xff => {
+            out.push(prefix | 24);
+            out.push(value as u8);
+        }
+        0x100..=0xffff => {
+            out.push(prefix | 25);
+            out.extend_from_slice(&(value as u16).to_be_bytes());
+        }
+        0x1_0000..=0xffff_ffff => {
+            out.push(prefix | 26);
+            out.extend_from_slice(&(value as u32).to_be_bytes());
+        }
+        _ => {
+            out.push(prefix | 27);
+            out.extend_from_slice(&value.to_be_bytes());
+        }
+    }
+}
+
+fn encode_service_epoch_payload(report: &ServiceEpochReportV1, include_report_id: bool, include_signature: bool) -> Vec<u8> {
+    let mut fields = 16_u64;
+    if include_report_id {
+        fields += 1;
+    }
+    if include_signature {
+        fields += 1;
+    }
+
+    let mut out = Vec::new();
+    cbor_map_len(&mut out, fields);
+
+    cbor_uint(&mut out, 1);
+    cbor_uint(&mut out, SERVICE_EPOCH_REPORT_SCHEMA_VERSION);
+
+    if include_report_id {
+        cbor_uint(&mut out, 2);
+        cbor_bytes(&mut out, &report.report_id);
+    }
+
+    cbor_uint(&mut out, 3);
+    cbor_bytes(&mut out, &report.service_node_id);
+    cbor_uint(&mut out, 4);
+    cbor_bytes(&mut out, &report.operator_id);
+    cbor_uint(&mut out, 5);
+    cbor_uint(&mut out, report.epoch_start_height);
+    cbor_uint(&mut out, 6);
+    cbor_uint(&mut out, report.epoch_end_height);
+    cbor_uint(&mut out, 7);
+    cbor_uint(&mut out, report.commitments_sampled);
+    cbor_uint(&mut out, 8);
+    cbor_uint(&mut out, report.challenges_passed);
+    cbor_uint(&mut out, 9);
+    cbor_uint(&mut out, report.challenges_failed);
+    cbor_uint(&mut out, 10);
+    cbor_uint(&mut out, report.deadlines_missed);
+    cbor_uint(&mut out, 11);
+    cbor_uint(&mut out, report.verified_bytes_served);
+    cbor_uint(&mut out, 12);
+    cbor_uint(&mut out, report.distinct_requester_count);
+    cbor_uint(&mut out, 13);
+    cbor_uint(&mut out, report.distinct_challenge_block_count);
+    cbor_uint(&mut out, 14);
+    cbor_array_u64(&mut out, &report.service_classes);
+    cbor_uint(&mut out, 15);
+    cbor_bytes(&mut out, &report.evidence_root);
+    cbor_uint(&mut out, 16);
+    cbor_uint(&mut out, report.eligibility_weight);
+    cbor_uint(&mut out, 17);
+    cbor_bytes(&mut out, &report.created_block);
+
+    if include_signature {
+        cbor_uint(&mut out, 18);
+        cbor_bytes(&mut out, &report.signature);
+    }
+
+    out
+}
+
+fn encode_nce_envelope(payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    cbor_map_len(&mut out, 4);
+    cbor_uint(&mut out, 1);
+    cbor_uint(&mut out, 1);
+    cbor_uint(&mut out, 2);
+    cbor_uint(&mut out, SERVICE_EPOCH_REPORT_OBJECT_TYPE);
+    cbor_uint(&mut out, 3);
+    cbor_uint(&mut out, SERVICE_EPOCH_REPORT_SCHEMA_VERSION);
+    cbor_uint(&mut out, 4);
+    out.extend_from_slice(payload);
+    out
+}
+
+pub fn service_epoch_report_id_preimage(report: &ServiceEpochReportV1) -> Vec<u8> {
+    encode_nce_envelope(&encode_service_epoch_payload(report, false, false))
+}
+
+pub fn service_epoch_report_signing_preimage(report: &ServiceEpochReportV1) -> Vec<u8> {
+    encode_nce_envelope(&encode_service_epoch_payload(report, true, false))
+}
+
+pub fn service_epoch_report_canonical_bytes(report: &ServiceEpochReportV1) -> Vec<u8> {
+    encode_nce_envelope(&encode_service_epoch_payload(report, true, true))
+}
+
+fn generic_protocol_digest(purpose: &[u8], network_id: &[u8], canonical_bytes: &[u8]) -> Hash32 {
+    let mut preimage = Vec::with_capacity(
+        b"NIAHCIA".len() + 1 + purpose.len() + 1 + network_id.len() + 1 + canonical_bytes.len(),
+    );
+    preimage.extend_from_slice(b"NIAHCIA");
+    preimage.push(0);
+    preimage.extend_from_slice(purpose);
+    preimage.push(0);
+    preimage.extend_from_slice(network_id);
+    preimage.push(0);
+    preimage.extend_from_slice(canonical_bytes);
+    keccak256(&preimage)
+}
+
+pub fn derive_service_epoch_report_id(network_id: &[u8], report: &ServiceEpochReportV1) -> Hash32 {
+    generic_protocol_digest(
+        b"ID/SERVICE_EPOCH_REPORT",
+        network_id,
+        &service_epoch_report_id_preimage(report),
+    )
+}
+
+pub fn service_epoch_report_signing_digest(
+    network_id: &[u8],
+    report: &ServiceEpochReportV1,
+) -> Hash32 {
+    generic_protocol_digest(
+        b"SIGN/SERVICE_EPOCH_REPORT",
+        network_id,
+        &service_epoch_report_signing_preimage(report),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        evaluate_service_eligibility, finalize_service_epoch_report, evidence_replay_key, select_storage_ranges,
-        select_storage_segments, service_evidence_root, storage_challenge_seed,
-        storage_manifest_leaf, storage_manifest_node, storage_manifest_root, storage_range_leaf,
-        storage_range_node, storage_range_root, verify_response_meta,
-        verify_storage_manifest_proof, verify_storage_range_proof, ChallengeSegment,
-        ExpectedResponseMeta, ManifestProofStep, RangeProofStep, ResponseMeta,
-        ServiceEpochAccumulator,
+        derive_service_epoch_report_id, evaluate_service_eligibility, evidence_replay_key,
+        finalize_service_epoch_report,
+        select_storage_ranges, select_storage_segments, service_epoch_report_canonical_bytes,
+        service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
+        service_evidence_root,
+        storage_challenge_seed, storage_manifest_leaf, storage_manifest_node,
+        storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
+        verify_response_meta, verify_storage_manifest_proof, verify_storage_range_proof,
+        ChallengeSegment, ExpectedResponseMeta, ManifestProofStep, RangeProofStep, ResponseMeta,
+        ServiceEpochAccumulator, ServiceEpochReportV1,
     };
 
     #[test]
@@ -882,6 +1088,56 @@ mod tests {
         assert_eq!(
             epoch.evidence_root(),
             service_evidence_root(&[[0x01; 32], [0x02; 32]])
+        );
+    }
+
+    #[test]
+    fn service_epoch_report_nce_is_deterministic_and_domain_bound() {
+        let mut report = ServiceEpochReportV1 {
+            report_id: [0_u8; 32],
+            service_node_id: [0x11; 32],
+            operator_id: [0x22; 32],
+            epoch_start_height: 720,
+            epoch_end_height: 1440,
+            commitments_sampled: 8,
+            challenges_passed: 7,
+            challenges_failed: 1,
+            deadlines_missed: 0,
+            verified_bytes_served: 28_672,
+            distinct_requester_count: 4,
+            distinct_challenge_block_count: 7,
+            service_classes: vec![1, 2],
+            evidence_root: [0x33; 32],
+            eligibility_weight: 28_672,
+            created_block: [0x44; 32],
+            signature: vec![],
+        };
+
+        let id = derive_service_epoch_report_id(b"devnet/prototype0", &report);
+        assert_ne!(id, [0_u8; 32]);
+        report.report_id = id;
+
+        let signing_preimage = service_epoch_report_signing_preimage(&report);
+        let signing_digest =
+            service_epoch_report_signing_digest(b"devnet/prototype0", &report);
+        let other_network_digest =
+            service_epoch_report_signing_digest(b"testnet/prototype0", &report);
+
+        assert_eq!(
+            signing_preimage,
+            service_epoch_report_signing_preimage(&report)
+        );
+        assert_ne!(signing_digest, other_network_digest);
+
+        report.signature = vec![0xaa; 65];
+        let canonical = service_epoch_report_canonical_bytes(&report);
+        assert_ne!(canonical, signing_preimage);
+
+        let mut changed = report.clone();
+        changed.verified_bytes_served += 1;
+        assert_ne!(
+            derive_service_epoch_report_id(b"devnet/prototype0", &changed),
+            report.report_id
         );
     }
 
