@@ -858,7 +858,8 @@ pub fn derive_service_node_id(public_key_sec1: &[u8]) -> Result<Hash32, String> 
     let verifying_key = VerifyingKey::from_sec1_bytes(public_key_sec1)
         .map_err(|_| "invalid secp256k1 service public key".to_string())?;
     let compressed = verifying_key.to_encoded_point(true);
-    let mut preimage = Vec::with_capacity(SERVICE_NODE_ID_DOMAIN.len() + compressed.as_bytes().len());
+    let mut preimage =
+        Vec::with_capacity(SERVICE_NODE_ID_DOMAIN.len() + compressed.as_bytes().len());
     preimage.extend_from_slice(SERVICE_NODE_ID_DOMAIN);
     preimage.extend_from_slice(compressed.as_bytes());
     Ok(keccak256(&preimage))
@@ -939,13 +940,14 @@ pub fn attach_service_epoch_signature(
 mod tests {
     use super::{
         attach_service_epoch_signature, build_service_epoch_report_v1,
-        derive_service_epoch_report_id, derive_service_node_id, evaluate_service_eligibility, evidence_replay_key,
-        finalize_service_epoch_report, select_storage_ranges, select_storage_segments,
-        service_epoch_report_canonical_bytes, service_epoch_report_signing_digest,
-        service_epoch_report_signing_preimage, service_evidence_root, sign_service_epoch_report,
-        storage_challenge_seed, storage_manifest_leaf, storage_manifest_node,
-        storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
-        verify_response_meta, verify_service_epoch_report_signature, verify_storage_manifest_proof,
+        derive_service_epoch_report_id, derive_service_node_id, evaluate_service_eligibility,
+        evidence_replay_key, finalize_service_epoch_report, select_storage_ranges,
+        select_storage_segments, service_epoch_report_canonical_bytes,
+        service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
+        service_evidence_root, sign_service_epoch_report, storage_challenge_seed,
+        storage_manifest_leaf, storage_manifest_node, storage_manifest_root, storage_range_leaf,
+        storage_range_node, storage_range_root, verify_response_meta,
+        verify_service_epoch_report_signature, verify_storage_manifest_proof,
         verify_storage_range_proof, ChallengeSegment, ExpectedResponseMeta, ManifestProofStep,
         RangeProofStep, ResponseMeta, ServiceEpochAccumulator, ServiceEpochReportV1,
     };
