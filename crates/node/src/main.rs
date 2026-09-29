@@ -10,6 +10,7 @@ use config::NodeConfig;
 use consensus::{randomx_seed, randomx_seed_height};
 use engine::EngineClient;
 use mining_rpc::WorkManager;
+use state::StateStore;
 use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -128,6 +129,34 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
+    let state_path = config.data_dir.join("niahcia-state.redb");
+    let state = match StateStore::open(&state_path) {
+        Ok(store) => store,
+        Err(e) => {
+            error!(error = %e, path = %state_path.display(), "failed to open NIAHCIA state");
+            return ExitCode::from(1);
+        }
+    };
+
+    let persisted_head = match state.best_chain_head() {
+        Ok(head) => head,
+        Err(e) => {
+            error!(error = %e, "failed to recover persisted NIAHCIA best head");
+            return ExitCode::from(1);
+        }
+    };
+
+    if let Some(head) = &persisted_head {
+        info!(
+            height = head.header.height,
+            block_id = %hex::encode(head.block_id()),
+            cumulative_work = %head.chain_work.to_str_radix(10),
+            "recovered persisted NIAHCIA best head"
+        );
+    } else {
+        info!("no persisted NIAHCIA chain head; starting from genesis template");
+    }
+
     let engine = match EngineClient::new(
         config.reth_engine_api.clone(),
         config.reth_http_rpc.clone(),
@@ -188,12 +217,24 @@ fn main() -> ExitCode {
     };
 
     let execution = &built.commitments;
-    let niahcia_parent_hash = [0_u8; 32];
+    let (niahcia_parent_hash, niahcia_height) = match &persisted_head {
+        Some(head) => (
+            head.block_id(),
+            match head.header.height.checked_add(1) {
+                Some(height) => height,
+                None => {
+                    error!("persisted NIAHCIA height overflow");
+                    return ExitCode::from(1);
+                }
+            },
+        ),
+        None => ([0_u8; 32], 0),
+    };
 
     let header = BlockHeaderV1 {
         version: 1,
         parent_hash: niahcia_parent_hash,
-        height: execution.block_number,
+        height: niahcia_height,
         timestamp: execution.timestamp,
         transactions_root: execution.transactions_root,
         execution_root: execution.commitment_hash(),
@@ -208,7 +249,8 @@ fn main() -> ExitCode {
     let work_manager = WorkManager::new(header, seed_height, seed);
 
     info!(
-        height = execution.block_number,
+        height = niahcia_height,
+        execution_block_number = execution.block_number,
         niahcia_parent = %hex::encode(niahcia_parent_hash),
         execution_parent = %hex::encode(execution.execution_parent_hash),
         execution_payload_hash = %hex::encode(built.execution_payload_hash),
