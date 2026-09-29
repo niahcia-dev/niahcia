@@ -41,10 +41,7 @@ impl EngineClient {
             "engine_newPayloadV1",
         ];
 
-        let result = self.request(
-            "engine_exchangeCapabilities",
-            json!([offered]),
-        )?;
+        let result = self.request("engine_exchangeCapabilities", json!([offered]))?;
 
         serde_json::from_value(result)
             .map_err(|e| format!("invalid engine_exchangeCapabilities response: {e}"))
