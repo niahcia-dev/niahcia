@@ -491,6 +491,40 @@ impl ServiceEpochAccumulator {
     }
 }
 
+
+pub fn record_verified_storage_response(
+    epoch: &mut ServiceEpochAccumulator,
+    network_id: &[u8],
+    challenge: &StorageChallengeV1,
+    challenger_public_key_sec1: &[u8],
+    response: &StorageResponseV1,
+    provider_public_key_sec1: &[u8],
+    manifest_root: Hash32,
+) -> Result<Hash32, String> {
+    if challenge.challenge_height < epoch.epoch_start_height
+        || challenge.challenge_height >= epoch.epoch_end_height
+    {
+        return Err("storage challenge height is outside service epoch".into());
+    }
+
+    verify_storage_challenge_signature(network_id, challenge, challenger_public_key_sec1)?;
+    verify_storage_response_signature(network_id, response, provider_public_key_sec1)?;
+    let verified_bytes = verify_storage_response_evidence(response, challenge, manifest_root)?;
+
+    let evidence_key = evidence_replay_key(
+        challenge.challenge_id,
+        response.service_node_id,
+        response.response_id,
+    );
+    epoch.record_success(
+        evidence_key,
+        challenge.challenger_id,
+        challenge.challenge_block_id,
+        verified_bytes,
+    )?;
+    Ok(evidence_key)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceEligibility {
     pub eligible: bool,
@@ -1763,7 +1797,8 @@ mod tests {
         build_storage_commitment_v1, build_storage_response_v1, derive_service_epoch_report_id,
         derive_service_node_id, derive_storage_challenge_id, derive_storage_commitment_id,
         derive_storage_response_id, evaluate_service_eligibility, evidence_replay_key,
-        finalize_service_epoch_report, select_storage_ranges, select_storage_segments,
+        finalize_service_epoch_report, record_verified_storage_response, select_storage_ranges,
+        select_storage_segments,
         service_epoch_report_canonical_bytes, service_epoch_report_signing_digest,
         service_epoch_report_signing_preimage, service_evidence_root, sign_service_epoch_report,
         sign_storage_challenge, sign_storage_commitment, sign_storage_response,
@@ -1889,6 +1924,103 @@ mod tests {
         )
         .is_err());
     }
+    #[test]
+    fn verified_storage_response_records_once_in_epoch() {
+        let challenger_secret = [0x0a_u8; 32];
+        let challenger_key = k256::ecdsa::SigningKey::from_slice(&challenger_secret).unwrap();
+        let challenger_public = challenger_key.verifying_key().to_encoded_point(true);
+        let challenger_id = derive_service_node_id(challenger_public.as_bytes()).unwrap();
+
+        let provider_secret = [0x0b_u8; 32];
+        let provider_key = k256::ecdsa::SigningKey::from_slice(&provider_secret).unwrap();
+        let provider_public = provider_key.verifying_key().to_encoded_point(true);
+        let service_node_id = derive_service_node_id(provider_public.as_bytes()).unwrap();
+
+        let returned_bytes = b"abcdefgh".to_vec();
+        let range_root = storage_range_leaf(0, &returned_bytes);
+        let chunk_hash = [0x70; 32];
+        let manifest_root = storage_manifest_leaf(0, 8, chunk_hash, range_root);
+
+        let mut challenge = build_storage_challenge_v1(
+            b"niahcia-dev",
+            StorageChallengeParams {
+                commitment_id: [0x31; 32],
+                challenge_block_id: [0x42; 32],
+                challenge_height: 100,
+                requested_ranges: vec![ChallengeSegment {
+                    chunk_index: 0,
+                    segment_index: 0,
+                    offset: 0,
+                    length: 8,
+                }],
+                issued_at: 1000,
+                response_deadline: 1030,
+                challenger_id,
+            },
+        )
+        .unwrap();
+        sign_storage_challenge(b"niahcia-dev", &mut challenge, &challenger_secret).unwrap();
+
+        let mut response = build_storage_response_v1(
+            b"niahcia-dev",
+            StorageResponseParams {
+                challenge_id: challenge.challenge_id,
+                commitment_id: challenge.commitment_id,
+                service_node_id,
+                answered_at: 1020,
+                range_proofs: vec![StorageRangeProofV1 {
+                    chunk_index: 0,
+                    segment_index: 0,
+                    offset: 0,
+                    length: 8,
+                    returned_bytes,
+                    chunk_length: 8,
+                    chunk_hash,
+                    range_root,
+                    range_proof: Vec::new(),
+                    manifest_proof: Vec::new(),
+                }],
+            },
+        )
+        .unwrap();
+        sign_storage_response(b"niahcia-dev", &mut response, &provider_secret).unwrap();
+
+        let mut epoch = ServiceEpochAccumulator::new(0, 720).unwrap();
+        let evidence_key = record_verified_storage_response(
+            &mut epoch,
+            b"niahcia-dev",
+            &challenge,
+            challenger_public.as_bytes(),
+            &response,
+            provider_public.as_bytes(),
+            manifest_root,
+        )
+        .unwrap();
+
+        assert_eq!(
+            evidence_key,
+            evidence_replay_key(
+                challenge.challenge_id,
+                response.service_node_id,
+                response.response_id
+            )
+        );
+        assert_eq!(epoch.challenges_passed, 1);
+        assert_eq!(epoch.verified_bytes_served, 8);
+        assert_eq!(epoch.distinct_requester_count(), 1);
+        assert_eq!(epoch.distinct_challenge_block_count(), 1);
+        assert!(record_verified_storage_response(
+            &mut epoch,
+            b"niahcia-dev",
+            &challenge,
+            challenger_public.as_bytes(),
+            &response,
+            provider_public.as_bytes(),
+            manifest_root,
+        )
+        .is_err());
+    }
+
     #[test]
     fn locked_storage_response_vector_matches() {
         let secret = [0x0b_u8; 32];
