@@ -1,17 +1,20 @@
 mod config;
 mod engine;
+mod mining_rpc;
 pub mod work;
 
 use config::NodeConfig;
 use engine::EngineClient;
+use mining_rpc::WorkManager;
 use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{error, info};
+use work::PowWorkTemplate;
 use tracing_subscriber::EnvFilter;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -132,6 +135,24 @@ fn main() -> ExitCode {
         }
     }
 
+    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(value) => value.as_secs(),
+        Err(e) => {
+            error!(error = %e, "system clock error");
+            return ExitCode::from(1);
+        }
+    };
+
+    let work_manager = WorkManager::new(PowWorkTemplate {
+        version: 1,
+        height: 0,
+        parent_hash: [0_u8; 32],
+        execution_commitment: [0_u8; 32],
+        timestamp: now,
+        difficulty: 1,
+        target: [0xff; 32],
+    });
+
     let running = Arc::new(AtomicBool::new(true));
     let signal_running = Arc::clone(&running);
 
@@ -142,6 +163,18 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
+    let rpc_handle = match mining_rpc::spawn(
+        config.mining_rpc_bind,
+        work_manager,
+        Arc::clone(&running),
+    ) {
+        Ok(handle) => handle,
+        Err(e) => {
+            error!(error = %e, "failed to start mining RPC");
+            return ExitCode::from(1);
+        }
+    };
+
     info!("node bootstrap running; press Ctrl-C to stop");
 
     while running.load(Ordering::SeqCst) {
@@ -149,6 +182,12 @@ fn main() -> ExitCode {
     }
 
     info!("shutdown requested");
+
+    if rpc_handle.join().is_err() {
+        error!("mining RPC thread terminated unexpectedly");
+        return ExitCode::from(1);
+    }
+
     info!("NIAHCIA stopped cleanly");
     ExitCode::SUCCESS
 }
