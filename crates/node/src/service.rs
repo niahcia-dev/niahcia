@@ -16,6 +16,7 @@ pub const STORAGE_RANGE_EMPTY_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-RANGE-EMPTY/V1";
 pub const SERVICE_EVIDENCE_LEAF_DOMAIN: &[u8] = b"NIAHCIA/SERVICE-EVIDENCE-LEAF/V1";
 pub const SERVICE_EVIDENCE_NODE_DOMAIN: &[u8] = b"NIAHCIA/SERVICE-EVIDENCE-NODE/V1";
 pub const SERVICE_EVIDENCE_EMPTY_DOMAIN: &[u8] = b"NIAHCIA/SERVICE-EVIDENCE-EMPTY/V1";
+pub const SERVICE_NODE_ID_DOMAIN: &[u8] = b"NIAHCIA/SERVICE-NODE-ID/V1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChallengeRange {
@@ -853,11 +854,34 @@ pub fn build_service_epoch_report_v1(
     report
 }
 
+pub fn derive_service_node_id(public_key_sec1: &[u8]) -> Result<Hash32, String> {
+    let verifying_key = VerifyingKey::from_sec1_bytes(public_key_sec1)
+        .map_err(|_| "invalid secp256k1 service public key".to_string())?;
+    let compressed = verifying_key.to_encoded_point(true);
+    let mut preimage = Vec::with_capacity(SERVICE_NODE_ID_DOMAIN.len() + compressed.as_bytes().len());
+    preimage.extend_from_slice(SERVICE_NODE_ID_DOMAIN);
+    preimage.extend_from_slice(compressed.as_bytes());
+    Ok(keccak256(&preimage))
+}
+
+pub fn verify_service_node_identity(
+    service_node_id: Hash32,
+    public_key_sec1: &[u8],
+) -> Result<(), String> {
+    let derived = derive_service_node_id(public_key_sec1)?;
+    if derived != service_node_id {
+        return Err("service_node_id does not match secp256k1 public key".into());
+    }
+    Ok(())
+}
+
 pub fn sign_service_epoch_report(
     network_id: &[u8],
     report: &mut ServiceEpochReportV1,
     secret_key: &[u8; 32],
 ) -> Result<(), String> {
+    verify_service_node_identity(report.service_node_id, public_key_sec1)?;
+
     let expected_id = derive_service_epoch_report_id(network_id, report);
     if report.report_id != expected_id {
         return Err("service epoch report_id does not match report contents".into());
@@ -915,16 +939,15 @@ pub fn attach_service_epoch_signature(
 mod tests {
     use super::{
         attach_service_epoch_signature, build_service_epoch_report_v1,
-        derive_service_epoch_report_id, evaluate_service_eligibility, evidence_replay_key,
+        derive_service_epoch_report_id, derive_service_node_id, evaluate_service_eligibility, evidence_replay_key,
         finalize_service_epoch_report, select_storage_ranges, select_storage_segments,
         service_epoch_report_canonical_bytes, service_epoch_report_signing_digest,
-        service_epoch_report_signing_preimage, sign_service_epoch_report, service_evidence_root, storage_challenge_seed,
-        storage_manifest_leaf, storage_manifest_node, storage_manifest_root, storage_range_leaf,
-        storage_range_node, storage_range_root, verify_response_meta,
-        verify_service_epoch_report_signature,
-        verify_storage_manifest_proof, verify_storage_range_proof, ChallengeSegment,
-        ExpectedResponseMeta, ManifestProofStep, RangeProofStep, ResponseMeta,
-        ServiceEpochAccumulator, ServiceEpochReportV1,
+        service_epoch_report_signing_preimage, service_evidence_root, sign_service_epoch_report,
+        storage_challenge_seed, storage_manifest_leaf, storage_manifest_node,
+        storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
+        verify_response_meta, verify_service_epoch_report_signature, verify_storage_manifest_proof,
+        verify_storage_range_proof, ChallengeSegment, ExpectedResponseMeta, ManifestProofStep,
+        RangeProofStep, ResponseMeta, ServiceEpochAccumulator, ServiceEpochReportV1,
     };
 
     #[test]
@@ -937,7 +960,12 @@ mod tests {
             .record_success([0x02; 32], [0x11; 32], [0x21; 32], 2048)
             .unwrap();
 
-        let finalized = finalize_service_epoch_report([0xaa; 32], &epoch, 2, 2, 2);
+        let secret = [0x07_u8; 32];
+        let signing_key = k256::ecdsa::SigningKey::from_slice(&secret).unwrap();
+        let public_key = signing_key.verifying_key().to_encoded_point(true);
+        let service_node_id = derive_service_node_id(public_key.as_bytes()).unwrap();
+
+        let finalized = finalize_service_epoch_report(service_node_id, &epoch, 2, 2, 2);
         let mut report = build_service_epoch_report_v1(
             b"niahcia-dev",
             &finalized,
@@ -947,18 +975,10 @@ mod tests {
             [0xcc; 32],
         );
 
-        let secret = [0x07_u8; 32];
-        let signing_key = k256::ecdsa::SigningKey::from_slice(&secret).unwrap();
-        let public_key = signing_key.verifying_key().to_encoded_point(true);
-
         sign_service_epoch_report(b"niahcia-dev", &mut report, &secret).unwrap();
         assert_eq!(report.signature.len(), 64);
-        verify_service_epoch_report_signature(
-            b"niahcia-dev",
-            &report,
-            public_key.as_bytes(),
-        )
-        .unwrap();
+        verify_service_epoch_report_signature(b"niahcia-dev", &report, public_key.as_bytes())
+            .unwrap();
 
         let mut tampered = report.clone();
         tampered.verified_bytes_served += 1;
@@ -975,6 +995,17 @@ mod tests {
             public_key.as_bytes(),
         )
         .is_err());
+    }
+    #[test]
+    fn service_node_id_binds_to_public_key() {
+        let secret = [0x08_u8; 32];
+        let signing_key = k256::ecdsa::SigningKey::from_slice(&secret).unwrap();
+        let public_key = signing_key.verifying_key().to_encoded_point(true);
+        let node_id = derive_service_node_id(public_key.as_bytes()).unwrap();
+
+        assert_ne!(node_id, [0_u8; 32]);
+        assert!(super::verify_service_node_identity(node_id, public_key.as_bytes()).is_ok());
+        assert!(super::verify_service_node_identity([0xff; 32], public_key.as_bytes()).is_err());
     }
     #[test]
     fn service_epoch_report_builder_derives_id_and_signature_is_not_in_id() {
