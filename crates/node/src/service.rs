@@ -165,7 +165,6 @@ pub fn verify_storage_manifest_proof(
     current == expected_root
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RangeProofStep {
     pub sibling: Hash32,
@@ -173,8 +172,7 @@ pub struct RangeProofStep {
 }
 
 pub fn storage_range_leaf(segment_index: u64, segment: &[u8]) -> Hash32 {
-    let mut preimage =
-        Vec::with_capacity(STORAGE_RANGE_LEAF_DOMAIN.len() + 8 + 8 + segment.len());
+    let mut preimage = Vec::with_capacity(STORAGE_RANGE_LEAF_DOMAIN.len() + 8 + 8 + segment.len());
     preimage.extend_from_slice(STORAGE_RANGE_LEAF_DOMAIN);
     preimage.extend_from_slice(&segment_index.to_be_bytes());
     preimage.extend_from_slice(&(segment.len() as u64).to_be_bytes());
