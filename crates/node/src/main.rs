@@ -35,6 +35,8 @@ Environment overrides:
   NIAHCIA_NETWORK
   NIAHCIA_DATA_DIR
   NIAHCIA_RETH_ENGINE_API
+  NIAHCIA_RETH_HTTP_RPC
+  NIAHCIA_FEE_RECIPIENT
   NIAHCIA_RETH_JWT_PATH
   NIAHCIA_MINING_RPC_BIND
   NIAHCIA_LOG_LEVEL
@@ -63,6 +65,14 @@ fn parse_config_path() -> Result<Option<PathBuf>, String> {
     }
 
     Ok(config_path)
+}
+
+fn parse_fee_recipient(value: &str) -> Result<[u8; 20], String> {
+    let raw = value.strip_prefix("0x").unwrap_or(value);
+    let bytes = hex::decode(raw).map_err(|e| format!("invalid fee recipient hex: {e}"))?;
+    bytes
+        .try_into()
+        .map_err(|v: Vec<u8>| format!("fee recipient must be 20 bytes; found {}", v.len()))
 }
 
 fn init_logging(level: &str) {
@@ -105,6 +115,7 @@ fn main() -> ExitCode {
     info!(version = VERSION, network = %config.network, "starting NIAHCIA");
     info!(data_dir = %config.data_dir.display(), "data directory");
     info!(reth_engine_api = %config.reth_engine_api, "Reth Engine API");
+    info!(reth_http_rpc = %config.reth_http_rpc, "Reth public RPC");
     info!(reth_jwt_path = %config.reth_jwt_path.display(), "Reth JWT path");
     info!(mining_rpc_bind = %config.mining_rpc_bind, "mining RPC bind");
 
@@ -113,7 +124,11 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
-    let engine = match EngineClient::new(config.reth_engine_api.clone(), &config.reth_jwt_path) {
+    let engine = match EngineClient::new(
+        config.reth_engine_api.clone(),
+        config.reth_http_rpc.clone(),
+        &config.reth_jwt_path,
+    ) {
         Ok(client) => client,
         Err(e) => {
             error!(error = %e, "failed to initialize Reth Engine API client");
@@ -143,15 +158,47 @@ fn main() -> ExitCode {
         }
     };
 
+    let parent = match engine.latest_block() {
+        Ok(block) => block,
+        Err(e) => {
+            error!(error = %e, "failed to read latest Reth block");
+            return ExitCode::from(1);
+        }
+    };
+
+    let fee_recipient = match parse_fee_recipient(&config.fee_recipient) {
+        Ok(address) => address,
+        Err(e) => {
+            error!(error = %e, "invalid fee recipient");
+            return ExitCode::from(1);
+        }
+    };
+
+    let candidate_timestamp = now.max(parent.timestamp.saturating_add(1));
+    let execution = match engine.build_payload_v3(&parent, candidate_timestamp, fee_recipient) {
+        Ok(payload) => payload,
+        Err(e) => {
+            error!(error = %e, "failed to build Reth execution candidate");
+            return ExitCode::from(1);
+        }
+    };
+
     let work_manager = WorkManager::new(PowWorkTemplate {
         version: 1,
-        height: 0,
-        parent_hash: [0_u8; 32],
-        execution_commitment: [0_u8; 32],
-        timestamp: now,
+        height: execution.block_number,
+        parent_hash: execution.parent_hash,
+        execution_commitment: execution.commitment_hash(),
+        timestamp: execution.timestamp,
         difficulty: 1,
         target: [0xff; 32],
     });
+
+    info!(
+        height = execution.block_number,
+        parent = %hex::encode(execution.parent_hash),
+        execution_commitment = %hex::encode(execution.commitment_hash()),
+        "installed Reth-backed mining template"
+    );
 
     let running = Arc::new(AtomicBool::new(true));
     let signal_running = Arc::clone(&running);
