@@ -718,46 +718,51 @@ pub fn storage_commitment_signing_digest(
     )
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageCommitmentParams {
+    pub service_node_id: Hash32,
+    pub operator_id: Hash32,
+    pub service_class: String,
+    pub object_id: Hash32,
+    pub manifest_root: Hash32,
+    pub chunk_count: u64,
+    pub total_bytes: u64,
+    pub retained_from_block: u64,
+    pub retained_until_block: u64,
+    pub commitment_nonce: u64,
+    pub created_block: Hash32,
+}
+
 pub fn build_storage_commitment_v1(
     network_id: &[u8],
-    service_node_id: Hash32,
-    operator_id: Hash32,
-    service_class: String,
-    object_id: Hash32,
-    manifest_root: Hash32,
-    chunk_count: u64,
-    total_bytes: u64,
-    retained_from_block: u64,
-    retained_until_block: u64,
-    commitment_nonce: u64,
-    created_block: Hash32,
+    params: StorageCommitmentParams,
 ) -> Result<StorageCommitmentV1, String> {
-    if chunk_count == 0 {
+    if params.chunk_count == 0 {
         return Err("storage commitment chunk_count must be non-zero".into());
     }
-    if total_bytes == 0 {
+    if params.total_bytes == 0 {
         return Err("storage commitment total_bytes must be non-zero".into());
     }
-    if retained_until_block <= retained_from_block {
+    if params.retained_until_block <= params.retained_from_block {
         return Err("storage commitment retention interval must be non-empty".into());
     }
-    if service_class.is_empty() {
+    if params.service_class.is_empty() {
         return Err("storage commitment service_class must not be empty".into());
     }
 
     let mut commitment = StorageCommitmentV1 {
         commitment_id: [0_u8; 32],
-        service_node_id,
-        operator_id,
-        service_class,
-        object_id,
-        manifest_root,
-        chunk_count,
-        total_bytes,
-        retained_from_block,
-        retained_until_block,
-        commitment_nonce,
-        created_block,
+        service_node_id: params.service_node_id,
+        operator_id: params.operator_id,
+        service_class: params.service_class,
+        object_id: params.object_id,
+        manifest_root: params.manifest_root,
+        chunk_count: params.chunk_count,
+        total_bytes: params.total_bytes,
+        retained_from_block: params.retained_from_block,
+        retained_until_block: params.retained_until_block,
+        commitment_nonce: params.commitment_nonce,
+        created_block: params.created_block,
         signature: Vec::new(),
     };
     commitment.commitment_id = derive_storage_commitment_id(network_id, &commitment);
@@ -1179,6 +1184,7 @@ mod tests {
         verify_storage_commitment_signature, verify_storage_manifest_proof,
         verify_storage_range_proof, ChallengeSegment, ExpectedResponseMeta, ManifestProofStep,
         RangeProofStep, ResponseMeta, ServiceEpochAccumulator, ServiceEpochReportV1,
+        StorageCommitmentParams,
     };
 
     #[test]
@@ -1190,17 +1196,19 @@ mod tests {
 
         let mut commitment = build_storage_commitment_v1(
             b"niahcia-dev",
-            service_node_id,
-            [0xbb; 32],
-            "MODEL_STORAGE".into(),
-            [0x44; 32],
-            [0x55; 32],
-            4,
-            16_384,
-            100,
-            820,
-            7,
-            [0x66; 32],
+            StorageCommitmentParams {
+                service_node_id,
+                operator_id: [0xbb; 32],
+                service_class: "MODEL_STORAGE".into(),
+                object_id: [0x44; 32],
+                manifest_root: [0x55; 32],
+                chunk_count: 4,
+                total_bytes: 16_384,
+                retained_from_block: 100,
+                retained_until_block: 820,
+                commitment_nonce: 7,
+                created_block: [0x66; 32],
+            },
         )
         .unwrap();
 
@@ -1234,47 +1242,53 @@ mod tests {
         let node_id = [0x11; 32];
         assert!(build_storage_commitment_v1(
             b"niahcia-dev",
-            node_id,
-            [0x22; 32],
-            "MODEL_STORAGE".into(),
-            [0x33; 32],
-            [0x44; 32],
-            0,
-            1,
-            0,
-            720,
-            0,
-            [0x55; 32]
+            StorageCommitmentParams {
+                service_node_id: node_id,
+                operator_id: [0x22; 32],
+                service_class: "MODEL_STORAGE".into(),
+                object_id: [0x33; 32],
+                manifest_root: [0x44; 32],
+                chunk_count: 0,
+                total_bytes: 1,
+                retained_from_block: 0,
+                retained_until_block: 720,
+                commitment_nonce: 0,
+                created_block: [0x55; 32],
+            },
         )
         .is_err());
         assert!(build_storage_commitment_v1(
             b"niahcia-dev",
-            node_id,
-            [0x22; 32],
-            "MODEL_STORAGE".into(),
-            [0x33; 32],
-            [0x44; 32],
-            1,
-            0,
-            0,
-            720,
-            0,
-            [0x55; 32]
+            StorageCommitmentParams {
+                service_node_id: node_id,
+                operator_id: [0x22; 32],
+                service_class: "MODEL_STORAGE".into(),
+                object_id: [0x33; 32],
+                manifest_root: [0x44; 32],
+                chunk_count: 1,
+                total_bytes: 0,
+                retained_from_block: 0,
+                retained_until_block: 720,
+                commitment_nonce: 0,
+                created_block: [0x55; 32],
+            },
         )
         .is_err());
         assert!(build_storage_commitment_v1(
             b"niahcia-dev",
-            node_id,
-            [0x22; 32],
-            "MODEL_STORAGE".into(),
-            [0x33; 32],
-            [0x44; 32],
-            1,
-            1,
-            720,
-            720,
-            0,
-            [0x55; 32]
+            StorageCommitmentParams {
+                service_node_id: node_id,
+                operator_id: [0x22; 32],
+                service_class: "MODEL_STORAGE".into(),
+                object_id: [0x33; 32],
+                manifest_root: [0x44; 32],
+                chunk_count: 1,
+                total_bytes: 1,
+                retained_from_block: 720,
+                retained_until_block: 720,
+                commitment_nonce: 0,
+                created_block: [0x55; 32],
+            },
         )
         .is_err());
     }
