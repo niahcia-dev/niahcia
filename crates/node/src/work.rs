@@ -23,8 +23,7 @@ pub struct ExecutionPayloadCommitments {
 
 impl ExecutionPayloadCommitments {
     pub fn canonical_bytes(&self) -> Vec<u8> {
-        let mut out =
-            Vec::with_capacity(EXECUTION_DOMAIN.len() + 32 + 20 + (32 * 5) + (8 * 4));
+        let mut out = Vec::with_capacity(EXECUTION_DOMAIN.len() + 32 + 20 + (32 * 5) + (8 * 4));
         out.extend_from_slice(EXECUTION_DOMAIN);
         out.extend_from_slice(&self.parent_hash);
         out.extend_from_slice(&self.fee_recipient);
