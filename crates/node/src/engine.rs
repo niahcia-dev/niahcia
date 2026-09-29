@@ -1,3 +1,4 @@
+use crate::work::{Address20, ExecutionPayloadCommitments, Hash32};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::blocking::Client;
 use serde::Serialize;
@@ -6,9 +7,17 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[derive(Debug, Clone)]
+pub struct LatestBlock {
+    pub hash: Hash32,
+    pub number: u64,
+    pub timestamp: u64,
+}
+
 #[derive(Debug)]
 pub struct EngineClient {
-    endpoint: String,
+    engine_endpoint: String,
+    public_endpoint: String,
     jwt_secret: Vec<u8>,
     http: Client,
 }
@@ -19,15 +28,20 @@ struct JwtClaims {
 }
 
 impl EngineClient {
-    pub fn new(endpoint: String, jwt_path: &Path) -> Result<Self, String> {
+    pub fn new(
+        engine_endpoint: String,
+        public_endpoint: String,
+        jwt_path: &Path,
+    ) -> Result<Self, String> {
         let jwt_secret = load_jwt_secret(jwt_path)?;
         let http = Client::builder()
             .timeout(Duration::from_secs(5))
             .build()
-            .map_err(|e| format!("failed to build Engine API HTTP client: {e}"))?;
+            .map_err(|e| format!("failed to build Reth HTTP client: {e}"))?;
 
         Ok(Self {
-            endpoint,
+            engine_endpoint,
+            public_endpoint,
             jwt_secret,
             http,
         })
@@ -36,19 +50,117 @@ impl EngineClient {
     pub fn exchange_capabilities(&self) -> Result<Vec<String>, String> {
         let offered = vec![
             "engine_exchangeCapabilities",
-            "engine_forkchoiceUpdatedV1",
-            "engine_getPayloadV1",
-            "engine_newPayloadV1",
+            "engine_forkchoiceUpdatedV3",
+            "engine_getPayloadV3",
+            "engine_newPayloadV3",
         ];
 
-        let result = self.request("engine_exchangeCapabilities", json!([offered]))?;
+        let result = self.engine_request("engine_exchangeCapabilities", json!([offered]))?;
 
         serde_json::from_value(result)
             .map_err(|e| format!("invalid engine_exchangeCapabilities response: {e}"))
     }
 
-    pub fn request(&self, method: &str, params: Value) -> Result<Value, String> {
+    pub fn latest_block(&self) -> Result<LatestBlock, String> {
+        let result = self.public_request("eth_getBlockByNumber", json!(["latest", false]))?;
+
+        Ok(LatestBlock {
+            hash: parse_hash32(field_str(&result, "hash")?)?,
+            number: parse_quantity(field_str(&result, "number")?)?,
+            timestamp: parse_quantity(field_str(&result, "timestamp")?)?,
+        })
+    }
+
+    pub fn build_payload_v3(
+        &self,
+        parent: &LatestBlock,
+        timestamp: u64,
+        fee_recipient: Address20,
+    ) -> Result<ExecutionPayloadCommitments, String> {
+        if timestamp <= parent.timestamp {
+            return Err(format!(
+                "payload timestamp {timestamp} must be greater than parent timestamp {}",
+                parent.timestamp
+            ));
+        }
+
+        let parent_hex = hex32(parent.hash);
+        let fee_hex = format!("0x{}", hex::encode(fee_recipient));
+        let zero32 = format!("0x{}", "00".repeat(32));
+
+        let forkchoice = json!({
+            "headBlockHash": parent_hex,
+            "safeBlockHash": parent_hex,
+            "finalizedBlockHash": parent_hex
+        });
+
+        let attributes = json!({
+            "timestamp": quantity(timestamp),
+            "prevRandao": zero32,
+            "suggestedFeeRecipient": fee_hex,
+            "withdrawals": [],
+            "parentBeaconBlockRoot": zero32
+        });
+
+        let update = self.engine_request(
+            "engine_forkchoiceUpdatedV3",
+            json!([forkchoice, attributes]),
+        )?;
+
+        let status = update
+            .pointer("/payloadStatus/status")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("forkchoice response missing payloadStatus.status: {update}"))?;
+
+        if status != "VALID" {
+            return Err(format!("Reth rejected forkchoice update with status {status}: {update}"));
+        }
+
+        let payload_id = update
+            .get("payloadId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("forkchoice response missing payloadId: {update}"))?;
+
+        let envelope = self.engine_request("engine_getPayloadV3", json!([payload_id]))?;
+        let payload = envelope
+            .get("executionPayload")
+            .ok_or_else(|| format!("engine_getPayloadV3 missing executionPayload: {envelope}"))?;
+
+        let parent_hash = parse_hash32(field_str(payload, "parentHash")?)?;
+        if parent_hash != parent.hash {
+            return Err("Reth payload parentHash does not match requested parent".into());
+        }
+
+        Ok(ExecutionPayloadCommitments {
+            parent_hash,
+            payload_block_hash: parse_hash32(field_str(payload, "blockHash")?)?,
+            fee_recipient: parse_address20(field_str(payload, "feeRecipient")?)?,
+            state_root: parse_hash32(field_str(payload, "stateRoot")?)?,
+            receipts_root: parse_hash32(field_str(payload, "receiptsRoot")?)?,
+            block_number: parse_quantity(field_str(payload, "blockNumber")?)?,
+            gas_limit: parse_quantity(field_str(payload, "gasLimit")?)?,
+            gas_used: parse_quantity(field_str(payload, "gasUsed")?)?,
+            timestamp: parse_quantity(field_str(payload, "timestamp")?)?,
+            base_fee_per_gas: parse_u256(field_str(payload, "baseFeePerGas")?)?,
+        })
+    }
+
+    fn engine_request(&self, method: &str, params: Value) -> Result<Value, String> {
         let token = self.jwt_token()?;
+        self.request(&self.engine_endpoint, method, params, Some(token))
+    }
+
+    fn public_request(&self, method: &str, params: Value) -> Result<Value, String> {
+        self.request(&self.public_endpoint, method, params, None)
+    }
+
+    fn request(
+        &self,
+        endpoint: &str,
+        method: &str,
+        params: Value,
+        bearer: Option<String>,
+    ) -> Result<Value, String> {
         let body = json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -56,31 +168,32 @@ impl EngineClient {
             "params": params,
         });
 
-        let response = self
-            .http
-            .post(&self.endpoint)
-            .bearer_auth(token)
-            .json(&body)
+        let mut request = self.http.post(endpoint).json(&body);
+        if let Some(token) = bearer {
+            request = request.bearer_auth(token);
+        }
+
+        let response = request
             .send()
-            .map_err(|e| format!("Engine API request failed: {e}"))?;
+            .map_err(|e| format!("{method} request to {endpoint} failed: {e}"))?;
 
         let status = response.status();
         let payload: Value = response
             .json()
-            .map_err(|e| format!("Engine API returned non-JSON response ({status}): {e}"))?;
+            .map_err(|e| format!("{method} returned non-JSON response ({status}): {e}"))?;
 
         if !status.is_success() {
-            return Err(format!("Engine API HTTP {status}: {payload}"));
+            return Err(format!("{method} HTTP {status}: {payload}"));
         }
 
         if let Some(error) = payload.get("error") {
-            return Err(format!("Engine API JSON-RPC error: {error}"));
+            return Err(format!("{method} JSON-RPC error: {error}"));
         }
 
         payload
             .get("result")
             .cloned()
-            .ok_or_else(|| format!("Engine API response missing result: {payload}"))
+            .ok_or_else(|| format!("{method} response missing result: {payload}"))
     }
 
     fn jwt_token(&self) -> Result<String, String> {
@@ -99,6 +212,54 @@ impl EngineClient {
         )
         .map_err(|e| format!("failed to create Engine API JWT: {e}"))
     }
+}
+
+fn field_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("missing or invalid {field}: {value}"))
+}
+
+fn strip_hex(value: &str) -> &str {
+    value.strip_prefix("0x").unwrap_or(value)
+}
+
+fn parse_hash32(value: &str) -> Result<Hash32, String> {
+    let bytes = hex::decode(strip_hex(value)).map_err(|e| format!("invalid 32-byte hex: {e}"))?;
+    bytes
+        .try_into()
+        .map_err(|v: Vec<u8>| format!("expected 32 bytes, found {}", v.len()))
+}
+
+fn parse_address20(value: &str) -> Result<Address20, String> {
+    let bytes = hex::decode(strip_hex(value)).map_err(|e| format!("invalid address hex: {e}"))?;
+    bytes
+        .try_into()
+        .map_err(|v: Vec<u8>| format!("expected 20-byte address, found {}", v.len()))
+}
+
+fn parse_quantity(value: &str) -> Result<u64, String> {
+    u64::from_str_radix(strip_hex(value), 16)
+        .map_err(|e| format!("invalid hexadecimal quantity {value}: {e}"))
+}
+
+fn parse_u256(value: &str) -> Result<Hash32, String> {
+    let raw = strip_hex(value);
+    if raw.len() > 64 {
+        return Err(format!("quantity exceeds 256 bits: {value}"));
+    }
+
+    let padded = format!("{raw:0>64}");
+    parse_hash32(&padded)
+}
+
+fn quantity(value: u64) -> String {
+    format!("0x{value:x}")
+}
+
+fn hex32(value: Hash32) -> String {
+    format!("0x{}", hex::encode(value))
 }
 
 fn load_jwt_secret(path: &Path) -> Result<Vec<u8>, String> {
@@ -122,7 +283,7 @@ fn load_jwt_secret(path: &Path) -> Result<Vec<u8>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::load_jwt_secret;
+    use super::{load_jwt_secret, parse_quantity, parse_u256};
     use std::fs;
 
     #[test]
@@ -153,5 +314,18 @@ mod tests {
         assert!(error.contains("at least 32 bytes"));
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn parses_engine_quantities() {
+        assert_eq!(parse_quantity("0x2a").unwrap(), 42);
+        assert_eq!(parse_quantity("0x0").unwrap(), 0);
+    }
+
+    #[test]
+    fn pads_u256_quantity_to_32_bytes() {
+        let value = parse_u256("0x1").unwrap();
+        assert_eq!(value[31], 1);
+        assert!(value[..31].iter().all(|byte| *byte == 0));
     }
 }
