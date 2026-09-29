@@ -17,21 +17,30 @@ pub struct WorkManager {
 struct WorkState {
     generation: u64,
     header: BlockHeaderV1,
+    randomx_seed_height: u64,
+    randomx_seed: [u8; 32],
 }
 
 impl WorkManager {
-    pub fn new(header: BlockHeaderV1) -> Self {
+    pub fn new(header: BlockHeaderV1, randomx_seed_height: u64, randomx_seed: [u8; 32]) -> Self {
         Self {
             inner: Arc::new(RwLock::new(WorkState {
                 generation: 0,
                 header,
+                randomx_seed_height,
+                randomx_seed,
             })),
         }
     }
 
-    pub fn current(&self) -> (u64, BlockHeaderV1) {
+    pub fn current(&self) -> (u64, BlockHeaderV1, u64, [u8; 32]) {
         let state = self.inner.read().expect("work state poisoned");
-        (state.generation, state.header.clone())
+        (
+            state.generation,
+            state.header.clone(),
+            state.randomx_seed_height,
+            state.randomx_seed,
+        )
     }
 
     #[cfg(test)]
@@ -112,7 +121,7 @@ fn handle_connection(mut stream: TcpStream, work: &WorkManager) -> Result<(), St
 
     let response = match method {
         "pow_getWork" => {
-            let (generation, header) = work.current();
+            let (generation, header, randomx_seed_height, randomx_seed) = work.current();
             json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -127,6 +136,8 @@ fn handle_connection(mut stream: TcpStream, work: &WorkManager) -> Result<(), St
                     "transactions_root": hex::encode(header.transactions_root),
                     "execution_root": hex::encode(header.execution_root),
                     "target": hex::encode(header.target),
+                    "randomx_seed_height": randomx_seed_height,
+                    "randomx_seed": hex::encode(randomx_seed),
                     "nonce_start": 0_u64,
                     "nonce_end": u64::MAX,
                     "extra_nonce_start": 0_u64,
@@ -179,8 +190,8 @@ mod tests {
 
     #[test]
     fn replacing_work_marks_previous_generation_stale() {
-        let manager = WorkManager::new(header(1));
-        let (generation, current) = manager.current();
+        let manager = WorkManager::new(header(1), 0, [0x33; 32]);
+        let (generation, current, _, _) = manager.current();
         let old_id = current.mining_template_id();
 
         assert!(!manager.is_stale(generation, &old_id));
