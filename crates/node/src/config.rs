@@ -92,7 +92,10 @@ impl NodeConfig {
             return Err("reth_http_rpc must start with http:// or https://".into());
         }
 
-        let recipient = self.fee_recipient.strip_prefix("0x").unwrap_or(&self.fee_recipient);
+        let recipient = self
+            .fee_recipient
+            .strip_prefix("0x")
+            .unwrap_or(&self.fee_recipient);
         if recipient.len() != 40 || hex::decode(recipient).is_err() {
             return Err("fee_recipient must be a 20-byte hex address".into());
         }
