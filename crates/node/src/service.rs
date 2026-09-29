@@ -818,7 +818,6 @@ pub fn verify_storage_commitment_signature(
         .map_err(|_| "invalid storage commitment signature".to_string())
 }
 
-
 pub const STORAGE_CHALLENGE_OBJECT_TYPE: u64 = 0x0206;
 pub const STORAGE_CHALLENGE_SCHEMA_VERSION: u64 = 1;
 
@@ -957,15 +956,18 @@ pub fn build_storage_challenge_v1(
     if params.requested_ranges.is_empty() {
         return Err("storage challenge must request at least one segment".into());
     }
-    if params.requested_ranges.iter().any(|range| range.length == 0) {
+    if params
+        .requested_ranges
+        .iter()
+        .any(|range| range.length == 0)
+    {
         return Err("storage challenge segment lengths must be non-zero".into());
     }
     if params.response_deadline <= params.issued_at {
         return Err("storage challenge deadline must be after issued_at".into());
     }
 
-    let challenge_seed =
-        storage_challenge_seed(params.challenge_block_id, params.commitment_id);
+    let challenge_seed = storage_challenge_seed(params.challenge_block_id, params.commitment_id);
     let mut challenge = StorageChallengeV1 {
         challenge_id: [0_u8; 32],
         commitment_id: params.commitment_id,
@@ -1019,7 +1021,10 @@ pub fn verify_storage_challenge_signature(
     verify_service_node_identity(challenge.challenger_id, public_key_sec1)?;
 
     if challenge.requested_ranges.is_empty()
-        || challenge.requested_ranges.iter().any(|range| range.length == 0)
+        || challenge
+            .requested_ranges
+            .iter()
+            .any(|range| range.length == 0)
     {
         return Err("storage challenge contains invalid requested segments".into());
     }
@@ -1406,24 +1411,23 @@ pub fn attach_service_epoch_signature(
 #[cfg(test)]
 mod tests {
     use super::{
-        attach_service_epoch_signature, build_service_epoch_report_v1,
-        build_storage_challenge_v1, build_storage_commitment_v1,
-        derive_service_epoch_report_id, derive_service_node_id, derive_storage_challenge_id,
-        derive_storage_commitment_id,
-        evaluate_service_eligibility, evidence_replay_key, finalize_service_epoch_report,
-        select_storage_ranges, select_storage_segments, service_epoch_report_canonical_bytes,
+        attach_service_epoch_signature, build_service_epoch_report_v1, build_storage_challenge_v1,
+        build_storage_commitment_v1, derive_service_epoch_report_id, derive_service_node_id,
+        derive_storage_challenge_id, derive_storage_commitment_id, evaluate_service_eligibility,
+        evidence_replay_key, finalize_service_epoch_report, select_storage_ranges,
+        select_storage_segments, service_epoch_report_canonical_bytes,
         service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
         service_evidence_root, sign_service_epoch_report, sign_storage_challenge,
-        sign_storage_commitment,
-        storage_challenge_seed, storage_commitment_canonical_bytes,
+        sign_storage_commitment, storage_challenge_seed, storage_commitment_canonical_bytes,
         storage_commitment_id_preimage, storage_commitment_signing_digest,
         storage_commitment_signing_preimage, storage_manifest_leaf, storage_manifest_node,
         storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
         verify_response_meta, verify_service_epoch_report_signature,
-        verify_storage_commitment_signature, verify_storage_manifest_proof,
-        verify_storage_range_proof, ChallengeSegment, ExpectedResponseMeta, ManifestProofStep,
-        RangeProofStep, ResponseMeta, ServiceEpochAccumulator, ServiceEpochReportV1,
-        StorageChallengeParams, StorageCommitmentParams,
+        verify_storage_challenge_signature, verify_storage_commitment_signature,
+        verify_storage_manifest_proof, verify_storage_range_proof, ChallengeSegment,
+        ExpectedResponseMeta, ManifestProofStep, RangeProofStep, ResponseMeta,
+        ServiceEpochAccumulator, ServiceEpochReportV1, StorageChallengeParams,
+        StorageCommitmentParams,
     };
 
     #[test]
@@ -1665,7 +1669,10 @@ mod tests {
             "a4010102190205030104ad0101025820bdc05540f553573acc7b89d9888e4291ecf3953d620959d14eccafae64d9cbfa035820514f4f5fd2c5331dd8a69a46bb4996f3ad8c418bb9e53af973da50ea68e81332045820bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb056d4d4f44454c5f53544f52414745065820444444444444444444444444444444444444444444444444444444444444444407582055555555555555555555555555555555555555555555555555555555555555550804091940000a18640b1903340c070d58206666666666666666666666666666666666666666666666666666666666666666"
         );
         assert_eq!(
-            hex::encode(storage_commitment_signing_digest(b"niahcia-dev", &commitment)),
+            hex::encode(storage_commitment_signing_digest(
+                b"niahcia-dev",
+                &commitment
+            )),
             "1375af6584f574d354dac170543bdc09d90cf1392672eec18e17cb7a7c870227"
         );
 
