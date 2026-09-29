@@ -1,5 +1,6 @@
 mod config;
 mod engine;
+pub mod work;
 
 use config::NodeConfig;
 use engine::EngineClient;
