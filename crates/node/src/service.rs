@@ -5,6 +5,9 @@ pub const STORAGE_SELECT_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-SELECT/V1";
 pub const STORAGE_MANIFEST_LEAF_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-MANIFEST-LEAF/V1";
 pub const STORAGE_MANIFEST_NODE_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-MANIFEST-NODE/V1";
 pub const STORAGE_MANIFEST_EMPTY_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-MANIFEST-EMPTY/V1";
+pub const STORAGE_RANGE_LEAF_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-RANGE-LEAF/V1";
+pub const STORAGE_RANGE_NODE_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-RANGE-NODE/V1";
+pub const STORAGE_RANGE_EMPTY_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-RANGE-EMPTY/V1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChallengeRange {
@@ -162,6 +165,78 @@ pub fn verify_storage_manifest_proof(
     current == expected_root
 }
 
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RangeProofStep {
+    pub sibling: Hash32,
+    pub sibling_is_left: bool,
+}
+
+pub fn storage_range_leaf(segment_index: u64, segment: &[u8]) -> Hash32 {
+    let mut preimage =
+        Vec::with_capacity(STORAGE_RANGE_LEAF_DOMAIN.len() + 8 + 8 + segment.len());
+    preimage.extend_from_slice(STORAGE_RANGE_LEAF_DOMAIN);
+    preimage.extend_from_slice(&segment_index.to_be_bytes());
+    preimage.extend_from_slice(&(segment.len() as u64).to_be_bytes());
+    preimage.extend_from_slice(segment);
+    keccak256(&preimage)
+}
+
+pub fn storage_range_node(left: Hash32, right: Hash32) -> Hash32 {
+    let mut preimage = Vec::with_capacity(STORAGE_RANGE_NODE_DOMAIN.len() + 64);
+    preimage.extend_from_slice(STORAGE_RANGE_NODE_DOMAIN);
+    preimage.extend_from_slice(&left);
+    preimage.extend_from_slice(&right);
+    keccak256(&preimage)
+}
+
+pub fn storage_range_root(chunk: &[u8], segment_size: usize) -> Result<Hash32, String> {
+    if segment_size == 0 {
+        return Err("segment_size must be non-zero".into());
+    }
+
+    if chunk.is_empty() {
+        return Ok(keccak256(STORAGE_RANGE_EMPTY_DOMAIN));
+    }
+
+    let mut level: Vec<Hash32> = chunk
+        .chunks(segment_size)
+        .enumerate()
+        .map(|(index, segment)| storage_range_leaf(index as u64, segment))
+        .collect();
+
+    while level.len() > 1 {
+        let mut next = Vec::with_capacity(level.len().div_ceil(2));
+        for pair in level.chunks(2) {
+            let left = pair[0];
+            let right = if pair.len() == 2 { pair[1] } else { left };
+            next.push(storage_range_node(left, right));
+        }
+        level = next;
+    }
+
+    Ok(level[0])
+}
+
+pub fn verify_storage_range_proof(
+    expected_root: Hash32,
+    segment_index: u64,
+    segment: &[u8],
+    proof: &[RangeProofStep],
+) -> bool {
+    let mut current = storage_range_leaf(segment_index, segment);
+
+    for step in proof {
+        current = if step.sibling_is_left {
+            storage_range_node(step.sibling, current)
+        } else {
+            storage_range_node(current, step.sibling)
+        };
+    }
+
+    current == expected_root
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResponseMeta {
     pub challenge_id: Hash32,
@@ -216,8 +291,10 @@ pub fn evidence_replay_key(
 mod tests {
     use super::{
         evidence_replay_key, select_storage_ranges, storage_challenge_seed, storage_manifest_leaf,
-        storage_manifest_node, storage_manifest_root, verify_response_meta,
-        verify_storage_manifest_proof, ExpectedResponseMeta, ManifestProofStep, ResponseMeta,
+        storage_manifest_node, storage_manifest_root, storage_range_leaf, storage_range_node,
+        storage_range_root, verify_response_meta, verify_storage_manifest_proof,
+        verify_storage_range_proof, ExpectedResponseMeta, ManifestProofStep, RangeProofStep,
+        ResponseMeta,
     };
 
     #[test]
@@ -315,6 +392,46 @@ mod tests {
         let empty = storage_manifest_root(&[]);
         assert_ne!(empty, [0_u8; 32]);
         assert_eq!(empty, storage_manifest_root(&[]));
+    }
+
+    #[test]
+    fn range_merkle_root_and_proof_verify() {
+        let segment0 = b"abcdefgh";
+        let segment1 = b"ijklmnop";
+        let segment2 = b"qrstuvwx";
+
+        let leaf0 = storage_range_leaf(0, segment0);
+        let leaf1 = storage_range_leaf(1, segment1);
+        let leaf2 = storage_range_leaf(2, segment2);
+
+        let parent01 = storage_range_node(leaf0, leaf1);
+        let parent22 = storage_range_node(leaf2, leaf2);
+        let root = storage_range_node(parent01, parent22);
+
+        assert_eq!(
+            root,
+            storage_range_root(b"abcdefghijklmnopqrstuvwx", 8).unwrap()
+        );
+
+        let proof = [
+            RangeProofStep {
+                sibling: leaf0,
+                sibling_is_left: true,
+            },
+            RangeProofStep {
+                sibling: parent22,
+                sibling_is_left: false,
+            },
+        ];
+
+        assert!(verify_storage_range_proof(root, 1, segment1, &proof));
+        assert!(!verify_storage_range_proof(root, 1, b"ijklmnop!", &proof));
+        assert!(!verify_storage_range_proof(root, 2, segment1, &proof));
+    }
+
+    #[test]
+    fn range_root_rejects_zero_segment_size() {
+        assert!(storage_range_root(b"data", 0).is_err());
     }
 
     #[test]
