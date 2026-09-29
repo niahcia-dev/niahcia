@@ -236,30 +236,35 @@ impl StateStore {
                 .map_err(|e| format!("failed to persist chain block: {e}"))?;
         }
 
-        let should_promote = {
+        let current_best_id = {
             let meta = write
                 .open_table(CHAIN_META)
                 .map_err(|e| format!("failed to open chain metadata table: {e}"))?;
-            match meta
+            let current = meta
                 .get(BEST_HEAD_KEY)
-                .map_err(|e| format!("failed to read current best head: {e}"))?
-            {
-                Some(best_id) => {
-                    let best_id: Hash32 = best_id
+                .map_err(|e| format!("failed to read current best head: {e}"))?;
+            current
+                .map(|best_id| {
+                    best_id
                         .value()
                         .try_into()
-                        .map_err(|_| "invalid persisted best-head ID length".to_string())?;
-                    let blocks = write
-                        .open_table(CHAIN_BLOCKS)
-                        .map_err(|e| format!("failed to open chain block table: {e}"))?;
-                    let best = blocks
-                        .get(best_id.as_slice())
-                        .map_err(|e| format!("failed to read current best block: {e}"))?
-                        .ok_or_else(|| "best-head metadata references missing block".to_string())?;
-                    record.chain_work > PersistedChainBlock::decode(best.value())?.chain_work
-                }
-                None => true,
+                        .map_err(|_| "invalid persisted best-head ID length".to_string())
+                })
+                .transpose()?
+        };
+
+        let should_promote = match current_best_id {
+            Some(best_id) => {
+                let blocks = write
+                    .open_table(CHAIN_BLOCKS)
+                    .map_err(|e| format!("failed to open chain block table: {e}"))?;
+                let best = blocks
+                    .get(best_id.as_slice())
+                    .map_err(|e| format!("failed to read current best block: {e}"))?
+                    .ok_or_else(|| "best-head metadata references missing block".to_string())?;
+                record.chain_work > PersistedChainBlock::decode(best.value())?.chain_work
             }
+            None => true,
         };
 
         if should_promote {
