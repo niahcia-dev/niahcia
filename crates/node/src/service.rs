@@ -507,18 +507,9 @@ pub fn record_verified_storage_response(
         return Err("storage challenge height is outside service epoch".into());
     }
 
-    verify_storage_challenge_signature(
-        context.network_id,
-        challenge,
-        context.challenger_public_key_sec1,
-    )?;
-    verify_storage_response_signature(
-        context.network_id,
-        response,
-        context.provider_public_key_sec1,
-    )?;
-    let verified_bytes =
-        verify_storage_response_evidence(response, challenge, context.manifest_root)?;
+    verify_storage_challenge_signature(network_id, challenge, challenger_public_key_sec1)?;
+    verify_storage_response_signature(network_id, response, provider_public_key_sec1)?;
+    let verified_bytes = verify_storage_response_evidence(response, challenge, manifest_root)?;
 
     let evidence_key = evidence_replay_key(
         challenge.challenge_id,
@@ -562,9 +553,18 @@ pub fn record_verified_storage_response_persistent(
         return Err("storage challenge height is outside service epoch".into());
     }
 
-    verify_storage_challenge_signature(network_id, challenge, challenger_public_key_sec1)?;
-    verify_storage_response_signature(network_id, response, provider_public_key_sec1)?;
-    let verified_bytes = verify_storage_response_evidence(response, challenge, manifest_root)?;
+    verify_storage_challenge_signature(
+        context.network_id,
+        challenge,
+        context.challenger_public_key_sec1,
+    )?;
+    verify_storage_response_signature(
+        context.network_id,
+        response,
+        context.provider_public_key_sec1,
+    )?;
+    let verified_bytes =
+        verify_storage_response_evidence(response, challenge, context.manifest_root)?;
 
     let evidence_key = evidence_replay_key(
         challenge.challenge_id,
