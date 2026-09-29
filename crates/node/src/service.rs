@@ -557,7 +557,7 @@ pub struct FinalizedServiceEpochReport {
     pub challenges_passed: u64,
     pub challenges_failed: u64,
     pub deadlines_missed: u64,
-    pub verified_bytes_served: u128,
+    pub verified_bytes_served: u64,
     pub distinct_requester_count: u64,
     pub distinct_challenge_block_count: u64,
     pub evidence_root: Hash32,
@@ -817,9 +817,54 @@ pub fn service_epoch_report_signing_digest(
     )
 }
 
+pub fn build_service_epoch_report_v1(
+    network_id: &[u8],
+    finalized: &FinalizedServiceEpochReport,
+    operator_id: Hash32,
+    commitments_sampled: u64,
+    service_classes: Vec<String>,
+    created_block: Hash32,
+) -> ServiceEpochReportV1 {
+    let mut report = ServiceEpochReportV1 {
+        report_id: [0_u8; 32],
+        service_node_id: finalized.service_node_id,
+        operator_id,
+        epoch_start_height: finalized.epoch_start_height,
+        epoch_end_height: finalized.epoch_end_height,
+        commitments_sampled,
+        challenges_passed: finalized.challenges_passed,
+        challenges_failed: finalized.challenges_failed,
+        deadlines_missed: finalized.deadlines_missed,
+        verified_bytes_served: finalized.verified_bytes_served,
+        distinct_requester_count: finalized.distinct_requester_count,
+        distinct_challenge_block_count: finalized.distinct_challenge_block_count,
+        service_classes,
+        evidence_root: finalized.evidence_root,
+        eligibility_weight: finalized.eligibility_weight,
+        created_block,
+        signature: Vec::new(),
+    };
+
+    report.report_id = derive_service_epoch_report_id(network_id, &report);
+    report
+}
+
+pub fn attach_service_epoch_signature(
+    report: &mut ServiceEpochReportV1,
+    signature: Vec<u8>,
+) -> Result<(), String> {
+    if signature.is_empty() {
+        return Err("service epoch report signature must not be empty".into());
+    }
+
+    report.signature = signature;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
+        attach_service_epoch_signature, build_service_epoch_report_v1,
         derive_service_epoch_report_id, evaluate_service_eligibility, evidence_replay_key,
         finalize_service_epoch_report, select_storage_ranges, select_storage_segments,
         service_epoch_report_canonical_bytes, service_epoch_report_signing_digest,
@@ -831,6 +876,65 @@ mod tests {
         ServiceEpochAccumulator, ServiceEpochReportV1,
     };
 
+    #[test]
+    fn service_epoch_report_builder_derives_id_and_signature_is_not_in_id() {
+        let mut epoch = ServiceEpochAccumulator::new(0, 720).unwrap();
+        epoch
+            .record_success([0x01; 32], [0x10; 32], [0x20; 32], 4096)
+            .unwrap();
+        epoch
+            .record_success([0x02; 32], [0x11; 32], [0x21; 32], 2048)
+            .unwrap();
+
+        let finalized = finalize_service_epoch_report([0xaa; 32], &epoch, 2, 2, 2);
+        let mut report = build_service_epoch_report_v1(
+            b"niahcia-dev",
+            &finalized,
+            [0xbb; 32],
+            2,
+            vec!["ARCHIVE".into(), "MODEL_STORAGE".into()],
+            [0xcc; 32],
+        );
+
+        assert_ne!(report.report_id, [0_u8; 32]);
+        assert_eq!(
+            report.report_id,
+            derive_service_epoch_report_id(b"niahcia-dev", &report)
+        );
+
+        let id_before_signature = report.report_id;
+        attach_service_epoch_signature(&mut report, vec![0x30, 0x44, 0x01]).unwrap();
+
+        assert_eq!(
+            id_before_signature,
+            derive_service_epoch_report_id(b"niahcia-dev", &report)
+        );
+        assert!(!report.signature.is_empty());
+    }
+
+    #[test]
+    fn empty_service_epoch_signature_is_rejected() {
+        let mut report = ServiceEpochReportV1 {
+            report_id: [0; 32],
+            service_node_id: [0; 32],
+            operator_id: [0; 32],
+            epoch_start_height: 0,
+            epoch_end_height: 1,
+            commitments_sampled: 0,
+            challenges_passed: 0,
+            challenges_failed: 0,
+            deadlines_missed: 0,
+            verified_bytes_served: 0,
+            distinct_requester_count: 0,
+            distinct_challenge_block_count: 0,
+            service_classes: Vec::new(),
+            evidence_root: [0; 32],
+            eligibility_weight: 0,
+            created_block: [0; 32],
+            signature: Vec::new(),
+        };
+        assert!(attach_service_epoch_signature(&mut report, Vec::new()).is_err());
+    }
     #[test]
     fn challenge_seed_is_deterministic_and_domain_separated() {
         let first = storage_challenge_seed([0x11; 32], [0x22; 32]);
