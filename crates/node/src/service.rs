@@ -162,12 +162,66 @@ pub fn verify_storage_manifest_proof(
     current == expected_root
 }
 
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResponseMeta {
+    pub challenge_id: Hash32,
+    pub commitment_id: Hash32,
+    pub answered_at: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpectedResponseMeta {
+    pub challenge_id: Hash32,
+    pub commitment_id: Hash32,
+    pub response_deadline: u64,
+}
+
+pub fn verify_response_meta(
+    expected: &ExpectedResponseMeta,
+    response: &ResponseMeta,
+) -> Result<(), String> {
+    if response.challenge_id != expected.challenge_id {
+        return Err("storage response challenge_id mismatch".into());
+    }
+
+    if response.commitment_id != expected.commitment_id {
+        return Err("storage response commitment_id mismatch".into());
+    }
+
+    if response.answered_at > expected.response_deadline {
+        return Err(format!(
+            "storage response missed deadline: answered_at={} deadline={}",
+            response.answered_at, expected.response_deadline
+        ));
+    }
+
+    Ok(())
+}
+
+pub fn evidence_replay_key(
+    challenge_id: Hash32,
+    service_node_id: Hash32,
+    response_hash: Hash32,
+) -> Hash32 {
+    const DOMAIN: &[u8] = b"NIAHCIA/SERVICE-EVIDENCE/V1";
+    let mut preimage = Vec::with_capacity(DOMAIN.len() + 96);
+    preimage.extend_from_slice(DOMAIN);
+    preimage.extend_from_slice(&challenge_id);
+    preimage.extend_from_slice(&service_node_id);
+    preimage.extend_from_slice(&response_hash);
+    keccak256(&preimage)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         select_storage_ranges, storage_challenge_seed, storage_manifest_leaf,
         storage_manifest_node, storage_manifest_root, verify_storage_manifest_proof,
-        ManifestProofStep,
+        evidence_replay_key, select_storage_ranges, storage_challenge_seed,
+        storage_manifest_leaf, storage_manifest_node, storage_manifest_root,
+        verify_response_meta, verify_storage_manifest_proof, ExpectedResponseMeta,
+        ManifestProofStep, ResponseMeta,
     };
 
     #[test]
@@ -265,6 +319,48 @@ mod tests {
         let empty = storage_manifest_root(&[]);
         assert_ne!(empty, [0_u8; 32]);
         assert_eq!(empty, storage_manifest_root(&[]));
+    }
+
+    #[test]
+    fn response_metadata_enforces_ids_and_deadline() {
+        let expected = ExpectedResponseMeta {
+            challenge_id: [0x10; 32],
+            commitment_id: [0x20; 32],
+            response_deadline: 1000,
+        };
+
+        let valid = ResponseMeta {
+            challenge_id: [0x10; 32],
+            commitment_id: [0x20; 32],
+            answered_at: 1000,
+        };
+        assert!(verify_response_meta(&expected, &valid).is_ok());
+
+        let mut wrong_challenge = valid.clone();
+        wrong_challenge.challenge_id = [0x11; 32];
+        assert!(verify_response_meta(&expected, &wrong_challenge).is_err());
+
+        let mut wrong_commitment = valid.clone();
+        wrong_commitment.commitment_id = [0x21; 32];
+        assert!(verify_response_meta(&expected, &wrong_commitment).is_err());
+
+        let mut late = valid;
+        late.answered_at = 1001;
+        assert!(verify_response_meta(&expected, &late).is_err());
+    }
+
+    #[test]
+    fn replay_key_binds_challenge_provider_and_response() {
+        let first = evidence_replay_key([0x01; 32], [0x02; 32], [0x03; 32]);
+        let same = evidence_replay_key([0x01; 32], [0x02; 32], [0x03; 32]);
+        let other_challenge = evidence_replay_key([0x04; 32], [0x02; 32], [0x03; 32]);
+        let other_provider = evidence_replay_key([0x01; 32], [0x05; 32], [0x03; 32]);
+        let other_response = evidence_replay_key([0x01; 32], [0x02; 32], [0x06; 32]);
+
+        assert_eq!(first, same);
+        assert_ne!(first, other_challenge);
+        assert_ne!(first, other_provider);
+        assert_ne!(first, other_response);
     }
 
     #[test]
