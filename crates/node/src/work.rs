@@ -183,7 +183,10 @@ mod tests {
         );
 
         assert_eq!(canonical, expected);
-        println!("BLOCK_HEADER_V1_VECTOR_BLOCK_ID={}", hex::encode(header.block_id()));
+        println!(
+            "BLOCK_HEADER_V1_VECTOR_BLOCK_ID={}",
+            hex::encode(header.block_id())
+        );
         println!(
             "BLOCK_HEADER_V1_VECTOR_TEMPLATE_ID={}",
             hex::encode(header.mining_template_id())
