@@ -1,0 +1,35 @@
+{
+  "format_version": 1,
+  "project": "NIAHCIA",
+  "version": "0.1.0",
+  "tag": "v0.1.0",
+  "channel": "dev",
+  "published_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "source": {
+    "repository": "https://github.com/niahcia/niahcia",
+    "commit": "<40-hex-git-commit>"
+  },
+  "components": {
+    "node": {
+      "repository": "https://github.com/niahcia/niahcia",
+      "commit": "<40-hex-git-commit>"
+    },
+    "miner": {
+      "repository": "https://github.com/niahcia/niahcia-miner",
+      "commit": "<40-hex-git-commit>"
+    },
+    "compute": {
+      "repository": "https://github.com/niahcia/niahcia-compute",
+      "commit": "<40-hex-git-commit>"
+    }
+  },
+  "assets": [
+    {
+      "component": "node",
+      "platform": "linux",
+      "architecture": "x86_64",
+      "filename": "niahcia-node-linux-x86_64.tar.gz",
+      "sha256": "<64-hex-sha256>"
+    }
+  ]
+}
