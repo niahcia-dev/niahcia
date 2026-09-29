@@ -7,6 +7,8 @@ pub const RANDOMX_EPOCH_LENGTH: u64 = 2_048;
 pub const RANDOMX_SEED_LAG: u64 = 64;
 pub const MEDIAN_TIME_WINDOW: usize = 11;
 pub const MAX_FUTURE_DRIFT: u64 = 90;
+pub const ASERT_HALF_LIFE: i128 = 4_320;
+pub const ASERT_RADIX: i128 = 65_536;
 
 const RANDOMX_SEED_DOMAIN: &[u8] = b"NIAHCIA/RANDOMX-SEED/V1";
 
@@ -66,6 +68,81 @@ pub fn next_target(
     biguint_to_hash32(&bounded)
 }
 
+pub fn asert_next_target(
+    anchor_target: Hash32,
+    anchor_height: u64,
+    anchor_parent_time: u64,
+    evaluation_height: u64,
+    evaluation_time: u64,
+    pow_limit: Hash32,
+) -> Result<Hash32, String> {
+    if evaluation_height < anchor_height {
+        return Err("ASERT evaluation height precedes anchor height".into());
+    }
+
+    let time_delta = i128::from(evaluation_time) - i128::from(anchor_parent_time);
+    let height_delta = i128::from(evaluation_height - anchor_height);
+    let schedule_delta = time_delta - i128::from(TARGET_BLOCK_INTERVAL) * (height_delta + 1);
+
+    // Rust signed integer division truncates toward zero, matching the ASERT requirement.
+    let exponent = schedule_delta
+        .checked_mul(ASERT_RADIX)
+        .ok_or_else(|| "ASERT exponent overflow".to_string())?
+        / ASERT_HALF_LIFE;
+
+    let num_shifts = exponent >> 16;
+    let fractional = exponent - num_shifts * ASERT_RADIX;
+
+    let frac2 = fractional
+        .checked_mul(fractional)
+        .ok_or_else(|| "ASERT polynomial overflow".to_string())?;
+    let frac3 = frac2
+        .checked_mul(fractional)
+        .ok_or_else(|| "ASERT polynomial overflow".to_string())?;
+
+    let poly = 195_766_423_245_049_i128
+        .checked_mul(fractional)
+        .and_then(|value| value.checked_add(971_821_376_i128 * frac2))
+        .and_then(|value| value.checked_add(5_127_i128 * frac3))
+        .and_then(|value| value.checked_add(1_i128 << 47))
+        .ok_or_else(|| "ASERT polynomial overflow".to_string())?;
+
+    let factor = (poly >> 48) + ASERT_RADIX;
+    if factor <= 0 {
+        return Err("ASERT factor is non-positive".into());
+    }
+
+    let mut target = hash32_to_biguint(anchor_target) * BigUint::from(factor as u128);
+
+    if num_shifts < 0 {
+        let shift = usize::try_from(-num_shifts)
+            .map_err(|_| "ASERT right shift does not fit usize".to_string())?;
+        target >>= shift;
+    } else {
+        let shift = usize::try_from(num_shifts)
+            .map_err(|_| "ASERT left shift does not fit usize".to_string())?;
+
+        if shift >= 256 {
+            return Ok(pow_limit);
+        }
+
+        target <<= shift;
+    }
+
+    target >>= 16_usize;
+
+    if target.is_zero() {
+        return Ok(biguint_to_hash32(&BigUint::one()));
+    }
+
+    let limit = hash32_to_biguint(pow_limit);
+    if target > limit {
+        return Ok(pow_limit);
+    }
+
+    Ok(biguint_to_hash32(&target))
+}
+
 pub fn block_work(target: Hash32) -> BigUint {
     let max = (BigUint::one() << 256_usize) - BigUint::one();
     let denominator = hash32_to_biguint(target) + BigUint::one();
@@ -122,9 +199,9 @@ pub fn validate_timestamp(
 #[cfg(test)]
 mod tests {
     use super::{
-        block_work, median_time_past, next_target, pow_meets_target, randomx_seed,
-        randomx_seed_height, validate_timestamp, DifficultySample, RANDOMX_EPOCH_LENGTH,
-        RANDOMX_SEED_LAG,
+        asert_next_target, block_work, median_time_past, next_target, pow_meets_target,
+        randomx_seed, randomx_seed_height, validate_timestamp, DifficultySample,
+        RANDOMX_EPOCH_LENGTH, RANDOMX_SEED_LAG,
     };
 
     #[test]
@@ -235,6 +312,43 @@ mod tests {
         assert_eq!(
             next_target(target_u64(1000), &samples, [0xff; 32]),
             target_u64(1125)
+        );
+    }
+
+    #[test]
+    fn asert_schedule_vectors() {
+        let limit = [0xff; 32];
+
+        assert_eq!(
+            asert_next_target(target_u64(1000), 1, 0, 1, 30, limit).unwrap(),
+            target_u64(1000)
+        );
+        assert_eq!(
+            asert_next_target(target_u64(1000), 1, 0, 2, 60, limit).unwrap(),
+            target_u64(1000)
+        );
+        assert_eq!(
+            asert_next_target(target_u64(1000), 1, 0, 2, 90, limit).unwrap(),
+            target_u64(1004)
+        );
+        assert_eq!(
+            asert_next_target(target_u64(1000), 1, 0, 100, 3000, limit).unwrap(),
+            target_u64(1000)
+        );
+        assert_eq!(
+            asert_next_target(target_u64(1000), 1, 0, 100, 3030, limit).unwrap(),
+            target_u64(1004)
+        );
+        assert_eq!(
+            asert_next_target(target_u64(1000), 1, 0, 100, 2970, limit).unwrap(),
+            target_u64(995)
+        );
+    }
+
+    #[test]
+    fn asert_rejects_pre_anchor_evaluation() {
+        assert!(
+            asert_next_target(target_u64(1000), 10, 0, 9, 300, [0xff; 32]).is_err()
         );
     }
 
