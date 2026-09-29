@@ -600,6 +600,222 @@ pub fn finalize_service_epoch_report(
     }
 }
 
+pub const STORAGE_COMMITMENT_OBJECT_TYPE: u64 = 0x0205;
+pub const STORAGE_COMMITMENT_SCHEMA_VERSION: u64 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageCommitmentV1 {
+    pub commitment_id: Hash32,
+    pub service_node_id: Hash32,
+    pub operator_id: Hash32,
+    pub service_class: String,
+    pub object_id: Hash32,
+    pub manifest_root: Hash32,
+    pub chunk_count: u64,
+    pub total_bytes: u64,
+    pub retained_from_block: u64,
+    pub retained_until_block: u64,
+    pub commitment_nonce: u64,
+    pub created_block: Hash32,
+    pub signature: Vec<u8>,
+}
+
+fn encode_storage_commitment_payload(
+    commitment: &StorageCommitmentV1,
+    include_commitment_id: bool,
+    include_signature: bool,
+) -> Vec<u8> {
+    let mut fields = 12_u64;
+    if include_commitment_id {
+        fields += 1;
+    }
+    if include_signature {
+        fields += 1;
+    }
+
+    let mut out = Vec::new();
+    cbor_map_len(&mut out, fields);
+
+    cbor_uint(&mut out, 1);
+    cbor_uint(&mut out, STORAGE_COMMITMENT_SCHEMA_VERSION);
+
+    if include_commitment_id {
+        cbor_uint(&mut out, 2);
+        cbor_bytes(&mut out, &commitment.commitment_id);
+    }
+
+    cbor_uint(&mut out, 3);
+    cbor_bytes(&mut out, &commitment.service_node_id);
+    cbor_uint(&mut out, 4);
+    cbor_bytes(&mut out, &commitment.operator_id);
+    cbor_uint(&mut out, 5);
+    cbor_text(&mut out, &commitment.service_class);
+    cbor_uint(&mut out, 6);
+    cbor_bytes(&mut out, &commitment.object_id);
+    cbor_uint(&mut out, 7);
+    cbor_bytes(&mut out, &commitment.manifest_root);
+    cbor_uint(&mut out, 8);
+    cbor_uint(&mut out, commitment.chunk_count);
+    cbor_uint(&mut out, 9);
+    cbor_uint(&mut out, commitment.total_bytes);
+    cbor_uint(&mut out, 10);
+    cbor_uint(&mut out, commitment.retained_from_block);
+    cbor_uint(&mut out, 11);
+    cbor_uint(&mut out, commitment.retained_until_block);
+    cbor_uint(&mut out, 12);
+    cbor_uint(&mut out, commitment.commitment_nonce);
+    cbor_uint(&mut out, 13);
+    cbor_bytes(&mut out, &commitment.created_block);
+
+    if include_signature {
+        cbor_uint(&mut out, 14);
+        cbor_bytes(&mut out, &commitment.signature);
+    }
+
+    out
+}
+
+pub fn storage_commitment_id_preimage(commitment: &StorageCommitmentV1) -> Vec<u8> {
+    encode_nce_envelope(
+        STORAGE_COMMITMENT_OBJECT_TYPE,
+        STORAGE_COMMITMENT_SCHEMA_VERSION,
+        &encode_storage_commitment_payload(commitment, false, false),
+    )
+}
+
+pub fn storage_commitment_signing_preimage(commitment: &StorageCommitmentV1) -> Vec<u8> {
+    encode_nce_envelope(
+        STORAGE_COMMITMENT_OBJECT_TYPE,
+        STORAGE_COMMITMENT_SCHEMA_VERSION,
+        &encode_storage_commitment_payload(commitment, true, false),
+    )
+}
+
+pub fn storage_commitment_canonical_bytes(commitment: &StorageCommitmentV1) -> Vec<u8> {
+    encode_nce_envelope(
+        STORAGE_COMMITMENT_OBJECT_TYPE,
+        STORAGE_COMMITMENT_SCHEMA_VERSION,
+        &encode_storage_commitment_payload(commitment, true, true),
+    )
+}
+
+pub fn derive_storage_commitment_id(
+    network_id: &[u8],
+    commitment: &StorageCommitmentV1,
+) -> Hash32 {
+    generic_protocol_digest(
+        b"ID/STORAGE_COMMITMENT",
+        network_id,
+        &storage_commitment_id_preimage(commitment),
+    )
+}
+
+pub fn storage_commitment_signing_digest(
+    network_id: &[u8],
+    commitment: &StorageCommitmentV1,
+) -> Hash32 {
+    generic_protocol_digest(
+        b"SIGN/STORAGE_COMMITMENT",
+        network_id,
+        &storage_commitment_signing_preimage(commitment),
+    )
+}
+
+pub fn build_storage_commitment_v1(
+    network_id: &[u8],
+    service_node_id: Hash32,
+    operator_id: Hash32,
+    service_class: String,
+    object_id: Hash32,
+    manifest_root: Hash32,
+    chunk_count: u64,
+    total_bytes: u64,
+    retained_from_block: u64,
+    retained_until_block: u64,
+    commitment_nonce: u64,
+    created_block: Hash32,
+) -> Result<StorageCommitmentV1, String> {
+    if chunk_count == 0 {
+        return Err("storage commitment chunk_count must be non-zero".into());
+    }
+    if total_bytes == 0 {
+        return Err("storage commitment total_bytes must be non-zero".into());
+    }
+    if retained_until_block <= retained_from_block {
+        return Err("storage commitment retention interval must be non-empty".into());
+    }
+    if service_class.is_empty() {
+        return Err("storage commitment service_class must not be empty".into());
+    }
+
+    let mut commitment = StorageCommitmentV1 {
+        commitment_id: [0_u8; 32],
+        service_node_id,
+        operator_id,
+        service_class,
+        object_id,
+        manifest_root,
+        chunk_count,
+        total_bytes,
+        retained_from_block,
+        retained_until_block,
+        commitment_nonce,
+        created_block,
+        signature: Vec::new(),
+    };
+    commitment.commitment_id = derive_storage_commitment_id(network_id, &commitment);
+    Ok(commitment)
+}
+
+pub fn sign_storage_commitment(
+    network_id: &[u8],
+    commitment: &mut StorageCommitmentV1,
+    secret_key: &[u8; 32],
+) -> Result<(), String> {
+    let signing_key = SigningKey::from_slice(secret_key)
+        .map_err(|_| "invalid secp256k1 service signing key".to_string())?;
+    let public_key = signing_key.verifying_key().to_encoded_point(true);
+    verify_service_node_identity(commitment.service_node_id, public_key.as_bytes())?;
+
+    let expected_id = derive_storage_commitment_id(network_id, commitment);
+    if commitment.commitment_id != expected_id {
+        return Err("storage commitment_id does not match commitment contents".into());
+    }
+
+    let digest = storage_commitment_signing_digest(network_id, commitment);
+    let signature: Signature = signing_key
+        .sign_prehash(&digest)
+        .map_err(|_| "failed to sign storage commitment".to_string())?;
+    commitment.signature = signature.to_bytes().to_vec();
+    Ok(())
+}
+
+pub fn verify_storage_commitment_signature(
+    network_id: &[u8],
+    commitment: &StorageCommitmentV1,
+    public_key_sec1: &[u8],
+) -> Result<(), String> {
+    verify_service_node_identity(commitment.service_node_id, public_key_sec1)?;
+
+    let expected_id = derive_storage_commitment_id(network_id, commitment);
+    if commitment.commitment_id != expected_id {
+        return Err("storage commitment_id does not match commitment contents".into());
+    }
+    if commitment.signature.len() != 64 {
+        return Err("storage commitment signature must be 64-byte compact ECDSA".into());
+    }
+
+    let verifying_key = VerifyingKey::from_sec1_bytes(public_key_sec1)
+        .map_err(|_| "invalid secp256k1 service public key".to_string())?;
+    let signature = Signature::from_slice(&commitment.signature)
+        .map_err(|_| "invalid secp256k1 storage commitment signature".to_string())?;
+    let digest = storage_commitment_signing_digest(network_id, commitment);
+
+    verifying_key
+        .verify_prehash(&digest, &signature)
+        .map_err(|_| "invalid storage commitment signature".to_string())
+}
+
 pub const SERVICE_EPOCH_REPORT_OBJECT_TYPE: u64 = 0x0208;
 pub const SERVICE_EPOCH_REPORT_SCHEMA_VERSION: u64 = 1;
 
@@ -763,30 +979,42 @@ fn encode_service_epoch_payload(
     out
 }
 
-fn encode_nce_envelope(payload: &[u8]) -> Vec<u8> {
+fn encode_nce_envelope(object_type: u64, schema_version: u64, payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     cbor_map_len(&mut out, 4);
     cbor_uint(&mut out, 1);
     cbor_uint(&mut out, 1);
     cbor_uint(&mut out, 2);
-    cbor_uint(&mut out, SERVICE_EPOCH_REPORT_OBJECT_TYPE);
+    cbor_uint(&mut out, object_type);
     cbor_uint(&mut out, 3);
-    cbor_uint(&mut out, SERVICE_EPOCH_REPORT_SCHEMA_VERSION);
+    cbor_uint(&mut out, schema_version);
     cbor_uint(&mut out, 4);
     out.extend_from_slice(payload);
     out
 }
 
 pub fn service_epoch_report_id_preimage(report: &ServiceEpochReportV1) -> Vec<u8> {
-    encode_nce_envelope(&encode_service_epoch_payload(report, false, false))
+    encode_nce_envelope(
+        SERVICE_EPOCH_REPORT_OBJECT_TYPE,
+        SERVICE_EPOCH_REPORT_SCHEMA_VERSION,
+        &encode_service_epoch_payload(report, false, false),
+    )
 }
 
 pub fn service_epoch_report_signing_preimage(report: &ServiceEpochReportV1) -> Vec<u8> {
-    encode_nce_envelope(&encode_service_epoch_payload(report, true, false))
+    encode_nce_envelope(
+        SERVICE_EPOCH_REPORT_OBJECT_TYPE,
+        SERVICE_EPOCH_REPORT_SCHEMA_VERSION,
+        &encode_service_epoch_payload(report, true, false),
+    )
 }
 
 pub fn service_epoch_report_canonical_bytes(report: &ServiceEpochReportV1) -> Vec<u8> {
-    encode_nce_envelope(&encode_service_epoch_payload(report, true, true))
+    encode_nce_envelope(
+        SERVICE_EPOCH_REPORT_OBJECT_TYPE,
+        SERVICE_EPOCH_REPORT_SCHEMA_VERSION,
+        &encode_service_epoch_payload(report, true, true),
+    )
 }
 
 fn generic_protocol_digest(purpose: &[u8], network_id: &[u8], canonical_bytes: &[u8]) -> Hash32 {
@@ -943,18 +1171,91 @@ pub fn attach_service_epoch_signature(
 mod tests {
     use super::{
         attach_service_epoch_signature, build_service_epoch_report_v1,
-        derive_service_epoch_report_id, derive_service_node_id, evaluate_service_eligibility,
+        build_storage_commitment_v1,
+        derive_service_epoch_report_id, derive_service_node_id, derive_storage_commitment_id, evaluate_service_eligibility,
         evidence_replay_key, finalize_service_epoch_report, select_storage_ranges,
         select_storage_segments, service_epoch_report_canonical_bytes,
         service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
-        service_evidence_root, sign_service_epoch_report, storage_challenge_seed,
+        service_evidence_root, sign_service_epoch_report, sign_storage_commitment, storage_challenge_seed,
         storage_manifest_leaf, storage_manifest_node, storage_manifest_root, storage_range_leaf,
         storage_range_node, storage_range_root, verify_response_meta,
-        verify_service_epoch_report_signature, verify_storage_manifest_proof,
+        verify_service_epoch_report_signature, verify_storage_commitment_signature,
+        verify_storage_manifest_proof,
         verify_storage_range_proof, ChallengeSegment, ExpectedResponseMeta, ManifestProofStep,
         RangeProofStep, ResponseMeta, ServiceEpochAccumulator, ServiceEpochReportV1,
     };
 
+    #[test]
+    fn storage_commitment_is_canonical_signed_and_network_bound() {
+        let secret = [0x09_u8; 32];
+        let signing_key = k256::ecdsa::SigningKey::from_slice(&secret).unwrap();
+        let public_key = signing_key.verifying_key().to_encoded_point(true);
+        let service_node_id = derive_service_node_id(public_key.as_bytes()).unwrap();
+
+        let mut commitment = build_storage_commitment_v1(
+            b"niahcia-dev",
+            service_node_id,
+            [0xbb; 32],
+            "MODEL_STORAGE".into(),
+            [0x44; 32],
+            [0x55; 32],
+            4,
+            16_384,
+            100,
+            820,
+            7,
+            [0x66; 32],
+        )
+        .unwrap();
+
+        assert_eq!(
+            commitment.commitment_id,
+            derive_storage_commitment_id(b"niahcia-dev", &commitment)
+        );
+        sign_storage_commitment(b"niahcia-dev", &mut commitment, &secret).unwrap();
+        assert_eq!(commitment.signature.len(), 64);
+        verify_storage_commitment_signature(
+            b"niahcia-dev",
+            &commitment,
+            public_key.as_bytes(),
+        )
+        .unwrap();
+
+        let mut tampered = commitment.clone();
+        tampered.total_bytes += 1;
+        assert!(verify_storage_commitment_signature(
+            b"niahcia-dev",
+            &tampered,
+            public_key.as_bytes(),
+        )
+        .is_err());
+        assert!(verify_storage_commitment_signature(
+            b"other-network",
+            &commitment,
+            public_key.as_bytes(),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn storage_commitment_rejects_invalid_retention_and_empty_content() {
+        let node_id = [0x11; 32];
+        assert!(build_storage_commitment_v1(
+            b"niahcia-dev", node_id, [0x22; 32], "MODEL_STORAGE".into(), [0x33; 32],
+            [0x44; 32], 0, 1, 0, 720, 0, [0x55; 32]
+        )
+        .is_err());
+        assert!(build_storage_commitment_v1(
+            b"niahcia-dev", node_id, [0x22; 32], "MODEL_STORAGE".into(), [0x33; 32],
+            [0x44; 32], 1, 0, 0, 720, 0, [0x55; 32]
+        )
+        .is_err());
+        assert!(build_storage_commitment_v1(
+            b"niahcia-dev", node_id, [0x22; 32], "MODEL_STORAGE".into(), [0x33; 32],
+            [0x44; 32], 1, 1, 720, 720, 0, [0x55; 32]
+        )
+        .is_err());
+    }
     #[test]
     fn locked_service_epoch_vector_matches() {
         let secret = [0x07_u8; 32];
