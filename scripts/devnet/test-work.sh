@@ -4,11 +4,12 @@ set -euo pipefail
 RPC="http://127.0.0.1:9332"
 
 response="$(
-  curl --fail --silent --show-error "$RPC"     -H 'content-type: application/json'     --data '{"jsonrpc":"2.0","id":1,"method":"pow_getWork","params":[]}'
+  curl --fail --silent --show-error "$RPC" \
+    -H 'content-type: application/json' \
+    --data '{"jsonrpc":"2.0","id":1,"method":"pow_getWork","params":[]}'
 )"
 
-printf '%s
-' "$response"
+printf '%s\n' "$response"
 
 python3 - "$response" <<'PY'
 import json
@@ -22,30 +23,34 @@ if not isinstance(result, dict):
 required = [
     "generation",
     "template_id",
-    "height",
+    "version",
     "parent_hash",
-    "execution_commitment",
+    "height",
     "timestamp",
-    "difficulty",
+    "transactions_root",
+    "execution_root",
     "target",
     "nonce_start",
     "nonce_end",
+    "extra_nonce_start",
+    "extra_nonce_end",
 ]
 missing = [name for name in required if name not in result]
 if missing:
     raise SystemExit(f"FAIL: missing fields: {', '.join(missing)}")
 
 zero32 = "00" * 32
-if result["execution_commitment"].lower().removeprefix("0x") == zero32:
-    raise SystemExit("FAIL: execution commitment is still the zero placeholder")
+if result["execution_root"].lower().removeprefix("0x") == zero32:
+    raise SystemExit("FAIL: execution root is still the zero placeholder")
 
 if result["template_id"].lower().removeprefix("0x") == zero32:
     raise SystemExit("FAIL: template ID is zero")
 
 print()
-print("PASS: pow_getWork returned a non-zero execution-backed work template")
-print(f"generation:           {result['generation']}")
-print(f"height:               {result['height']}")
-print(f"template_id:          {result['template_id']}")
-print(f"execution_commitment: {result['execution_commitment']}")
+print("PASS: pow_getWork returned a NIAHCIA BlockHeaderV1 mining template")
+print(f"generation:        {result['generation']}")
+print(f"height:            {result['height']}")
+print(f"template_id:       {result['template_id']}")
+print(f"transactions_root: {result['transactions_root']}")
+print(f"execution_root:    {result['execution_root']}")
 PY
