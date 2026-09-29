@@ -89,7 +89,10 @@ impl StateStore {
         Ok(Self { db })
     }
 
-    pub fn insert_service_success(&self, success: &PersistedServiceSuccess) -> Result<bool, String> {
+    pub fn insert_service_success(
+        &self,
+        success: &PersistedServiceSuccess,
+    ) -> Result<bool, String> {
         let write = self
             .db
             .begin_write()
