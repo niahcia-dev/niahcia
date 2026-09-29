@@ -363,7 +363,6 @@ pub fn evidence_replay_key(
     keccak256(&preimage)
 }
 
-
 pub fn service_evidence_leaf(evidence_key: Hash32) -> Hash32 {
     let mut preimage = Vec::with_capacity(SERVICE_EVIDENCE_LEAF_DOMAIN.len() + 32);
     preimage.extend_from_slice(SERVICE_EVIDENCE_LEAF_DOMAIN);
@@ -554,16 +553,63 @@ pub fn evaluate_service_eligibility(
     }
 }
 
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FinalizedServiceEpochReport {
+    pub service_node_id: Hash32,
+    pub epoch_start_height: u64,
+    pub epoch_end_height: u64,
+    pub challenges_passed: u64,
+    pub challenges_failed: u64,
+    pub deadlines_missed: u64,
+    pub verified_bytes_served: u128,
+    pub distinct_requester_count: u64,
+    pub distinct_challenge_block_count: u64,
+    pub evidence_root: Hash32,
+    pub eligible: bool,
+    pub eligibility_weight: u128,
+}
+
+pub fn finalize_service_epoch_report(
+    service_node_id: Hash32,
+    epoch: &ServiceEpochAccumulator,
+    min_passed: u64,
+    min_distinct_requesters: usize,
+    min_distinct_challenge_blocks: usize,
+) -> FinalizedServiceEpochReport {
+    let eligibility = evaluate_service_eligibility(
+        epoch,
+        min_passed,
+        min_distinct_requesters,
+        min_distinct_challenge_blocks,
+    );
+
+    FinalizedServiceEpochReport {
+        service_node_id,
+        epoch_start_height: epoch.epoch_start_height,
+        epoch_end_height: epoch.epoch_end_height,
+        challenges_passed: epoch.challenges_passed,
+        challenges_failed: epoch.challenges_failed,
+        deadlines_missed: epoch.deadlines_missed,
+        verified_bytes_served: epoch.verified_bytes_served,
+        distinct_requester_count: epoch.distinct_requester_count() as u64,
+        distinct_challenge_block_count: epoch.distinct_challenge_block_count() as u64,
+        evidence_root: epoch.evidence_root(),
+        eligible: eligibility.eligible,
+        eligibility_weight: eligibility.weight,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        evaluate_service_eligibility, evidence_replay_key, select_storage_ranges,
-        service_evidence_root,
-        select_storage_segments, storage_challenge_seed, storage_manifest_leaf,
-        storage_manifest_node, storage_manifest_root, storage_range_leaf, storage_range_node,
-        storage_range_root, verify_response_meta, verify_storage_manifest_proof,
-        verify_storage_range_proof, ChallengeSegment, ExpectedResponseMeta, ManifestProofStep,
-        RangeProofStep, ResponseMeta, ServiceEpochAccumulator,
+        evaluate_service_eligibility, finalize_service_epoch_report, evidence_replay_key, select_storage_ranges,
+        select_storage_segments, service_evidence_root, storage_challenge_seed,
+        storage_manifest_leaf, storage_manifest_node, storage_manifest_root, storage_range_leaf,
+        storage_range_node, storage_range_root, verify_response_meta,
+        verify_storage_manifest_proof, verify_storage_range_proof, ChallengeSegment,
+        ExpectedResponseMeta, ManifestProofStep, RangeProofStep, ResponseMeta,
+        ServiceEpochAccumulator,
     };
 
     #[test]
@@ -837,6 +883,32 @@ mod tests {
             epoch.evidence_root(),
             service_evidence_root(&[[0x01; 32], [0x02; 32]])
         );
+    }
+
+    #[test]
+    fn finalized_epoch_report_binds_counters_root_and_eligibility() {
+        let mut epoch = ServiceEpochAccumulator::new(720, 1440).unwrap();
+        epoch
+            .record_success([0x01; 32], [0x10; 32], [0x20; 32], 4096)
+            .unwrap();
+        epoch
+            .record_success([0x02; 32], [0x11; 32], [0x21; 32], 2048)
+            .unwrap();
+
+        let report = finalize_service_epoch_report([0xaa; 32], &epoch, 2, 2, 2);
+
+        assert_eq!(report.service_node_id, [0xaa; 32]);
+        assert_eq!(report.epoch_start_height, 720);
+        assert_eq!(report.epoch_end_height, 1440);
+        assert_eq!(report.challenges_passed, 2);
+        assert_eq!(report.challenges_failed, 0);
+        assert_eq!(report.deadlines_missed, 0);
+        assert_eq!(report.verified_bytes_served, 6144);
+        assert_eq!(report.distinct_requester_count, 2);
+        assert_eq!(report.distinct_challenge_block_count, 2);
+        assert_eq!(report.evidence_root, epoch.evidence_root());
+        assert!(report.eligible);
+        assert_eq!(report.eligibility_weight, 6144);
     }
 
     #[test]
