@@ -1,4 +1,5 @@
 use crate::work::{keccak256, Hash32};
+use std::collections::HashSet;
 
 pub const STORAGE_CHALLENGE_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-CHALLENGE/V1";
 pub const STORAGE_SELECT_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-SELECT/V1";
@@ -359,6 +360,88 @@ pub fn evidence_replay_key(
     keccak256(&preimage)
 }
 
+
+#[derive(Debug, Clone)]
+pub struct ServiceEpochAccumulator {
+    pub epoch_start_height: u64,
+    pub epoch_end_height: u64,
+    seen_evidence: HashSet<Hash32>,
+    pub challenges_passed: u64,
+    pub challenges_failed: u64,
+    pub deadlines_missed: u64,
+    pub verified_bytes_served: u128,
+    requester_ids: HashSet<Hash32>,
+    challenge_block_ids: HashSet<Hash32>,
+}
+
+impl ServiceEpochAccumulator {
+    pub fn new(epoch_start_height: u64, epoch_end_height: u64) -> Result<Self, String> {
+        if epoch_end_height <= epoch_start_height {
+            return Err("epoch_end_height must be greater than epoch_start_height".into());
+        }
+
+        Ok(Self {
+            epoch_start_height,
+            epoch_end_height,
+            seen_evidence: HashSet::new(),
+            challenges_passed: 0,
+            challenges_failed: 0,
+            deadlines_missed: 0,
+            verified_bytes_served: 0,
+            requester_ids: HashSet::new(),
+            challenge_block_ids: HashSet::new(),
+        })
+    }
+
+    pub fn record_success(
+        &mut self,
+        evidence_key: Hash32,
+        requester_id: Hash32,
+        challenge_block_id: Hash32,
+        verified_bytes: u64,
+    ) -> Result<(), String> {
+        if !self.seen_evidence.insert(evidence_key) {
+            return Err("duplicate service evidence".into());
+        }
+
+        self.challenges_passed = self.challenges_passed.saturating_add(1);
+        self.verified_bytes_served = self
+            .verified_bytes_served
+            .saturating_add(u128::from(verified_bytes));
+        self.requester_ids.insert(requester_id);
+        self.challenge_block_ids.insert(challenge_block_id);
+        Ok(())
+    }
+
+    pub fn record_failure(
+        &mut self,
+        evidence_key: Hash32,
+        missed_deadline: bool,
+    ) -> Result<(), String> {
+        if !self.seen_evidence.insert(evidence_key) {
+            return Err("duplicate service evidence".into());
+        }
+
+        self.challenges_failed = self.challenges_failed.saturating_add(1);
+        if missed_deadline {
+            self.deadlines_missed = self.deadlines_missed.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    pub fn distinct_requester_count(&self) -> usize {
+        self.requester_ids.len()
+    }
+
+    pub fn distinct_challenge_block_count(&self) -> usize {
+        self.challenge_block_ids.len()
+    }
+
+    pub fn evidence_count(&self) -> usize {
+        self.seen_evidence.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -367,6 +450,7 @@ mod tests {
         storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
         verify_response_meta, verify_storage_manifest_proof, verify_storage_range_proof,
         ChallengeSegment, ExpectedResponseMeta, ManifestProofStep, RangeProofStep, ResponseMeta,
+        ServiceEpochAccumulator,
     };
 
     #[test]
@@ -584,6 +668,39 @@ mod tests {
         assert_ne!(first, other_challenge);
         assert_ne!(first, other_provider);
         assert_ne!(first, other_response);
+    }
+
+    #[test]
+    fn epoch_accumulator_rejects_replay_and_tracks_diversity() {
+        let mut epoch = ServiceEpochAccumulator::new(720, 1440).unwrap();
+
+        epoch
+            .record_success([0x01; 32], [0x10; 32], [0x20; 32], 4096)
+            .unwrap();
+        epoch
+            .record_success([0x02; 32], [0x11; 32], [0x21; 32], 1024)
+            .unwrap();
+
+        assert_eq!(epoch.challenges_passed, 2);
+        assert_eq!(epoch.verified_bytes_served, 5120);
+        assert_eq!(epoch.distinct_requester_count(), 2);
+        assert_eq!(epoch.distinct_challenge_block_count(), 2);
+        assert_eq!(epoch.evidence_count(), 2);
+
+        assert!(epoch
+            .record_success([0x01; 32], [0x12; 32], [0x22; 32], 1)
+            .is_err());
+
+        epoch.record_failure([0x03; 32], true).unwrap();
+        assert_eq!(epoch.challenges_failed, 1);
+        assert_eq!(epoch.deadlines_missed, 1);
+        assert_eq!(epoch.evidence_count(), 3);
+    }
+
+    #[test]
+    fn invalid_epoch_bounds_are_rejected() {
+        assert!(ServiceEpochAccumulator::new(100, 100).is_err());
+        assert!(ServiceEpochAccumulator::new(101, 100).is_err());
     }
 
     #[test]
