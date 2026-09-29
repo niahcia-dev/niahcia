@@ -30,6 +30,8 @@ required = [
     "transactions_root",
     "execution_root",
     "target",
+    "randomx_seed_height",
+    "randomx_seed",
     "nonce_start",
     "nonce_end",
     "extra_nonce_start",
@@ -53,4 +55,6 @@ print(f"height:            {result['height']}")
 print(f"template_id:       {result['template_id']}")
 print(f"transactions_root: {result['transactions_root']}")
 print(f"execution_root:    {result['execution_root']}")
+print(f"randomx_seed:      {result['randomx_seed']}")
+print(f"seed_height:       {result['randomx_seed_height']}")
 PY
