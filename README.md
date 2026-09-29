@@ -2,77 +2,106 @@
 
 **AI CHAIN — reversed.**
 
-This repository contains the reference implementation of the NIAHCIA network.
+The main repository for the NIAHCIA network.
 
-NIAHCIA is a permissionless decentralized blockchain and AI-agent network designed around four independent roles:
+> **Status:** pre-alpha. There is no production network or public binary release yet.
 
+## Download
+
+### Current release
+
+**[Download the latest NIAHCIA release](https://github.com/niahcia/niahcia/releases/latest)**
+
+When releases begin, this repository will be the canonical distribution point for normal users and operators.
+
+Planned release assets:
+
+```text
+niahcia-node-linux-x86_64.tar.gz
+niahcia-miner-linux-x86_64.tar.gz
+niahcia-compute-linux-x86_64.tar.gz
+niahcia-full-linux-x86_64.tar.gz
+SHA256SUMS
+```
+
+### Which package do I need?
+
+| Goal | Package |
+|---|---|
+| Run a full node | `niahcia-node-...` |
+| CPU mine | `niahcia-miner-...` |
+| Run an AI compute worker | `niahcia-compute-...` |
+| Run the standard operator stack | `niahcia-full-...` |
+
+For a normal installation, use a packaged release rather than building from source.
+
+## Quick links
+
+- [All releases](https://github.com/niahcia/niahcia/releases)
+- [Download portal](https://niahcia.github.io/downloads.html)
+- [Protocol specification](https://github.com/niahcia/niahcia-protocol)
+- [Miner source](https://github.com/niahcia/niahcia-miner)
+- [Compute worker source](https://github.com/niahcia/niahcia-compute)
+- [Explorer source](https://github.com/niahcia/niahcia-explorer)
+- [Web application source](https://github.com/niahcia/niahcia-web)
+
+## What is NIAHCIA?
+
+NIAHCIA is a permissionless blockchain and decentralized AI-agent network.
+
+The system is split into independent roles:
+
+- **Full nodes** validate the chain and EVM state.
 - **CPU miners** secure consensus.
-- **Full nodes** validate PoW and EVM state.
 - **Compute workers** execute AI workloads.
 - **Service nodes** provide storage and network services.
 
-The protocol specification lives in `niahcia-dev/niahcia-protocol`.
+CPU mining and AI compute are intentionally separate.
 
-## Working Prototype 0 stack
+## Source layout
 
-- CPU PoW: RandomX
-- Block target: approximately 30 seconds
-- Fork choice: highest cumulative work
-- EVM execution: Reth
-- Smart contracts: Solidity / EVM
-- AI runtime: vLLM
-- Initial workload: pinned Qwen3-class ~8B text model
-- Initial verification: deterministic redundant 2-of-3, with interfaces designed for later optimistic verification
-- Service nodes: canonical model replication and retrieval
-- AI and storage payloads: P2P and content-addressed
-- Settlement: on-chain
+This repository contains the reference blockchain/node implementation and its integration with the EVM execution layer.
 
-## Architectural boundary
+Related components live in separate repositories so they can be developed and released independently.
 
-The PoW consensus layer must not know what an AI job is.
+```text
+niahcia/niahcia              node / chain
+niahcia/niahcia-protocol     protocol specifications
+niahcia/niahcia-miner        CPU miner
+niahcia/niahcia-compute      AI compute worker
+niahcia/niahcia-explorer     explorer
+niahcia/niahcia-web          main web application
+```
+
+## Development
+
+The first implementation target is:
 
 ```text
 CPU PoW consensus
-        |
-        v
-    EVM state
-        |
-        +--> AI contracts / registries
-        +--> service-node contracts / registries
-        +--> normal Solidity applications
+      |
+      v
+Reth / EVM execution
 ```
 
-AI runtimes, models, verification policies, and storage mechanisms may evolve without changing base PoW consensus rules.
+Prototype direction:
 
-## Planned components
+- RandomX CPU proof of work
+- approximately 30-second target block interval
+- highest cumulative work fork choice
+- Reth for EVM execution
+- Solidity smart contracts
+- Ethereum-compatible JSON-RPC
 
-```text
-crates/
-  consensus/       CPU PoW consensus and fork choice
-  pow-rpc/         consensus <-> execution interface
-  node/            chain node orchestration
-  p2p/             shared peer/network primitives
+Implementation details are in:
 
-ai/
-  worker/          compute worker daemon
-  protocol/        AI P2P messages and job transport
+- [Prototype 0 implementation plan](docs/implementation.md)
+- [PoW ↔ Reth interface](docs/pow-reth-interface.md)
+- [Repository family](docs/repository-family.md)
+- [Roadmap](ROADMAP.md)
 
-service/
-  node/            service-node daemon
-  protocol/        storage/retrieval protocol
+## Build from source
 
-contracts/
-  model-registry/
-  worker-registry/
-  service-registry/
-  ai-jobs/
+Source build instructions will be added once the first runnable node implementation exists.
 
-docs/
-  implementation.md
-```
-
-The repository layout will evolve as the first implementation work begins.
-
-## Status
-
-Pre-alpha / architecture bootstrap. No production network exists yet.
+Until then, this repository is not a usable end-user release.
