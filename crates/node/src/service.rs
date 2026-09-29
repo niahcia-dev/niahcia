@@ -9,6 +9,9 @@ pub const STORAGE_MANIFEST_EMPTY_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-MANIFEST-EMPT
 pub const STORAGE_RANGE_LEAF_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-RANGE-LEAF/V1";
 pub const STORAGE_RANGE_NODE_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-RANGE-NODE/V1";
 pub const STORAGE_RANGE_EMPTY_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-RANGE-EMPTY/V1";
+pub const SERVICE_EVIDENCE_LEAF_DOMAIN: &[u8] = b"NIAHCIA/SERVICE-EVIDENCE-LEAF/V1";
+pub const SERVICE_EVIDENCE_NODE_DOMAIN: &[u8] = b"NIAHCIA/SERVICE-EVIDENCE-NODE/V1";
+pub const SERVICE_EVIDENCE_EMPTY_DOMAIN: &[u8] = b"NIAHCIA/SERVICE-EVIDENCE-EMPTY/V1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChallengeRange {
@@ -360,6 +363,45 @@ pub fn evidence_replay_key(
     keccak256(&preimage)
 }
 
+
+pub fn service_evidence_leaf(evidence_key: Hash32) -> Hash32 {
+    let mut preimage = Vec::with_capacity(SERVICE_EVIDENCE_LEAF_DOMAIN.len() + 32);
+    preimage.extend_from_slice(SERVICE_EVIDENCE_LEAF_DOMAIN);
+    preimage.extend_from_slice(&evidence_key);
+    keccak256(&preimage)
+}
+
+pub fn service_evidence_node(left: Hash32, right: Hash32) -> Hash32 {
+    let mut preimage = Vec::with_capacity(SERVICE_EVIDENCE_NODE_DOMAIN.len() + 64);
+    preimage.extend_from_slice(SERVICE_EVIDENCE_NODE_DOMAIN);
+    preimage.extend_from_slice(&left);
+    preimage.extend_from_slice(&right);
+    keccak256(&preimage)
+}
+
+pub fn service_evidence_root(evidence_keys: &[Hash32]) -> Hash32 {
+    if evidence_keys.is_empty() {
+        return keccak256(SERVICE_EVIDENCE_EMPTY_DOMAIN);
+    }
+
+    let mut ordered = evidence_keys.to_vec();
+    ordered.sort_unstable();
+
+    let mut level: Vec<Hash32> = ordered.into_iter().map(service_evidence_leaf).collect();
+
+    while level.len() > 1 {
+        let mut next = Vec::with_capacity(level.len().div_ceil(2));
+        for pair in level.chunks(2) {
+            let left = pair[0];
+            let right = if pair.len() == 2 { pair[1] } else { left };
+            next.push(service_evidence_node(left, right));
+        }
+        level = next;
+    }
+
+    level[0]
+}
+
 #[derive(Debug, Clone)]
 pub struct ServiceEpochAccumulator {
     pub epoch_start_height: u64,
@@ -439,8 +481,12 @@ impl ServiceEpochAccumulator {
     pub fn evidence_count(&self) -> usize {
         self.seen_evidence.len()
     }
-}
 
+    pub fn evidence_root(&self) -> Hash32 {
+        let keys: Vec<Hash32> = self.seen_evidence.iter().copied().collect();
+        service_evidence_root(&keys)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceEligibility {
@@ -501,7 +547,9 @@ pub fn evaluate_service_eligibility(
 
     ServiceEligibility {
         eligible: true,
-        weight: epoch.verified_bytes_served.max(u128::from(epoch.challenges_passed)),
+        weight: epoch
+            .verified_bytes_served
+            .max(u128::from(epoch.challenges_passed)),
         reason: "eligible",
     }
 }
@@ -509,12 +557,13 @@ pub fn evaluate_service_eligibility(
 #[cfg(test)]
 mod tests {
     use super::{
-        evaluate_service_eligibility, evidence_replay_key, select_storage_ranges, select_storage_segments,
-        storage_challenge_seed, storage_manifest_leaf, storage_manifest_node,
-        storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
-        verify_response_meta, verify_storage_manifest_proof, verify_storage_range_proof,
-        ChallengeSegment, ExpectedResponseMeta, ManifestProofStep, RangeProofStep, ResponseMeta,
-        ServiceEpochAccumulator,
+        evaluate_service_eligibility, evidence_replay_key, select_storage_ranges,
+        service_evidence_root,
+        select_storage_segments, storage_challenge_seed, storage_manifest_leaf,
+        storage_manifest_node, storage_manifest_root, storage_range_leaf, storage_range_node,
+        storage_range_root, verify_response_meta, verify_storage_manifest_proof,
+        verify_storage_range_proof, ChallengeSegment, ExpectedResponseMeta, ManifestProofStep,
+        RangeProofStep, ResponseMeta, ServiceEpochAccumulator,
     };
 
     #[test]
@@ -759,6 +808,35 @@ mod tests {
         assert_eq!(epoch.challenges_failed, 1);
         assert_eq!(epoch.deadlines_missed, 1);
         assert_eq!(epoch.evidence_count(), 3);
+    }
+
+    #[test]
+    fn evidence_root_is_order_independent_and_replay_sensitive() {
+        let a = [0x01; 32];
+        let b = [0x02; 32];
+        let c = [0x03; 32];
+
+        let first = service_evidence_root(&[a, b, c]);
+        let reordered = service_evidence_root(&[c, a, b]);
+        let missing = service_evidence_root(&[a, b]);
+
+        assert_eq!(first, reordered);
+        assert_ne!(first, missing);
+        assert_ne!(service_evidence_root(&[]), [0_u8; 32]);
+    }
+
+    #[test]
+    fn accumulator_evidence_root_matches_unique_evidence_set() {
+        let mut epoch = ServiceEpochAccumulator::new(0, 720).unwrap();
+        epoch
+            .record_success([0x01; 32], [0x10; 32], [0x20; 32], 100)
+            .unwrap();
+        epoch.record_failure([0x02; 32], false).unwrap();
+
+        assert_eq!(
+            epoch.evidence_root(),
+            service_evidence_root(&[[0x01; 32], [0x02; 32]])
+        );
     }
 
     #[test]
