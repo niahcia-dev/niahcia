@@ -1,6 +1,8 @@
 mod config;
+mod engine;
 
 use config::NodeConfig;
+use engine::EngineClient;
 use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -34,7 +36,7 @@ Environment overrides:
   NIAHCIA_LOG_LEVEL
 
 Status:
-  Pre-alpha reference node bootstrap.
+  Pre-alpha reference node.
 "
     );
 }
@@ -105,6 +107,28 @@ fn main() -> ExitCode {
     if let Err(e) = std::fs::create_dir_all(&config.data_dir) {
         error!(error = %e, path = %config.data_dir.display(), "failed to create data directory");
         return ExitCode::from(1);
+    }
+
+    let engine = match EngineClient::new(config.reth_engine_api.clone(), &config.reth_jwt_path) {
+        Ok(client) => client,
+        Err(e) => {
+            error!(error = %e, "failed to initialize Reth Engine API client");
+            return ExitCode::from(1);
+        }
+    };
+
+    match engine.exchange_capabilities() {
+        Ok(capabilities) => {
+            info!(
+                count = capabilities.len(),
+                capabilities = ?capabilities,
+                "connected to Reth Engine API"
+            );
+        }
+        Err(e) => {
+            error!(error = %e, "Reth Engine API check failed");
+            return ExitCode::from(1);
+        }
     }
 
     let running = Arc::new(AtomicBool::new(true));
