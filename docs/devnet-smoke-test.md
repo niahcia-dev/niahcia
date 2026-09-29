@@ -60,7 +60,7 @@ Reth's CLI documents `dev` as a built-in chain and separately documents `--dev` 
 From the repository root:
 
 ```bash
-scripts/devnet/generate-jwt.sh
+bash scripts/devnet/generate-jwt.sh
 ```
 
 This creates:
@@ -74,7 +74,7 @@ The file is development-only and must never be committed.
 ## Terminal 1 — start Reth
 
 ```bash
-scripts/devnet/run-reth.sh
+bash scripts/devnet/run-reth.sh
 ```
 
 Expected local endpoints:
@@ -105,7 +105,7 @@ curl -s http://127.0.0.1:8545 \
 ## Terminal 2 — start NIAHCIA
 
 ```bash
-scripts/devnet/run-niahcia.sh
+bash scripts/devnet/run-niahcia.sh
 ```
 
 The script writes an ignored development configuration at:
@@ -127,7 +127,7 @@ NIAHCIA should:
 ## Terminal 3 — test mining work
 
 ```bash
-scripts/devnet/test-work.sh
+bash scripts/devnet/test-work.sh
 ```
 
 Success requires a JSON-RPC result and a non-zero `execution_commitment`.
