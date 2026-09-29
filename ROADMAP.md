@@ -1,5 +1,16 @@
 # NIAHCIA Roadmap
 
+## Milestone 0 — Project foundation
+
+- protocol repository and canonical object specs
+- reference implementation repository
+- canonical serialization, hashing, IDs, signatures, and domain separation
+- repository family defined for miner, compute worker, explorer, official web app, GitHub Pages site, and shared GitHub profile/community files
+- contributor/security/release policies
+- initial testnet architecture
+
+See `docs/repository-family.md`.
+
 ## Milestone 1 — Chain
 
 - CPU PoW
@@ -9,6 +20,8 @@
 - multi-node sync
 - reorganizations
 - wallets and RPC compatibility
+- CPU miner reference implementation
+- solo mining first, pool protocol immediately after basic mining stability
 
 ## Milestone 2 — Decentralized compute
 
@@ -19,6 +32,7 @@
 - streaming responses
 - AI escrow and settlement
 - canonical execution profiles
+- dedicated `niahcia-compute` client
 
 ## Milestone 3 — Verification
 
@@ -49,7 +63,35 @@
 - agent-to-agent invocation
 - smart-contract interaction
 - autonomous triggers
-- official discovery/interface
+
+## Milestone 6 — Public network experience
+
+### Explorer
+
+- blocks / transactions / contracts
+- mining and difficulty metrics
+- AI jobs and verification
+- model registry
+- agents and versions
+- compute workers/operators
+- service nodes/storage
+
+### Main website
+
+- Ask an Agent
+- browse/discover agents
+- wallet connection
+- funded AI sessions
+- job/account history
+- network dashboard
+- developer portal
+
+### GitHub Pages
+
+- static NIAHCIA project/development site
+- architecture overview
+- repository directory
+- docs/downloads/status links
 
 ## Ultimate resilience milestone
 
