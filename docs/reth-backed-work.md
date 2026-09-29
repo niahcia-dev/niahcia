@@ -1,37 +1,110 @@
 # Reth-backed Mining Candidate
 
-NIAHCIA v0.1.0 now has the code path that turns a real Reth execution candidate into mining work.
+NIAHCIA uses Reth as an **execution engine**, not as a source of blockchain identity or consensus.
+
+The architectural rule is:
+
+> **Reth calculates EVM execution results. NIAHCIA defines the block.**
 
 ## Flow
 
 ```text
-eth_getBlockByNumber("latest")
+Reth execution engine
+        |
+        | executes candidate transactions
+        v
+state_root
+receipts_root
+ordered raw transactions
+gas data
+base fee
         |
         v
-current Reth parent
+NIAHCIA-native execution commitment
         |
         v
-engine_forkchoiceUpdatedV3
-        |
-        | payloadId
-        v
-engine_getPayloadV3
+NIAHCIA PowWorkTemplate
         |
         v
-ExecutionPayloadCommitments
-        |
-        | Keccak-256
-        v
-execution_commitment
-        |
-        v
-PowWorkTemplate
-        |
-        v
-pow_getWork
+NIAHCIA block hash / RandomX work
 ```
 
-Reth's current Engine API exposes V3 payload building for Cancun-era execution. NIAHCIA uses the authenticated Engine API for payload building and the normal HTTP JSON-RPC endpoint to discover the current execution head.
+The Reth execution payload block hash is retained only as **diagnostic metadata**. It is not included in the NIAHCIA execution commitment and does not define NIAHCIA block identity.
+
+## Two different parent relationships
+
+During development it is important not to confuse these:
+
+```text
+NIAHCIA parent hash
+    = previous NIAHCIA block
+
+execution parent hash
+    = execution-engine parent used by Reth
+```
+
+They serve different purposes.
+
+The current first-block bootstrap uses an all-zero NIAHCIA parent until persistent NIAHCIA chain state is implemented. The Reth execution parent remains available separately in the execution metadata.
+
+## NIAHCIA transaction commitment
+
+NIAHCIA does not depend on Reth's Ethereum execution block hash to indirectly commit to transactions.
+
+Instead it creates its own deterministic transaction commitment from the ordered raw transaction bytes returned in the execution payload:
+
+```text
+keccak256(
+    "NIAHCIA/TRANSACTIONS/V1"
+    || transaction_count
+    || len(tx0) || tx0
+    || len(tx1) || tx1
+    || ...
+)
+```
+
+This is intentionally a NIAHCIA-native commitment.
+
+It is not Ethereum's Merkle-Patricia transaction trie root.
+
+The EVM still interprets the transactions using Ethereum-compatible transaction semantics, but NIAHCIA owns the outer block commitment.
+
+## Execution commitment
+
+The current development execution commitment contains:
+
+- execution parent hash
+- fee recipient
+- EVM state root
+- EVM receipts root
+- NIAHCIA transaction commitment
+- execution block number
+- gas limit
+- gas used
+- timestamp
+- base fee
+
+It explicitly does **not** contain:
+
+- Ethereum mainnet block identity
+- Ethereum beacon-chain identity
+- Reth's execution payload block hash as a consensus field
+- Ethereum validator/finality data
+
+## Independence requirement
+
+A future execution engine should be replaceable.
+
+Conceptually:
+
+```text
+NIAHCIA + Reth
+NIAHCIA + another compatible EVM engine
+```
+
+should be able to produce the same NIAHCIA consensus commitments from the same ordered transactions and execution results.
+
+No Ethereum network connection is required.
 
 ## Configuration
 
@@ -42,41 +115,18 @@ reth_jwt_path = "./jwt.hex"
 fee_recipient = "0x0000000000000000000000000000000000000000"
 ```
 
-Reth must expose HTTP JSON-RPC with `eth` enabled on the configured public endpoint.
-
-## Execution commitment
-
-The development commitment includes:
-
-- parent hash
-- Reth execution payload block hash
-- fee recipient
-- state root
-- receipts root
-- block number
-- gas limit
-- gas used
-- timestamp
-- base fee
-
-The Reth execution payload block hash itself commits to the Ethereum execution header, including the transaction root. This avoids inventing a fake transaction-root calculation in the NIAHCIA consensus layer.
+These endpoints are for the operator's own local Reth process.
 
 ## Current development assumptions
 
-For the first Reth-backed candidate:
+The current integration still uses Reth's Engine API V3 as the transport for requesting execution payloads. This is an implementation interface, not NIAHCIA consensus.
 
-- `engine_forkchoiceUpdatedV3` is used.
-- `engine_getPayloadV3` is used.
-- withdrawals are empty.
-- `prevRandao` is zeroed because NIAHCIA does not use Ethereum PoS randomness for consensus.
-- `parentBeaconBlockRoot` is zeroed because NIAHCIA does not have an Ethereum beacon chain.
-- the development difficulty remains 1.
-- the development target remains all `ff`.
+For the first development candidate:
 
-Those last two values are intentionally not final PoW consensus.
+- withdrawals are empty,
+- `prevRandao` is zeroed,
+- `parentBeaconBlockRoot` is zeroed,
+- development difficulty remains 1,
+- development target remains all `ff`.
 
-## Important
-
-This establishes the execution-to-work plumbing. It does not yet prove a live Reth devnet accepts the NIAHCIA-specific zeroed PoS-era attributes in every fork configuration.
-
-That live integration test is required before issue #7 is closed.
+A live local integration test is still required before issue #7 is closed.
