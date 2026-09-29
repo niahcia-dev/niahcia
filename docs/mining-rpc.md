@@ -1,6 +1,6 @@
 # Local Mining RPC
 
-The v0.1.0 node exposes a small **development-only** local JSON-RPC interface for CPU mining work.
+The v0.1.0 node exposes a development-only local JSON-RPC interface for CPU mining work.
 
 Default bind:
 
@@ -16,44 +16,40 @@ curl -s http://127.0.0.1:9332 \
   --data '{"jsonrpc":"2.0","id":1,"method":"pow_getWork","params":[]}'
 ```
 
+## Returned work
+
+`pow_getWork` now represents an unfinished NIAHCIA `BlockHeaderV1`.
+
 The response includes:
 
-- development marker
-- work generation
+- generation
 - template ID
 - version
+- NIAHCIA parent hash
 - height
-- parent hash
-- execution commitment
 - timestamp
-- difficulty
-- target
-- nonce start/end range
+- transaction Merkle root
+- execution root
+- 256-bit target
+- nonce range
+- extra-nonce range
+
+Difficulty is intentionally not a consensus field in the header; it is derived from target.
 
 ## Stale-work detection
 
-Internally, the node keeps:
+The node tracks:
 
 ```text
 generation + template_id
 ```
 
-When the active template is replaced, the generation increments and the template ID changes. A miner can therefore discard work from an older generation.
+The template ID ignores only `nonce` and `extra_nonce`.
 
-The current code has a unit test proving this behavior.
+A change to parent, height, timestamp, transaction root, execution root, target, or version changes template identity and makes old work stale.
 
-## Important v0.1.0 limitation
+## Current development limitation
 
-The current startup template is intentionally a bootstrap template:
+The first NIAHCIA parent is still a bootstrap zero hash until persistent NIAHCIA chain storage lands.
 
-- height is 0,
-- parent hash is zero,
-- execution commitment is zero,
-- difficulty is 1,
-- target is all `ff`.
-
-It proves the miner-facing RPC and stale-work mechanics only.
-
-It is **not yet chain-valid mining work** because the next integration step must populate the template from an actual Reth execution payload and NIAHCIA consensus state.
-
-This distinction is deliberate: the RPC exists now without pretending that the chain-building path is finished.
+Execution data is now sourced from the local execution engine path, but live Reth devnet validation is still required before issue #7 is closed.
