@@ -77,6 +77,27 @@ impl BlockHeaderV1 {
         out
     }
 
+    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() != BLOCK_HEADER_V1_LEN {
+            return Err(format!(
+                "BlockHeaderV1 must be {BLOCK_HEADER_V1_LEN} bytes; found {}",
+                bytes.len()
+            ));
+        }
+
+        Ok(Self {
+            version: u32::from_be_bytes(bytes[0..4].try_into().unwrap()),
+            parent_hash: bytes[4..36].try_into().unwrap(),
+            height: u64::from_be_bytes(bytes[36..44].try_into().unwrap()),
+            timestamp: u64::from_be_bytes(bytes[44..52].try_into().unwrap()),
+            transactions_root: bytes[52..84].try_into().unwrap(),
+            execution_root: bytes[84..116].try_into().unwrap(),
+            target: bytes[116..148].try_into().unwrap(),
+            nonce: u64::from_be_bytes(bytes[148..156].try_into().unwrap()),
+            extra_nonce: u64::from_be_bytes(bytes[156..164].try_into().unwrap()),
+        })
+    }
+
     pub fn block_id(&self) -> Hash32 {
         let mut preimage = Vec::with_capacity(BLOCK_HEADER_DOMAIN.len() + BLOCK_HEADER_V1_LEN);
         preimage.extend_from_slice(BLOCK_HEADER_DOMAIN);
@@ -147,6 +168,16 @@ mod tests {
             nonce: 0x0102_0304_0506_0708,
             extra_nonce: 0x1112_1314_1516_1718,
         }
+    }
+
+    #[test]
+    fn block_header_v1_round_trips_canonical_bytes() {
+        let header = sample_header();
+        let encoded = header.canonical_bytes();
+        let decoded = BlockHeaderV1::from_canonical_bytes(&encoded).unwrap();
+
+        assert_eq!(decoded, header);
+        assert!(BlockHeaderV1::from_canonical_bytes(&encoded[..163]).is_err());
     }
 
     #[test]
