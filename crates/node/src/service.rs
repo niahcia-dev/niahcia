@@ -1772,7 +1772,9 @@ mod tests {
         storage_commitment_canonical_bytes, storage_commitment_id_preimage,
         storage_commitment_signing_digest, storage_commitment_signing_preimage,
         storage_manifest_leaf, storage_manifest_node, storage_manifest_root, storage_range_leaf,
-        storage_range_node, storage_range_root, verify_response_meta,
+        storage_range_node, storage_range_root, storage_response_bytes_hash,
+        storage_response_canonical_bytes, storage_response_id_preimage,
+        storage_response_signing_digest, storage_response_signing_preimage, verify_response_meta,
         verify_service_epoch_report_signature, verify_storage_challenge_signature,
         verify_storage_commitment_signature, verify_storage_manifest_proof,
         verify_storage_range_proof, verify_storage_response_evidence,
@@ -1887,6 +1889,99 @@ mod tests {
         )
         .is_err());
     }
+    #[test]
+    fn locked_storage_response_vector_matches() {
+        let secret = [0x0b_u8; 32];
+        let signing_key = k256::ecdsa::SigningKey::from_slice(&secret).unwrap();
+        let public_key = signing_key.verifying_key().to_encoded_point(true);
+        assert_eq!(
+            hex::encode(public_key.as_bytes()),
+            "02552c630b64b54bf50210c9e253d38bd4949c72e22873500f6285c2bede312a84"
+        );
+
+        let service_node_id = derive_service_node_id(public_key.as_bytes()).unwrap();
+        assert_eq!(
+            hex::encode(service_node_id),
+            "2c76f8506cecbb516a45739348d43314356ef2361078aa6359ee980ce8535bbc"
+        );
+
+        let returned_bytes = b"abcdefgh".to_vec();
+        let range_root = storage_range_leaf(0, &returned_bytes);
+        assert_eq!(
+            hex::encode(range_root),
+            "2dd606a3ac32e28b80868f0f738e3cc5bdd3725e6f4262c2dae150a72b0fe915"
+        );
+
+        let range_proof = StorageRangeProofV1 {
+            chunk_index: 0,
+            segment_index: 0,
+            offset: 0,
+            length: 8,
+            returned_bytes,
+            chunk_length: 8,
+            chunk_hash: [0x70; 32],
+            range_root,
+            range_proof: Vec::new(),
+            manifest_proof: Vec::new(),
+        };
+
+        assert_eq!(
+            hex::encode(storage_response_bytes_hash(std::slice::from_ref(&range_proof))),
+            "9989bfe991cba8260667c0142441ceeb95d9c4b5873578bd3226ca716e326f7b"
+        );
+
+        let mut response = build_storage_response_v1(
+            b"niahcia-dev",
+            StorageResponseParams {
+                challenge_id: hex::decode(
+                    "5e623e834459f2f73f8a324fdf35c003c9dbf79322dbd68a1e1b56ea25974763",
+                )
+                .unwrap()
+                .try_into()
+                .unwrap(),
+                commitment_id: hex::decode(
+                    "bdc05540f553573acc7b89d9888e4291ecf3953d620959d14eccafae64d9cbfa",
+                )
+                .unwrap()
+                .try_into()
+                .unwrap(),
+                service_node_id,
+                answered_at: 1_000_020,
+                range_proofs: vec![range_proof],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            hex::encode(storage_response_id_preimage(&response)),
+            "a4010102190207030104a701010358205e623e834459f2f73f8a324fdf35c003c9dbf79322dbd68a1e1b56ea25974763045820bdc05540f553573acc7b89d9888e4291ecf3953d620959d14eccafae64d9cbfa0558202c76f8506cecbb516a45739348d43314356ef2361078aa6359ee980ce8535bbc061a000f425407818a00000008486162636465666768085820707070707070707070707070707070707070707070707070707070707070707058202dd606a3ac32e28b80868f0f738e3cc5bdd3725e6f4262c2dae150a72b0fe91580800858209989bfe991cba8260667c0142441ceeb95d9c4b5873578bd3226ca716e326f7b"
+        );
+        assert_eq!(
+            hex::encode(response.response_id),
+            "f8b0b62a72e22b67358b6ae605c1576bdb9d62ba760be997856302b1a759aa8d"
+        );
+        assert_eq!(
+            hex::encode(storage_response_signing_preimage(&response)),
+            "a4010102190207030104a80101025820f8b0b62a72e22b67358b6ae605c1576bdb9d62ba760be997856302b1a759aa8d0358205e623e834459f2f73f8a324fdf35c003c9dbf79322dbd68a1e1b56ea25974763045820bdc05540f553573acc7b89d9888e4291ecf3953d620959d14eccafae64d9cbfa0558202c76f8506cecbb516a45739348d43314356ef2361078aa6359ee980ce8535bbc061a000f425407818a00000008486162636465666768085820707070707070707070707070707070707070707070707070707070707070707058202dd606a3ac32e28b80868f0f738e3cc5bdd3725e6f4262c2dae150a72b0fe91580800858209989bfe991cba8260667c0142441ceeb95d9c4b5873578bd3226ca716e326f7b"
+        );
+        assert_eq!(
+            hex::encode(storage_response_signing_digest(b"niahcia-dev", &response)),
+            "beb001fb4d35c564d6d92829917d69aa69a94bb5fc022d0bde98e1d61e983f25"
+        );
+
+        sign_storage_response(b"niahcia-dev", &mut response, &secret).unwrap();
+        assert_eq!(
+            hex::encode(&response.signature),
+            "12de1a44a77590fe4eb87f65dcc7d6128866c0ff8b91335678278fef4fead0436625f25f8411ac4c3d4f9ee9d78a3fa0fcd54b535f3c777a86faa6acd4993cf3"
+        );
+        assert_eq!(
+            hex::encode(storage_response_canonical_bytes(&response)),
+            "a4010102190207030104a90101025820f8b0b62a72e22b67358b6ae605c1576bdb9d62ba760be997856302b1a759aa8d0358205e623e834459f2f73f8a324fdf35c003c9dbf79322dbd68a1e1b56ea25974763045820bdc05540f553573acc7b89d9888e4291ecf3953d620959d14eccafae64d9cbfa0558202c76f8506cecbb516a45739348d43314356ef2361078aa6359ee980ce8535bbc061a000f425407818a00000008486162636465666768085820707070707070707070707070707070707070707070707070707070707070707058202dd606a3ac32e28b80868f0f738e3cc5bdd3725e6f4262c2dae150a72b0fe91580800858209989bfe991cba8260667c0142441ceeb95d9c4b5873578bd3226ca716e326f7b09584012de1a44a77590fe4eb87f65dcc7d6128866c0ff8b91335678278fef4fead0436625f25f8411ac4c3d4f9ee9d78a3fa0fcd54b535f3c777a86faa6acd4993cf3"
+        );
+        verify_storage_response_signature(b"niahcia-dev", &response, public_key.as_bytes())
+            .unwrap();
+    }
+
     #[test]
     fn storage_response_is_signed_network_bound_and_verifies_evidence() {
         let provider_secret = [0x0b_u8; 32];
