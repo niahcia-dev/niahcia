@@ -175,7 +175,7 @@ fn main() -> ExitCode {
     };
 
     let candidate_timestamp = now.max(parent.timestamp.saturating_add(1));
-    let execution = match engine.build_payload_v3(&parent, candidate_timestamp, fee_recipient) {
+    let built = match engine.build_payload_v3(&parent, candidate_timestamp, fee_recipient) {
         Ok(payload) => payload,
         Err(e) => {
             error!(error = %e, "failed to build Reth execution candidate");
@@ -183,10 +183,13 @@ fn main() -> ExitCode {
         }
     };
 
+    let execution = &built.commitments;
+    let niahcia_parent_hash = [0_u8; 32];
+
     let work_manager = WorkManager::new(PowWorkTemplate {
         version: 1,
         height: execution.block_number,
-        parent_hash: execution.parent_hash,
+        parent_hash: niahcia_parent_hash,
         execution_commitment: execution.commitment_hash(),
         timestamp: execution.timestamp,
         difficulty: 1,
@@ -195,9 +198,12 @@ fn main() -> ExitCode {
 
     info!(
         height = execution.block_number,
-        parent = %hex::encode(execution.parent_hash),
+        niahcia_parent = %hex::encode(niahcia_parent_hash),
+        execution_parent = %hex::encode(execution.execution_parent_hash),
+        execution_payload_hash = %hex::encode(built.execution_payload_hash),
+        transactions_commitment = %hex::encode(execution.transactions_commitment),
         execution_commitment = %hex::encode(execution.commitment_hash()),
-        "installed Reth-backed mining template"
+        "installed Reth-backed NIAHCIA mining template"
     );
 
     let running = Arc::new(AtomicBool::new(true));
