@@ -51,8 +51,8 @@ pub fn spawn(
     work: WorkManager,
     running: Arc<AtomicBool>,
 ) -> Result<thread::JoinHandle<()>, String> {
-    let listener = TcpListener::bind(bind)
-        .map_err(|e| format!("failed to bind mining RPC on {bind}: {e}"))?;
+    let listener =
+        TcpListener::bind(bind).map_err(|e| format!("failed to bind mining RPC on {bind}: {e}"))?;
     listener
         .set_nonblocking(true)
         .map_err(|e| format!("failed to configure mining RPC listener: {e}"))?;
