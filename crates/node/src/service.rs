@@ -956,6 +956,61 @@ mod tests {
     };
 
     #[test]
+    fn locked_service_epoch_vector_matches() {
+        let secret = [0x07_u8; 32];
+        let signing_key = k256::ecdsa::SigningKey::from_slice(&secret).unwrap();
+        let public_key = signing_key.verifying_key().to_encoded_point(true);
+        assert_eq!(
+            hex::encode(public_key.as_bytes()),
+            "02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f"
+        );
+
+        let service_node_id = derive_service_node_id(public_key.as_bytes()).unwrap();
+        assert_eq!(
+            hex::encode(service_node_id),
+            "d070a1e364585c32ce042e933504a05b74913ff8d3bef399d6b9b9abf3fb3d8b"
+        );
+
+        let mut epoch = ServiceEpochAccumulator::new(0, 720).unwrap();
+        epoch
+            .record_success([0x01; 32], [0x10; 32], [0x20; 32], 4096)
+            .unwrap();
+        epoch
+            .record_success([0x02; 32], [0x11; 32], [0x21; 32], 2048)
+            .unwrap();
+        assert_eq!(
+            hex::encode(epoch.evidence_root()),
+            "b510c5e894da2eec30586ac3109f551f16af2123e34e7429302df5252c1d54d7"
+        );
+
+        let finalized = finalize_service_epoch_report(service_node_id, &epoch, 2, 2, 2);
+        let mut report = build_service_epoch_report_v1(
+            b"niahcia-dev",
+            &finalized,
+            [0xbb; 32],
+            2,
+            vec!["ARCHIVE".into(), "MODEL_STORAGE".into()],
+            [0xcc; 32],
+        );
+
+        assert_eq!(
+            hex::encode(report.report_id),
+            "4111ebc6d0283609830f9666ac017def52f977d5e170b2960acd9432a4809597"
+        );
+        assert_eq!(
+            hex::encode(service_epoch_report_signing_digest(b"niahcia-dev", &report)),
+            "61a0eb64c68188f8144a5a73bf41868f50c7afd58f2e63f61ea04582f0dcf552"
+        );
+
+        sign_service_epoch_report(b"niahcia-dev", &mut report, &secret).unwrap();
+        assert_eq!(
+            hex::encode(&report.signature),
+            "40077b047eb28cdc5903d2e22aad96a56f0c21506a0a5a395a78763ea24135512df31821934df7d3b3a5dabff9314fe568d56f8620f8d20dddf59e018e797cc3"
+        );
+        verify_service_epoch_report_signature(b"niahcia-dev", &report, public_key.as_bytes())
+            .unwrap();
+    }
+    #[test]
     fn secp256k1_service_epoch_signature_verifies_and_rejects_tampering() {
         let mut epoch = ServiceEpochAccumulator::new(0, 720).unwrap();
         epoch
