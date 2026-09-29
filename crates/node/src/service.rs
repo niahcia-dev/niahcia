@@ -90,6 +90,72 @@ pub fn select_storage_ranges(
     Ok(out)
 }
 
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChallengeSegment {
+    pub chunk_index: u64,
+    pub segment_index: u64,
+    pub offset: u64,
+    pub length: u64,
+}
+
+pub fn select_storage_segments(
+    challenge_seed: Hash32,
+    chunk_lengths: &[u64],
+    requested_segments: usize,
+    segment_size: u64,
+) -> Result<Vec<ChallengeSegment>, String> {
+    if chunk_lengths.is_empty() {
+        return Err("cannot challenge an empty manifest".into());
+    }
+    if requested_segments == 0 {
+        return Err("requested_segments must be non-zero".into());
+    }
+    if segment_size == 0 {
+        return Err("segment_size must be non-zero".into());
+    }
+    if chunk_lengths.contains(&0) {
+        return Err("chunk lengths must be non-zero".into());
+    }
+
+    let chunk_count = u64::try_from(chunk_lengths.len())
+        .map_err(|_| "chunk count does not fit u64".to_string())?;
+    let mut out = Vec::with_capacity(requested_segments);
+
+    for counter in 0..requested_segments {
+        let digest = storage_selection_digest(challenge_seed, counter as u64);
+
+        let chunk_word = u64::from_be_bytes(
+            digest[0..8]
+                .try_into()
+                .map_err(|_| "invalid selection digest".to_string())?,
+        );
+        let segment_word = u64::from_be_bytes(
+            digest[8..16]
+                .try_into()
+                .map_err(|_| "invalid selection digest".to_string())?,
+        );
+
+        let chunk_index = chunk_word % chunk_count;
+        let chunk_length = chunk_lengths[chunk_index as usize];
+        let segment_count = chunk_length.div_ceil(segment_size);
+        let segment_index = segment_word % segment_count;
+        let offset = segment_index
+            .checked_mul(segment_size)
+            .ok_or_else(|| "segment offset overflow".to_string())?;
+        let length = (chunk_length - offset).min(segment_size);
+
+        out.push(ChallengeSegment {
+            chunk_index,
+            segment_index,
+            offset,
+            length,
+        });
+    }
+
+    Ok(out)
+}
+
 fn storage_selection_digest(challenge_seed: Hash32, counter: u64) -> Hash32 {
     let mut preimage = Vec::with_capacity(STORAGE_SELECT_DOMAIN.len() + challenge_seed.len() + 8);
     preimage.extend_from_slice(STORAGE_SELECT_DOMAIN);
@@ -297,11 +363,12 @@ pub fn evidence_replay_key(
 #[cfg(test)]
 mod tests {
     use super::{
-        evidence_replay_key, select_storage_ranges, storage_challenge_seed, storage_manifest_leaf,
+        evidence_replay_key, select_storage_ranges, select_storage_segments, storage_challenge_seed,
+        storage_manifest_leaf,
         storage_manifest_node, storage_manifest_root, storage_range_leaf, storage_range_node,
         storage_range_root, verify_response_meta, verify_storage_manifest_proof,
-        verify_storage_range_proof, ExpectedResponseMeta, ManifestProofStep, RangeProofStep,
-        ResponseMeta,
+        verify_storage_range_proof, ChallengeSegment, ExpectedResponseMeta, ManifestProofStep,
+        RangeProofStep, ResponseMeta,
     };
 
     #[test]
@@ -332,6 +399,29 @@ mod tests {
             assert!(range.length > 0);
             assert!(range.length <= 512);
             assert!(range.offset + range.length <= chunk_len);
+        }
+    }
+
+    #[test]
+    fn segment_selection_is_aligned_and_in_bounds() {
+        let seed = storage_challenge_seed([0x66; 32], [0x77; 32]);
+        let chunk_lengths = [4096_u64, 5000_u64, 1024_u64];
+        let segments = select_storage_segments(seed, &chunk_lengths, 16, 1024).unwrap();
+
+        assert_eq!(segments.len(), 16);
+
+        for ChallengeSegment {
+            chunk_index,
+            segment_index,
+            offset,
+            length,
+        } in segments
+        {
+            let chunk_len = chunk_lengths[chunk_index as usize];
+            assert_eq!(offset, segment_index * 1024);
+            assert!(length > 0);
+            assert!(length <= 1024);
+            assert!(offset + length <= chunk_len);
         }
     }
 
