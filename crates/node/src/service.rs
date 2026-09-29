@@ -525,7 +525,6 @@ pub fn record_verified_storage_response(
     Ok(evidence_key)
 }
 
-
 pub fn record_verified_storage_response_persistent(
     store: &StateStore,
     epoch: &mut ServiceEpochAccumulator,
@@ -1872,8 +1871,7 @@ mod tests {
         derive_storage_response_id, evaluate_service_eligibility, evidence_replay_key,
         finalize_service_epoch_report, load_persisted_service_epoch,
         record_verified_storage_response, record_verified_storage_response_persistent,
-        select_storage_ranges,
-        select_storage_segments, service_epoch_report_canonical_bytes,
+        select_storage_ranges, select_storage_segments, service_epoch_report_canonical_bytes,
         service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
         service_evidence_root, sign_service_epoch_report, sign_storage_challenge,
         sign_storage_commitment, sign_storage_response, storage_challenge_canonical_bytes,
