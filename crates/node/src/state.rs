@@ -2,14 +2,10 @@ use crate::work::Hash32;
 use redb::{Database, ReadableTable, TableDefinition};
 use std::path::Path;
 
-const SERVICE_EVIDENCE: TableDefinition<&[u8], &[u8]> =
-    TableDefinition::new("service_evidence_v1");
-const SERVICE_EPOCHS: TableDefinition<&[u8], &[u8]> =
-    TableDefinition::new("service_epochs_v1");
-const CHAIN_BLOCKS: TableDefinition<&[u8], &[u8]> =
-    TableDefinition::new("chain_blocks_v1");
-const CHAIN_META: TableDefinition<&[u8], &[u8]> =
-    TableDefinition::new("chain_meta_v1");
+const SERVICE_EVIDENCE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("service_evidence_v1");
+const SERVICE_EPOCHS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("service_epochs_v1");
+const CHAIN_BLOCKS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_blocks_v1");
+const CHAIN_META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_meta_v1");
 
 pub struct StateStore {
     db: Database,
@@ -23,7 +19,8 @@ impl StateStore {
                 .map_err(|e| format!("failed to create state directory: {e}"))?;
         }
 
-        let db = Database::create(path).map_err(|e| format!("failed to open state database: {e}"))?;
+        let db =
+            Database::create(path).map_err(|e| format!("failed to open state database: {e}"))?;
 
         // Open each table once so the on-disk namespace is created deliberately.
         let write = db
