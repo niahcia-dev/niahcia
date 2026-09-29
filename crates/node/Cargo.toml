@@ -1,0 +1,11 @@
+[package]
+name = "niahcia"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "NIAHCIA reference node"
+
+[[bin]]
+name = "niahcia"
+path = "src/main.rs"
