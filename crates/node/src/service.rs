@@ -14,8 +14,9 @@ pub struct ChallengeRange {
 }
 
 pub fn storage_challenge_seed(challenge_block_id: Hash32, commitment_id: Hash32) -> Hash32 {
-    let mut preimage =
-        Vec::with_capacity(STORAGE_CHALLENGE_DOMAIN.len() + challenge_block_id.len() + commitment_id.len());
+    let mut preimage = Vec::with_capacity(
+        STORAGE_CHALLENGE_DOMAIN.len() + challenge_block_id.len() + commitment_id.len(),
+    );
     preimage.extend_from_slice(STORAGE_CHALLENGE_DOMAIN);
     preimage.extend_from_slice(&challenge_block_id);
     preimage.extend_from_slice(&commitment_id);
@@ -87,14 +88,12 @@ pub fn select_storage_ranges(
 }
 
 fn storage_selection_digest(challenge_seed: Hash32, counter: u64) -> Hash32 {
-    let mut preimage =
-        Vec::with_capacity(STORAGE_SELECT_DOMAIN.len() + challenge_seed.len() + 8);
+    let mut preimage = Vec::with_capacity(STORAGE_SELECT_DOMAIN.len() + challenge_seed.len() + 8);
     preimage.extend_from_slice(STORAGE_SELECT_DOMAIN);
     preimage.extend_from_slice(&challenge_seed);
     preimage.extend_from_slice(&counter.to_be_bytes());
     keccak256(&preimage)
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManifestProofStep {
@@ -251,25 +250,13 @@ mod tests {
         ];
 
         assert!(verify_storage_manifest_proof(
-            root,
-            1,
-            200,
-            [0x22; 32],
-            &proof
+            root, 1, 200, [0x22; 32], &proof
         ));
         assert!(!verify_storage_manifest_proof(
-            root,
-            1,
-            201,
-            [0x22; 32],
-            &proof
+            root, 1, 201, [0x22; 32], &proof
         ));
         assert!(!verify_storage_manifest_proof(
-            root,
-            1,
-            200,
-            [0x23; 32],
-            &proof
+            root, 1, 200, [0x23; 32], &proof
         ));
     }
 
