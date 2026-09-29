@@ -699,10 +699,7 @@ pub fn storage_commitment_canonical_bytes(commitment: &StorageCommitmentV1) -> V
     )
 }
 
-pub fn derive_storage_commitment_id(
-    network_id: &[u8],
-    commitment: &StorageCommitmentV1,
-) -> Hash32 {
+pub fn derive_storage_commitment_id(network_id: &[u8], commitment: &StorageCommitmentV1) -> Hash32 {
     generic_protocol_digest(
         b"ID/STORAGE_COMMITMENT",
         network_id,
@@ -1170,17 +1167,16 @@ pub fn attach_service_epoch_signature(
 #[cfg(test)]
 mod tests {
     use super::{
-        attach_service_epoch_signature, build_service_epoch_report_v1,
-        build_storage_commitment_v1,
-        derive_service_epoch_report_id, derive_service_node_id, derive_storage_commitment_id, evaluate_service_eligibility,
-        evidence_replay_key, finalize_service_epoch_report, select_storage_ranges,
-        select_storage_segments, service_epoch_report_canonical_bytes,
+        attach_service_epoch_signature, build_service_epoch_report_v1, build_storage_commitment_v1,
+        derive_service_epoch_report_id, derive_service_node_id, derive_storage_commitment_id,
+        evaluate_service_eligibility, evidence_replay_key, finalize_service_epoch_report,
+        select_storage_ranges, select_storage_segments, service_epoch_report_canonical_bytes,
         service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
-        service_evidence_root, sign_service_epoch_report, sign_storage_commitment, storage_challenge_seed,
-        storage_manifest_leaf, storage_manifest_node, storage_manifest_root, storage_range_leaf,
-        storage_range_node, storage_range_root, verify_response_meta,
-        verify_service_epoch_report_signature, verify_storage_commitment_signature,
-        verify_storage_manifest_proof,
+        service_evidence_root, sign_service_epoch_report, sign_storage_commitment,
+        storage_challenge_seed, storage_manifest_leaf, storage_manifest_node,
+        storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
+        verify_response_meta, verify_service_epoch_report_signature,
+        verify_storage_commitment_signature, verify_storage_manifest_proof,
         verify_storage_range_proof, ChallengeSegment, ExpectedResponseMeta, ManifestProofStep,
         RangeProofStep, ResponseMeta, ServiceEpochAccumulator, ServiceEpochReportV1,
     };
@@ -1214,12 +1210,8 @@ mod tests {
         );
         sign_storage_commitment(b"niahcia-dev", &mut commitment, &secret).unwrap();
         assert_eq!(commitment.signature.len(), 64);
-        verify_storage_commitment_signature(
-            b"niahcia-dev",
-            &commitment,
-            public_key.as_bytes(),
-        )
-        .unwrap();
+        verify_storage_commitment_signature(b"niahcia-dev", &commitment, public_key.as_bytes())
+            .unwrap();
 
         let mut tampered = commitment.clone();
         tampered.total_bytes += 1;
@@ -1241,18 +1233,48 @@ mod tests {
     fn storage_commitment_rejects_invalid_retention_and_empty_content() {
         let node_id = [0x11; 32];
         assert!(build_storage_commitment_v1(
-            b"niahcia-dev", node_id, [0x22; 32], "MODEL_STORAGE".into(), [0x33; 32],
-            [0x44; 32], 0, 1, 0, 720, 0, [0x55; 32]
+            b"niahcia-dev",
+            node_id,
+            [0x22; 32],
+            "MODEL_STORAGE".into(),
+            [0x33; 32],
+            [0x44; 32],
+            0,
+            1,
+            0,
+            720,
+            0,
+            [0x55; 32]
         )
         .is_err());
         assert!(build_storage_commitment_v1(
-            b"niahcia-dev", node_id, [0x22; 32], "MODEL_STORAGE".into(), [0x33; 32],
-            [0x44; 32], 1, 0, 0, 720, 0, [0x55; 32]
+            b"niahcia-dev",
+            node_id,
+            [0x22; 32],
+            "MODEL_STORAGE".into(),
+            [0x33; 32],
+            [0x44; 32],
+            1,
+            0,
+            0,
+            720,
+            0,
+            [0x55; 32]
         )
         .is_err());
         assert!(build_storage_commitment_v1(
-            b"niahcia-dev", node_id, [0x22; 32], "MODEL_STORAGE".into(), [0x33; 32],
-            [0x44; 32], 1, 1, 720, 720, 0, [0x55; 32]
+            b"niahcia-dev",
+            node_id,
+            [0x22; 32],
+            "MODEL_STORAGE".into(),
+            [0x33; 32],
+            [0x44; 32],
+            1,
+            1,
+            720,
+            720,
+            0,
+            [0x55; 32]
         )
         .is_err());
     }
