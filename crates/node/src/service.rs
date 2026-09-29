@@ -1,4 +1,8 @@
 use crate::work::{keccak256, Hash32};
+use k256::ecdsa::{
+    signature::hazmat::{PrehashSigner, PrehashVerifier},
+    Signature, SigningKey, VerifyingKey,
+};
 use std::collections::HashSet;
 
 pub const STORAGE_CHALLENGE_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-CHALLENGE/V1";
@@ -849,6 +853,52 @@ pub fn build_service_epoch_report_v1(
     report
 }
 
+pub fn sign_service_epoch_report(
+    network_id: &[u8],
+    report: &mut ServiceEpochReportV1,
+    secret_key: &[u8; 32],
+) -> Result<(), String> {
+    let expected_id = derive_service_epoch_report_id(network_id, report);
+    if report.report_id != expected_id {
+        return Err("service epoch report_id does not match report contents".into());
+    }
+
+    let signing_key = SigningKey::from_slice(secret_key)
+        .map_err(|_| "invalid secp256k1 service signing key".to_string())?;
+    let digest = service_epoch_report_signing_digest(network_id, report);
+    let signature: Signature = signing_key
+        .sign_prehash(&digest)
+        .map_err(|_| "failed to sign service epoch report".to_string())?;
+
+    report.signature = signature.to_bytes().to_vec();
+    Ok(())
+}
+
+pub fn verify_service_epoch_report_signature(
+    network_id: &[u8],
+    report: &ServiceEpochReportV1,
+    public_key_sec1: &[u8],
+) -> Result<(), String> {
+    let expected_id = derive_service_epoch_report_id(network_id, report);
+    if report.report_id != expected_id {
+        return Err("service epoch report_id does not match report contents".into());
+    }
+
+    if report.signature.len() != 64 {
+        return Err("service epoch report signature must be 64-byte compact ECDSA".into());
+    }
+
+    let verifying_key = VerifyingKey::from_sec1_bytes(public_key_sec1)
+        .map_err(|_| "invalid secp256k1 service public key".to_string())?;
+    let signature = Signature::from_slice(&report.signature)
+        .map_err(|_| "invalid secp256k1 service signature".to_string())?;
+    let digest = service_epoch_report_signing_digest(network_id, report);
+
+    verifying_key
+        .verify_prehash(&digest, &signature)
+        .map_err(|_| "invalid service epoch report signature".to_string())
+}
+
 pub fn attach_service_epoch_signature(
     report: &mut ServiceEpochReportV1,
     signature: Vec<u8>,
@@ -868,14 +918,64 @@ mod tests {
         derive_service_epoch_report_id, evaluate_service_eligibility, evidence_replay_key,
         finalize_service_epoch_report, select_storage_ranges, select_storage_segments,
         service_epoch_report_canonical_bytes, service_epoch_report_signing_digest,
-        service_epoch_report_signing_preimage, service_evidence_root, storage_challenge_seed,
+        service_epoch_report_signing_preimage, sign_service_epoch_report, service_evidence_root, storage_challenge_seed,
         storage_manifest_leaf, storage_manifest_node, storage_manifest_root, storage_range_leaf,
         storage_range_node, storage_range_root, verify_response_meta,
+        verify_service_epoch_report_signature,
         verify_storage_manifest_proof, verify_storage_range_proof, ChallengeSegment,
         ExpectedResponseMeta, ManifestProofStep, RangeProofStep, ResponseMeta,
         ServiceEpochAccumulator, ServiceEpochReportV1,
     };
 
+    #[test]
+    fn secp256k1_service_epoch_signature_verifies_and_rejects_tampering() {
+        let mut epoch = ServiceEpochAccumulator::new(0, 720).unwrap();
+        epoch
+            .record_success([0x01; 32], [0x10; 32], [0x20; 32], 4096)
+            .unwrap();
+        epoch
+            .record_success([0x02; 32], [0x11; 32], [0x21; 32], 2048)
+            .unwrap();
+
+        let finalized = finalize_service_epoch_report([0xaa; 32], &epoch, 2, 2, 2);
+        let mut report = build_service_epoch_report_v1(
+            b"niahcia-dev",
+            &finalized,
+            [0xbb; 32],
+            2,
+            vec!["ARCHIVE".into(), "MODEL_STORAGE".into()],
+            [0xcc; 32],
+        );
+
+        let secret = [0x07_u8; 32];
+        let signing_key = k256::ecdsa::SigningKey::from_slice(&secret).unwrap();
+        let public_key = signing_key.verifying_key().to_encoded_point(true);
+
+        sign_service_epoch_report(b"niahcia-dev", &mut report, &secret).unwrap();
+        assert_eq!(report.signature.len(), 64);
+        verify_service_epoch_report_signature(
+            b"niahcia-dev",
+            &report,
+            public_key.as_bytes(),
+        )
+        .unwrap();
+
+        let mut tampered = report.clone();
+        tampered.verified_bytes_served += 1;
+        assert!(verify_service_epoch_report_signature(
+            b"niahcia-dev",
+            &tampered,
+            public_key.as_bytes(),
+        )
+        .is_err());
+
+        assert!(verify_service_epoch_report_signature(
+            b"other-network",
+            &report,
+            public_key.as_bytes(),
+        )
+        .is_err());
+    }
     #[test]
     fn service_epoch_report_builder_derives_id_and_signature_is_not_in_id() {
         let mut epoch = ServiceEpochAccumulator::new(0, 720).unwrap();
