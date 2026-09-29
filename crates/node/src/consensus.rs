@@ -1,4 +1,6 @@
 use crate::work::{keccak256, Hash32};
+use num_bigint::BigUint;
+use num_traits::{One, Zero};
 
 pub const TARGET_BLOCK_INTERVAL: u64 = 30;
 pub const RANDOMX_EPOCH_LENGTH: u64 = 2_048;
@@ -22,6 +24,61 @@ pub fn randomx_seed(seed_block_id: Hash32) -> Hash32 {
 
 pub fn pow_meets_target(pow_hash: Hash32, target: Hash32) -> bool {
     pow_hash <= target
+}
+
+pub const DIFFICULTY_WINDOW: usize = 60;
+pub const MIN_SOLVE_TIME: u64 = 1;
+pub const MAX_SOLVE_TIME: u64 = 300;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DifficultySample {
+    pub target: Hash32,
+    pub solve_time: u64,
+}
+
+pub fn next_target(previous_target: Hash32, samples: &[DifficultySample], pow_limit: Hash32) -> Hash32 {
+    if samples.is_empty() {
+        return previous_target;
+    }
+
+    let start = samples.len().saturating_sub(DIFFICULTY_WINDOW);
+    let window = &samples[start..];
+
+    let mut weighted = BigUint::zero();
+    for sample in window {
+        let bounded = sample.solve_time.clamp(MIN_SOLVE_TIME, MAX_SOLVE_TIME);
+        weighted += hash32_to_biguint(sample.target) * BigUint::from(bounded);
+    }
+
+    let divisor = BigUint::from(TARGET_BLOCK_INTERVAL) * BigUint::from(window.len());
+    let raw = weighted / divisor;
+
+    let previous = hash32_to_biguint(previous_target);
+    let harder = (&previous * BigUint::from(7_u8) + BigUint::from(7_u8)) / BigUint::from(8_u8);
+    let easier = (&previous * BigUint::from(9_u8)) / BigUint::from(8_u8);
+    let limit = hash32_to_biguint(pow_limit);
+
+    let bounded = raw.max(harder).min(easier).min(limit);
+    biguint_to_hash32(&bounded)
+}
+
+pub fn block_work(target: Hash32) -> BigUint {
+    let max = (BigUint::one() << 256_usize) - BigUint::one();
+    let denominator = hash32_to_biguint(target) + BigUint::one();
+    (max / denominator) + BigUint::one()
+}
+
+fn hash32_to_biguint(value: Hash32) -> BigUint {
+    BigUint::from_bytes_be(&value)
+}
+
+fn biguint_to_hash32(value: &BigUint) -> Hash32 {
+    let bytes = value.to_bytes_be();
+    assert!(bytes.len() <= 32, "256-bit target overflow");
+
+    let mut out = [0_u8; 32];
+    out[32 - bytes.len()..].copy_from_slice(&bytes);
+    out
 }
 
 pub fn median_time_past(timestamps: &[u64]) -> Option<u64> {
@@ -61,8 +118,9 @@ pub fn validate_timestamp(
 #[cfg(test)]
 mod tests {
     use super::{
-        median_time_past, pow_meets_target, randomx_seed, randomx_seed_height, validate_timestamp,
-        RANDOMX_EPOCH_LENGTH, RANDOMX_SEED_LAG,
+        block_work, median_time_past, next_target, pow_meets_target, randomx_seed,
+        randomx_seed_height, validate_timestamp, DifficultySample, RANDOMX_EPOCH_LENGTH,
+        RANDOMX_SEED_LAG,
     };
 
     #[test]
@@ -100,6 +158,93 @@ mod tests {
     fn median_time_uses_last_eleven_ancestors() {
         let timestamps: Vec<u64> = (1..=20).collect();
         assert_eq!(median_time_past(&timestamps), Some(15));
+    }
+
+    fn target_u64(value: u64) -> [u8; 32] {
+        let mut out = [0_u8; 32];
+        out[24..].copy_from_slice(&value.to_be_bytes());
+        out
+    }
+
+    #[test]
+    fn difficulty_vector_steady() {
+        let samples = vec![
+            DifficultySample {
+                target: target_u64(1000),
+                solve_time: 30,
+            };
+            60
+        ];
+
+        assert_eq!(
+            next_target(target_u64(1000), &samples, [0xff; 32]),
+            target_u64(1000)
+        );
+    }
+
+    #[test]
+    fn difficulty_vector_fast_window_hits_harder_clamp() {
+        let samples = vec![
+            DifficultySample {
+                target: target_u64(1000),
+                solve_time: 15,
+            };
+            60
+        ];
+
+        assert_eq!(
+            next_target(target_u64(1000), &samples, [0xff; 32]),
+            target_u64(875)
+        );
+    }
+
+    #[test]
+    fn difficulty_vector_slow_window_hits_easier_clamp() {
+        let samples = vec![
+            DifficultySample {
+                target: target_u64(1000),
+                solve_time: 60,
+            };
+            60
+        ];
+
+        assert_eq!(
+            next_target(target_u64(1000), &samples, [0xff; 32]),
+            target_u64(1125)
+        );
+    }
+
+    #[test]
+    fn difficulty_vector_long_outlier_is_bounded() {
+        let mut samples = vec![
+            DifficultySample {
+                target: target_u64(1000),
+                solve_time: 30,
+            };
+            59
+        ];
+        samples.push(DifficultySample {
+            target: target_u64(1000),
+            solve_time: 3600,
+        });
+
+        assert_eq!(
+            next_target(target_u64(1000), &samples, [0xff; 32]),
+            target_u64(1125)
+        );
+    }
+
+    #[test]
+    fn block_work_matches_protocol_vectors() {
+        assert_eq!(block_work([0xff; 32]).to_str_radix(10), "1");
+        assert_eq!(
+            block_work(target_u64(1000)).to_str_radix(10),
+            "115676412824491703719851133874813094758511473192448115923534049957955174466"
+        );
+        assert_eq!(
+            block_work(target_u64(1)).to_str_radix(10),
+            "57896044618658097711785492504343953926634992332820282019728792003956564819968"
+        );
     }
 
     #[test]
