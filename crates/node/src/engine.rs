@@ -113,7 +113,9 @@ impl EngineClient {
             .ok_or_else(|| format!("forkchoice response missing payloadStatus.status: {update}"))?;
 
         if status != "VALID" {
-            return Err(format!("Reth rejected forkchoice update with status {status}: {update}"));
+            return Err(format!(
+                "Reth rejected forkchoice update with status {status}: {update}"
+            ));
         }
 
         let payload_id = update
