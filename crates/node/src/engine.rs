@@ -1,4 +1,4 @@
-use crate::work::{Address20, ExecutionPayloadCommitments, Hash32};
+use crate::work::{keccak256, Address20, ExecutionPayloadCommitments, Hash32};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::blocking::Client;
 use serde::Serialize;
@@ -12,6 +12,12 @@ pub struct LatestBlock {
     pub hash: Hash32,
     pub number: u64,
     pub timestamp: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct BuiltExecutionPayload {
+    pub commitments: ExecutionPayloadCommitments,
+    pub execution_payload_hash: Hash32,
 }
 
 #[derive(Debug)]
@@ -76,7 +82,7 @@ impl EngineClient {
         parent: &LatestBlock,
         timestamp: u64,
         fee_recipient: Address20,
-    ) -> Result<ExecutionPayloadCommitments, String> {
+    ) -> Result<BuiltExecutionPayload, String> {
         if timestamp <= parent.timestamp {
             return Err(format!(
                 "payload timestamp {timestamp} must be greater than parent timestamp {}",
@@ -133,17 +139,23 @@ impl EngineClient {
             return Err("Reth payload parentHash does not match requested parent".into());
         }
 
-        Ok(ExecutionPayloadCommitments {
-            parent_hash,
-            payload_block_hash: parse_hash32(field_str(payload, "blockHash")?)?,
-            fee_recipient: parse_address20(field_str(payload, "feeRecipient")?)?,
-            state_root: parse_hash32(field_str(payload, "stateRoot")?)?,
-            receipts_root: parse_hash32(field_str(payload, "receiptsRoot")?)?,
-            block_number: parse_quantity(field_str(payload, "blockNumber")?)?,
-            gas_limit: parse_quantity(field_str(payload, "gasLimit")?)?,
-            gas_used: parse_quantity(field_str(payload, "gasUsed")?)?,
-            timestamp: parse_quantity(field_str(payload, "timestamp")?)?,
-            base_fee_per_gas: parse_u256(field_str(payload, "baseFeePerGas")?)?,
+        let execution_payload_hash = parse_hash32(field_str(payload, "blockHash")?)?;
+        let transactions_commitment = transaction_commitment(payload)?;
+
+        Ok(BuiltExecutionPayload {
+            commitments: ExecutionPayloadCommitments {
+                execution_parent_hash: parent_hash,
+                fee_recipient: parse_address20(field_str(payload, "feeRecipient")?)?,
+                state_root: parse_hash32(field_str(payload, "stateRoot")?)?,
+                receipts_root: parse_hash32(field_str(payload, "receiptsRoot")?)?,
+                transactions_commitment,
+                block_number: parse_quantity(field_str(payload, "blockNumber")?)?,
+                gas_limit: parse_quantity(field_str(payload, "gasLimit")?)?,
+                gas_used: parse_quantity(field_str(payload, "gasUsed")?)?,
+                timestamp: parse_quantity(field_str(payload, "timestamp")?)?,
+                base_fee_per_gas: parse_u256(field_str(payload, "baseFeePerGas")?)?,
+            },
+            execution_payload_hash,
         })
     }
 
@@ -216,6 +228,36 @@ impl EngineClient {
     }
 }
 
+fn transaction_commitment(payload: &Value) -> Result<Hash32, String> {
+    const DOMAIN: &[u8] = b"NIAHCIA/TRANSACTIONS/V1";
+
+    let transactions = payload
+        .get("transactions")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("execution payload missing transactions array: {payload}"))?;
+
+    let count = u64::try_from(transactions.len())
+        .map_err(|_| "transaction count does not fit in u64".to_string())?;
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(DOMAIN);
+    bytes.extend_from_slice(&count.to_be_bytes());
+
+    for transaction in transactions {
+        let raw = transaction
+            .as_str()
+            .ok_or_else(|| "execution transaction must be a hex string".to_string())?;
+        let decoded =
+            hex::decode(strip_hex(raw)).map_err(|e| format!("invalid transaction hex: {e}"))?;
+        let len = u64::try_from(decoded.len())
+            .map_err(|_| "transaction length does not fit in u64".to_string())?;
+        bytes.extend_from_slice(&len.to_be_bytes());
+        bytes.extend_from_slice(&decoded);
+    }
+
+    Ok(keccak256(&bytes))
+}
+
 fn field_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
     value
         .get(field)
@@ -285,7 +327,8 @@ fn load_jwt_secret(path: &Path) -> Result<Vec<u8>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{load_jwt_secret, parse_quantity, parse_u256};
+    use super::{load_jwt_secret, parse_quantity, parse_u256, transaction_commitment};
+    use serde_json::json;
     use std::fs;
 
     #[test]
@@ -322,6 +365,28 @@ mod tests {
     fn parses_engine_quantities() {
         assert_eq!(parse_quantity("0x2a").unwrap(), 42);
         assert_eq!(parse_quantity("0x0").unwrap(), 0);
+    }
+
+    #[test]
+    fn transaction_commitment_is_niahcia_native() {
+        let payload = json!({
+            "transactions": [
+                "0x010203",
+                "0xaabb"
+            ]
+        });
+
+        let first = transaction_commitment(&payload).unwrap();
+        let second = transaction_commitment(&payload).unwrap();
+        assert_eq!(first, second);
+
+        let changed = json!({
+            "transactions": [
+                "0x010203",
+                "0xaabc"
+            ]
+        });
+        assert_ne!(first, transaction_commitment(&changed).unwrap());
     }
 
     #[test]
