@@ -10,6 +10,8 @@ pub struct NodeConfig {
     pub network: String,
     pub data_dir: PathBuf,
     pub reth_engine_api: String,
+    pub reth_http_rpc: String,
+    pub fee_recipient: String,
     pub reth_jwt_path: PathBuf,
     pub mining_rpc_bind: SocketAddr,
     pub log_level: String,
@@ -21,6 +23,8 @@ impl Default for NodeConfig {
             network: "devnet".to_string(),
             data_dir: PathBuf::from("./data"),
             reth_engine_api: "http://127.0.0.1:8551".to_string(),
+            reth_http_rpc: "http://127.0.0.1:8545".to_string(),
+            fee_recipient: "0x0000000000000000000000000000000000000000".to_string(),
             reth_jwt_path: PathBuf::from("./jwt.hex"),
             mining_rpc_bind: "127.0.0.1:9332".parse().expect("valid default socket"),
             log_level: "info".to_string(),
@@ -49,6 +53,12 @@ impl NodeConfig {
         if let Ok(v) = env::var("NIAHCIA_RETH_ENGINE_API") {
             cfg.reth_engine_api = v;
         }
+        if let Ok(v) = env::var("NIAHCIA_RETH_HTTP_RPC") {
+            cfg.reth_http_rpc = v;
+        }
+        if let Ok(v) = env::var("NIAHCIA_FEE_RECIPIENT") {
+            cfg.fee_recipient = v;
+        }
         if let Ok(v) = env::var("NIAHCIA_RETH_JWT_PATH") {
             cfg.reth_jwt_path = PathBuf::from(v);
         }
@@ -74,6 +84,17 @@ impl NodeConfig {
             || self.reth_engine_api.starts_with("https://"))
         {
             return Err("reth_engine_api must start with http:// or https://".into());
+        }
+
+        if !(self.reth_http_rpc.starts_with("http://")
+            || self.reth_http_rpc.starts_with("https://"))
+        {
+            return Err("reth_http_rpc must start with http:// or https://".into());
+        }
+
+        let recipient = self.fee_recipient.strip_prefix("0x").unwrap_or(&self.fee_recipient);
+        if recipient.len() != 40 || hex::decode(recipient).is_err() {
+            return Err("fee_recipient must be a 20-byte hex address".into());
         }
 
         if self.log_level.trim().is_empty() {
