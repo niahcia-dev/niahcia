@@ -405,12 +405,7 @@ mod tests {
         }];
 
         assert!(!verify_storage_manifest_proof(
-            root,
-            1,
-            200,
-            [0x22; 32],
-            [0xff; 32],
-            &proof
+            root, 1, 200, [0x22; 32], [0xff; 32], &proof
         ));
     }
 
