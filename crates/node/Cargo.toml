@@ -11,7 +11,7 @@ name = "niahcia"
 path = "src/main.rs"
 
 [dependencies]
-ctrlc = "3.4"
+ctrlc = { version = "3.4", features = ["termination"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 tracing = "0.1"
