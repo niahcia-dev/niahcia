@@ -156,6 +156,41 @@ mod tests {
     }
 
     #[test]
+    fn block_header_protocol_vector_one() {
+        let header = BlockHeaderV1 {
+            version: 1,
+            parent_hash: [0x11; 32],
+            height: 42,
+            timestamp: 1_800_000_000,
+            transactions_root: [0x22; 32],
+            execution_root: [0x33; 32],
+            target: [0xff; 32],
+            nonce: 0x0102_0304_0506_0708,
+            extra_nonce: 0x1112_1314_1516_1718,
+        };
+
+        let canonical = hex::encode(header.canonical_bytes());
+        let expected = concat!(
+            "00000001",
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "000000000000002a",
+            "000000006b49d200",
+            "2222222222222222222222222222222222222222222222222222222222222222",
+            "3333333333333333333333333333333333333333333333333333333333333333",
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "0102030405060708",
+            "1112131415161718"
+        );
+
+        assert_eq!(canonical, expected);
+        println!("BLOCK_HEADER_V1_VECTOR_BLOCK_ID={}", hex::encode(header.block_id()));
+        println!(
+            "BLOCK_HEADER_V1_VECTOR_TEMPLATE_ID={}",
+            hex::encode(header.mining_template_id())
+        );
+    }
+
+    #[test]
     fn block_header_integer_fields_are_big_endian() {
         let bytes = sample_header().canonical_bytes();
         assert_eq!(&bytes[0..4], &1_u32.to_be_bytes());
