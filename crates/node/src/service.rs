@@ -2,6 +2,9 @@ use crate::work::{keccak256, Hash32};
 
 pub const STORAGE_CHALLENGE_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-CHALLENGE/V1";
 pub const STORAGE_SELECT_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-SELECT/V1";
+pub const STORAGE_MANIFEST_LEAF_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-MANIFEST-LEAF/V1";
+pub const STORAGE_MANIFEST_NODE_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-MANIFEST-NODE/V1";
+pub const STORAGE_MANIFEST_EMPTY_DOMAIN: &[u8] = b"NIAHCIA/STORAGE-MANIFEST-EMPTY/V1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChallengeRange {
@@ -92,9 +95,81 @@ fn storage_selection_digest(challenge_seed: Hash32, counter: u64) -> Hash32 {
     keccak256(&preimage)
 }
 
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManifestProofStep {
+    pub sibling: Hash32,
+    pub sibling_is_left: bool,
+}
+
+pub fn storage_manifest_leaf(chunk_index: u64, chunk_length: u64, chunk_hash: Hash32) -> Hash32 {
+    let mut preimage = Vec::with_capacity(STORAGE_MANIFEST_LEAF_DOMAIN.len() + 8 + 8 + 32);
+    preimage.extend_from_slice(STORAGE_MANIFEST_LEAF_DOMAIN);
+    preimage.extend_from_slice(&chunk_index.to_be_bytes());
+    preimage.extend_from_slice(&chunk_length.to_be_bytes());
+    preimage.extend_from_slice(&chunk_hash);
+    keccak256(&preimage)
+}
+
+pub fn storage_manifest_node(left: Hash32, right: Hash32) -> Hash32 {
+    let mut preimage = Vec::with_capacity(STORAGE_MANIFEST_NODE_DOMAIN.len() + 64);
+    preimage.extend_from_slice(STORAGE_MANIFEST_NODE_DOMAIN);
+    preimage.extend_from_slice(&left);
+    preimage.extend_from_slice(&right);
+    keccak256(&preimage)
+}
+
+pub fn storage_manifest_root(chunks: &[(u64, Hash32)]) -> Hash32 {
+    if chunks.is_empty() {
+        return keccak256(STORAGE_MANIFEST_EMPTY_DOMAIN);
+    }
+
+    let mut level: Vec<Hash32> = chunks
+        .iter()
+        .enumerate()
+        .map(|(index, (length, hash))| storage_manifest_leaf(index as u64, *length, *hash))
+        .collect();
+
+    while level.len() > 1 {
+        let mut next = Vec::with_capacity(level.len().div_ceil(2));
+        for pair in level.chunks(2) {
+            let left = pair[0];
+            let right = if pair.len() == 2 { pair[1] } else { left };
+            next.push(storage_manifest_node(left, right));
+        }
+        level = next;
+    }
+
+    level[0]
+}
+
+pub fn verify_storage_manifest_proof(
+    expected_root: Hash32,
+    chunk_index: u64,
+    chunk_length: u64,
+    chunk_hash: Hash32,
+    proof: &[ManifestProofStep],
+) -> bool {
+    let mut current = storage_manifest_leaf(chunk_index, chunk_length, chunk_hash);
+
+    for step in proof {
+        current = if step.sibling_is_left {
+            storage_manifest_node(step.sibling, current)
+        } else {
+            storage_manifest_node(current, step.sibling)
+        };
+    }
+
+    current == expected_root
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{select_storage_ranges, storage_challenge_seed};
+    use super::{
+        select_storage_ranges, storage_challenge_seed, storage_manifest_leaf,
+        storage_manifest_node, storage_manifest_root, verify_storage_manifest_proof,
+        ManifestProofStep,
+    };
 
     #[test]
     fn challenge_seed_is_deterministic_and_domain_separated() {
@@ -137,6 +212,72 @@ mod tests {
             assert_eq!(range.offset, 0);
             assert_eq!(range.length, 64);
         }
+    }
+
+    #[test]
+    fn manifest_merkle_root_is_deterministic() {
+        let chunks = [
+            (100_u64, [0x11; 32]),
+            (200_u64, [0x22; 32]),
+            (300_u64, [0x33; 32]),
+        ];
+
+        let first = storage_manifest_root(&chunks);
+        let second = storage_manifest_root(&chunks);
+
+        assert_eq!(first, second);
+        assert_ne!(first, storage_manifest_root(&chunks[..2]));
+    }
+
+    #[test]
+    fn manifest_proof_verifies_and_rejects_tampering() {
+        let leaf0 = storage_manifest_leaf(0, 100, [0x11; 32]);
+        let leaf1 = storage_manifest_leaf(1, 200, [0x22; 32]);
+        let leaf2 = storage_manifest_leaf(2, 300, [0x33; 32]);
+
+        let parent01 = storage_manifest_node(leaf0, leaf1);
+        let parent22 = storage_manifest_node(leaf2, leaf2);
+        let root = storage_manifest_node(parent01, parent22);
+
+        let proof = [
+            ManifestProofStep {
+                sibling: leaf0,
+                sibling_is_left: true,
+            },
+            ManifestProofStep {
+                sibling: parent22,
+                sibling_is_left: false,
+            },
+        ];
+
+        assert!(verify_storage_manifest_proof(
+            root,
+            1,
+            200,
+            [0x22; 32],
+            &proof
+        ));
+        assert!(!verify_storage_manifest_proof(
+            root,
+            1,
+            201,
+            [0x22; 32],
+            &proof
+        ));
+        assert!(!verify_storage_manifest_proof(
+            root,
+            1,
+            200,
+            [0x23; 32],
+            &proof
+        ));
+    }
+
+    #[test]
+    fn empty_manifest_has_domain_separated_root() {
+        let empty = storage_manifest_root(&[]);
+        assert_ne!(empty, [0_u8; 32]);
+        assert_eq!(empty, storage_manifest_root(&[]));
     }
 
     #[test]
