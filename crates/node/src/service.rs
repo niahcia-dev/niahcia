@@ -507,9 +507,18 @@ pub fn record_verified_storage_response(
         return Err("storage challenge height is outside service epoch".into());
     }
 
-    verify_storage_challenge_signature(network_id, challenge, challenger_public_key_sec1)?;
-    verify_storage_response_signature(network_id, response, provider_public_key_sec1)?;
-    let verified_bytes = verify_storage_response_evidence(response, challenge, manifest_root)?;
+    verify_storage_challenge_signature(
+        context.network_id,
+        challenge,
+        context.challenger_public_key_sec1,
+    )?;
+    verify_storage_response_signature(
+        context.network_id,
+        response,
+        context.provider_public_key_sec1,
+    )?;
+    let verified_bytes =
+        verify_storage_response_evidence(response, challenge, context.manifest_root)?;
 
     let evidence_key = evidence_replay_key(
         challenge.challenge_id,
@@ -525,15 +534,19 @@ pub fn record_verified_storage_response(
     Ok(evidence_key)
 }
 
+pub struct PersistentStorageResponseContext<'a> {
+    pub store: &'a StateStore,
+    pub network_id: &'a [u8],
+    pub challenger_public_key_sec1: &'a [u8],
+    pub provider_public_key_sec1: &'a [u8],
+    pub manifest_root: Hash32,
+}
+
 pub fn record_verified_storage_response_persistent(
-    store: &StateStore,
     epoch: &mut ServiceEpochAccumulator,
-    network_id: &[u8],
     challenge: &StorageChallengeV1,
-    challenger_public_key_sec1: &[u8],
     response: &StorageResponseV1,
-    provider_public_key_sec1: &[u8],
-    manifest_root: Hash32,
+    context: PersistentStorageResponseContext<'_>,
 ) -> Result<Hash32, String> {
     if epoch.seen_evidence.contains(&evidence_replay_key(
         challenge.challenge_id,
@@ -567,7 +580,7 @@ pub fn record_verified_storage_response_persistent(
         verified_bytes,
     };
 
-    if !store.insert_service_success(&persisted)? {
+    if !context.store.insert_service_success(&persisted)? {
         return Err("duplicate persistent service evidence".into());
     }
 
@@ -1887,7 +1900,8 @@ mod tests {
         verify_storage_commitment_signature, verify_storage_manifest_proof,
         verify_storage_range_proof, verify_storage_response_evidence,
         verify_storage_response_signature, ChallengeSegment, ExpectedResponseMeta,
-        ManifestProofStep, RangeProofStep, ResponseMeta, ServiceEpochAccumulator,
+        ManifestProofStep, PersistentStorageResponseContext, RangeProofStep, ResponseMeta,
+        ServiceEpochAccumulator,
         ServiceEpochReportV1, StorageChallengeParams, StorageCommitmentParams, StorageRangeProofV1,
         StorageResponseParams,
     };
@@ -2074,14 +2088,16 @@ mod tests {
             let store = StateStore::open(&path).unwrap();
             let mut epoch = ServiceEpochAccumulator::new(0, 720).unwrap();
             record_verified_storage_response_persistent(
-                &store,
                 &mut epoch,
-                b"niahcia-dev",
                 &challenge,
-                challenger_public.as_bytes(),
                 &response,
-                provider_public.as_bytes(),
-                manifest_root,
+                PersistentStorageResponseContext {
+                    store: &store,
+                    network_id: b"niahcia-dev",
+                    challenger_public_key_sec1: challenger_public.as_bytes(),
+                    provider_public_key_sec1: provider_public.as_bytes(),
+                    manifest_root,
+                },
             )
             .unwrap();
             assert_eq!(epoch.challenges_passed, 1);
@@ -2096,14 +2112,16 @@ mod tests {
             assert_eq!(restored.distinct_requester_count(), 1);
             assert_eq!(restored.distinct_challenge_block_count(), 1);
             assert!(record_verified_storage_response_persistent(
-                &store,
                 &mut restored,
-                b"niahcia-dev",
                 &challenge,
-                challenger_public.as_bytes(),
                 &response,
-                provider_public.as_bytes(),
-                manifest_root,
+                PersistentStorageResponseContext {
+                    store: &store,
+                    network_id: b"niahcia-dev",
+                    challenger_public_key_sec1: challenger_public.as_bytes(),
+                    provider_public_key_sec1: provider_public.as_bytes(),
+                    manifest_root,
+                },
             )
             .is_err());
         }
