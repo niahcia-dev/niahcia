@@ -12,6 +12,15 @@ const CHAIN_META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_me
 const BEST_HEAD_KEY: &[u8] = b"best_head";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChainReorg {
+    pub old_head: Hash32,
+    pub new_head: Hash32,
+    pub common_ancestor: Hash32,
+    pub detached: Vec<Hash32>,
+    pub attached: Vec<Hash32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistedChainBlock {
     pub header: BlockHeaderV1,
     pub chain_work: BigUint,
@@ -186,6 +195,66 @@ impl StateStore {
         drop(meta);
         drop(read);
         self.load_chain_block(block_id)
+    }
+
+    pub fn canonical_reorg(
+        &self,
+        old_head: Hash32,
+        new_head: Hash32,
+    ) -> Result<Option<ChainReorg>, String> {
+        if old_head == new_head {
+            return Ok(None);
+        }
+
+        let mut old_cursor = self
+            .load_chain_block(old_head)?
+            .ok_or_else(|| "old canonical head is not persisted".to_string())?;
+        let mut new_cursor = self
+            .load_chain_block(new_head)?
+            .ok_or_else(|| "new canonical head is not persisted".to_string())?;
+
+        let mut detached = Vec::new();
+        let mut attached_reverse = Vec::new();
+
+        while old_cursor.header.height > new_cursor.header.height {
+            detached.push(old_cursor.block_id());
+            old_cursor = self
+                .load_chain_block(old_cursor.header.parent_hash)?
+                .ok_or_else(|| "old canonical ancestry references missing parent".to_string())?;
+        }
+
+        while new_cursor.header.height > old_cursor.header.height {
+            attached_reverse.push(new_cursor.block_id());
+            new_cursor = self
+                .load_chain_block(new_cursor.header.parent_hash)?
+                .ok_or_else(|| "new canonical ancestry references missing parent".to_string())?;
+        }
+
+        while old_cursor.block_id() != new_cursor.block_id() {
+            if old_cursor.header.height == 0 || new_cursor.header.height == 0 {
+                return Err("canonical heads do not share a persisted genesis".into());
+            }
+
+            detached.push(old_cursor.block_id());
+            attached_reverse.push(new_cursor.block_id());
+
+            old_cursor = self
+                .load_chain_block(old_cursor.header.parent_hash)?
+                .ok_or_else(|| "old canonical ancestry references missing parent".to_string())?;
+            new_cursor = self
+                .load_chain_block(new_cursor.header.parent_hash)?
+                .ok_or_else(|| "new canonical ancestry references missing parent".to_string())?;
+        }
+
+        attached_reverse.reverse();
+
+        Ok(Some(ChainReorg {
+            old_head,
+            new_head,
+            common_ancestor: old_cursor.block_id(),
+            detached,
+            attached: attached_reverse,
+        }))
     }
 
     pub fn is_on_best_chain(&self, block_id: Hash32) -> Result<bool, String> {
@@ -395,7 +464,7 @@ impl StateStore {
 
 #[cfg(test)]
 mod tests {
-    use super::{PersistedServiceSuccess, StateStore};
+    use super::{ChainReorg, PersistedServiceSuccess, StateStore};
     use crate::work::BlockHeaderV1;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -422,6 +491,47 @@ mod tests {
             nonce: marker as u64,
             extra_nonce: 0,
         }
+    }
+
+    #[test]
+    fn canonical_reorg_reports_detached_and_attached_paths() {
+        let path = temp_state_path("chain-reorg");
+        let store = StateStore::open(&path).unwrap();
+
+        let genesis = header([0_u8; 32], 0, [0xff; 32], 1);
+        let genesis_id = genesis.block_id();
+        store.insert_chain_block(genesis).unwrap();
+
+        let a1 = header(genesis_id, 1, [0xff; 32], 2);
+        let a1_id = a1.block_id();
+        store.insert_chain_block(a1).unwrap();
+        let a2 = header(a1_id, 2, [0xff; 32], 3);
+        let a2_id = a2.block_id();
+        store.insert_chain_block(a2).unwrap();
+
+        let b1 = header(genesis_id, 1, [0x7f; 32], 4);
+        let b1_id = b1.block_id();
+        store.insert_chain_block(b1).unwrap();
+        let b2 = header(b1_id, 2, [0x7f; 32], 5);
+        let b2_id = b2.block_id();
+        store.insert_chain_block(b2).unwrap();
+
+        assert_eq!(store.best_chain_head().unwrap().unwrap().block_id(), b2_id);
+
+        let reorg = store.canonical_reorg(a2_id, b2_id).unwrap().unwrap();
+        assert_eq!(
+            reorg,
+            ChainReorg {
+                old_head: a2_id,
+                new_head: b2_id,
+                common_ancestor: genesis_id,
+                detached: vec![a2_id, a1_id],
+                attached: vec![b1_id, b2_id],
+            }
+        );
+        assert!(store.canonical_reorg(b2_id, b2_id).unwrap().is_none());
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
