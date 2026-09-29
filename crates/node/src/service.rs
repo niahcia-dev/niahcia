@@ -818,6 +818,240 @@ pub fn verify_storage_commitment_signature(
         .map_err(|_| "invalid storage commitment signature".to_string())
 }
 
+
+pub const STORAGE_CHALLENGE_OBJECT_TYPE: u64 = 0x0206;
+pub const STORAGE_CHALLENGE_SCHEMA_VERSION: u64 = 1;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageChallengeV1 {
+    pub challenge_id: Hash32,
+    pub commitment_id: Hash32,
+    pub challenge_block_id: Hash32,
+    pub challenge_height: u64,
+    pub challenge_seed: Hash32,
+    pub requested_ranges: Vec<ChallengeSegment>,
+    pub issued_at: u64,
+    pub response_deadline: u64,
+    pub challenger_id: Hash32,
+    pub signature: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageChallengeParams {
+    pub commitment_id: Hash32,
+    pub challenge_block_id: Hash32,
+    pub challenge_height: u64,
+    pub requested_ranges: Vec<ChallengeSegment>,
+    pub issued_at: u64,
+    pub response_deadline: u64,
+    pub challenger_id: Hash32,
+}
+
+fn cbor_challenge_segments(out: &mut Vec<u8>, segments: &[ChallengeSegment]) {
+    cbor_major_len(out, 4, segments.len() as u64);
+    for segment in segments {
+        cbor_major_len(out, 4, 4);
+        cbor_uint(out, segment.chunk_index);
+        cbor_uint(out, segment.segment_index);
+        cbor_uint(out, segment.offset);
+        cbor_uint(out, segment.length);
+    }
+}
+
+fn encode_storage_challenge_payload(
+    challenge: &StorageChallengeV1,
+    include_challenge_id: bool,
+    include_signature: bool,
+) -> Vec<u8> {
+    let mut fields = 9_u64;
+    if include_challenge_id {
+        fields += 1;
+    }
+    if include_signature {
+        fields += 1;
+    }
+
+    let mut out = Vec::new();
+    cbor_map_len(&mut out, fields);
+
+    cbor_uint(&mut out, 1);
+    cbor_uint(&mut out, STORAGE_CHALLENGE_SCHEMA_VERSION);
+
+    if include_challenge_id {
+        cbor_uint(&mut out, 2);
+        cbor_bytes(&mut out, &challenge.challenge_id);
+    }
+
+    cbor_uint(&mut out, 3);
+    cbor_bytes(&mut out, &challenge.commitment_id);
+    cbor_uint(&mut out, 4);
+    cbor_bytes(&mut out, &challenge.challenge_block_id);
+    cbor_uint(&mut out, 5);
+    cbor_uint(&mut out, challenge.challenge_height);
+    cbor_uint(&mut out, 6);
+    cbor_bytes(&mut out, &challenge.challenge_seed);
+    cbor_uint(&mut out, 7);
+    cbor_challenge_segments(&mut out, &challenge.requested_ranges);
+    cbor_uint(&mut out, 8);
+    cbor_uint(&mut out, challenge.issued_at);
+    cbor_uint(&mut out, 9);
+    cbor_uint(&mut out, challenge.response_deadline);
+    cbor_uint(&mut out, 10);
+    cbor_bytes(&mut out, &challenge.challenger_id);
+
+    if include_signature {
+        cbor_uint(&mut out, 11);
+        cbor_bytes(&mut out, &challenge.signature);
+    }
+
+    out
+}
+
+pub fn storage_challenge_id_preimage(challenge: &StorageChallengeV1) -> Vec<u8> {
+    encode_nce_envelope(
+        STORAGE_CHALLENGE_OBJECT_TYPE,
+        STORAGE_CHALLENGE_SCHEMA_VERSION,
+        &encode_storage_challenge_payload(challenge, false, false),
+    )
+}
+
+pub fn storage_challenge_signing_preimage(challenge: &StorageChallengeV1) -> Vec<u8> {
+    encode_nce_envelope(
+        STORAGE_CHALLENGE_OBJECT_TYPE,
+        STORAGE_CHALLENGE_SCHEMA_VERSION,
+        &encode_storage_challenge_payload(challenge, true, false),
+    )
+}
+
+pub fn storage_challenge_canonical_bytes(challenge: &StorageChallengeV1) -> Vec<u8> {
+    encode_nce_envelope(
+        STORAGE_CHALLENGE_OBJECT_TYPE,
+        STORAGE_CHALLENGE_SCHEMA_VERSION,
+        &encode_storage_challenge_payload(challenge, true, true),
+    )
+}
+
+pub fn derive_storage_challenge_id(network_id: &[u8], challenge: &StorageChallengeV1) -> Hash32 {
+    generic_protocol_digest(
+        b"ID/STORAGE_CHALLENGE",
+        network_id,
+        &storage_challenge_id_preimage(challenge),
+    )
+}
+
+pub fn storage_challenge_signing_digest(
+    network_id: &[u8],
+    challenge: &StorageChallengeV1,
+) -> Hash32 {
+    generic_protocol_digest(
+        b"SIGN/STORAGE_CHALLENGE",
+        network_id,
+        &storage_challenge_signing_preimage(challenge),
+    )
+}
+
+pub fn build_storage_challenge_v1(
+    network_id: &[u8],
+    params: StorageChallengeParams,
+) -> Result<StorageChallengeV1, String> {
+    if params.requested_ranges.is_empty() {
+        return Err("storage challenge must request at least one segment".into());
+    }
+    if params.requested_ranges.iter().any(|range| range.length == 0) {
+        return Err("storage challenge segment lengths must be non-zero".into());
+    }
+    if params.response_deadline <= params.issued_at {
+        return Err("storage challenge deadline must be after issued_at".into());
+    }
+
+    let challenge_seed =
+        storage_challenge_seed(params.challenge_block_id, params.commitment_id);
+    let mut challenge = StorageChallengeV1 {
+        challenge_id: [0_u8; 32],
+        commitment_id: params.commitment_id,
+        challenge_block_id: params.challenge_block_id,
+        challenge_height: params.challenge_height,
+        challenge_seed,
+        requested_ranges: params.requested_ranges,
+        issued_at: params.issued_at,
+        response_deadline: params.response_deadline,
+        challenger_id: params.challenger_id,
+        signature: Vec::new(),
+    };
+    challenge.challenge_id = derive_storage_challenge_id(network_id, &challenge);
+    Ok(challenge)
+}
+
+pub fn sign_storage_challenge(
+    network_id: &[u8],
+    challenge: &mut StorageChallengeV1,
+    secret_key: &[u8; 32],
+) -> Result<(), String> {
+    let signing_key = SigningKey::from_slice(secret_key)
+        .map_err(|_| "invalid secp256k1 challenge signing key".to_string())?;
+    let public_key = signing_key.verifying_key().to_encoded_point(true);
+    verify_service_node_identity(challenge.challenger_id, public_key.as_bytes())?;
+
+    let expected_seed =
+        storage_challenge_seed(challenge.challenge_block_id, challenge.commitment_id);
+    if challenge.challenge_seed != expected_seed {
+        return Err("storage challenge seed does not match challenge block and commitment".into());
+    }
+
+    let expected_id = derive_storage_challenge_id(network_id, challenge);
+    if challenge.challenge_id != expected_id {
+        return Err("storage challenge_id does not match challenge contents".into());
+    }
+
+    let digest = storage_challenge_signing_digest(network_id, challenge);
+    let signature: Signature = signing_key
+        .sign_prehash(&digest)
+        .map_err(|_| "failed to sign storage challenge".to_string())?;
+    challenge.signature = signature.to_bytes().to_vec();
+    Ok(())
+}
+
+pub fn verify_storage_challenge_signature(
+    network_id: &[u8],
+    challenge: &StorageChallengeV1,
+    public_key_sec1: &[u8],
+) -> Result<(), String> {
+    verify_service_node_identity(challenge.challenger_id, public_key_sec1)?;
+
+    if challenge.requested_ranges.is_empty()
+        || challenge.requested_ranges.iter().any(|range| range.length == 0)
+    {
+        return Err("storage challenge contains invalid requested segments".into());
+    }
+    if challenge.response_deadline <= challenge.issued_at {
+        return Err("storage challenge deadline must be after issued_at".into());
+    }
+
+    let expected_seed =
+        storage_challenge_seed(challenge.challenge_block_id, challenge.commitment_id);
+    if challenge.challenge_seed != expected_seed {
+        return Err("storage challenge seed does not match challenge block and commitment".into());
+    }
+
+    let expected_id = derive_storage_challenge_id(network_id, challenge);
+    if challenge.challenge_id != expected_id {
+        return Err("storage challenge_id does not match challenge contents".into());
+    }
+    if challenge.signature.len() != 64 {
+        return Err("storage challenge signature must be 64-byte compact ECDSA".into());
+    }
+
+    let verifying_key = VerifyingKey::from_sec1_bytes(public_key_sec1)
+        .map_err(|_| "invalid secp256k1 challenge public key".to_string())?;
+    let signature = Signature::from_slice(&challenge.signature)
+        .map_err(|_| "invalid secp256k1 storage challenge signature".to_string())?;
+    let digest = storage_challenge_signing_digest(network_id, challenge);
+
+    verifying_key
+        .verify_prehash(&digest, &signature)
+        .map_err(|_| "invalid storage challenge signature".to_string())
+}
+
 pub const SERVICE_EPOCH_REPORT_OBJECT_TYPE: u64 = 0x0208;
 pub const SERVICE_EPOCH_REPORT_SCHEMA_VERSION: u64 = 1;
 
@@ -1172,12 +1406,15 @@ pub fn attach_service_epoch_signature(
 #[cfg(test)]
 mod tests {
     use super::{
-        attach_service_epoch_signature, build_service_epoch_report_v1, build_storage_commitment_v1,
-        derive_service_epoch_report_id, derive_service_node_id, derive_storage_commitment_id,
+        attach_service_epoch_signature, build_service_epoch_report_v1,
+        build_storage_challenge_v1, build_storage_commitment_v1,
+        derive_service_epoch_report_id, derive_service_node_id, derive_storage_challenge_id,
+        derive_storage_commitment_id,
         evaluate_service_eligibility, evidence_replay_key, finalize_service_epoch_report,
         select_storage_ranges, select_storage_segments, service_epoch_report_canonical_bytes,
         service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
-        service_evidence_root, sign_service_epoch_report, sign_storage_commitment,
+        service_evidence_root, sign_service_epoch_report, sign_storage_challenge,
+        sign_storage_commitment,
         storage_challenge_seed, storage_commitment_canonical_bytes,
         storage_commitment_id_preimage, storage_commitment_signing_digest,
         storage_commitment_signing_preimage, storage_manifest_leaf, storage_manifest_node,
@@ -1186,7 +1423,7 @@ mod tests {
         verify_storage_commitment_signature, verify_storage_manifest_proof,
         verify_storage_range_proof, ChallengeSegment, ExpectedResponseMeta, ManifestProofStep,
         RangeProofStep, ResponseMeta, ServiceEpochAccumulator, ServiceEpochReportV1,
-        StorageCommitmentParams,
+        StorageChallengeParams, StorageCommitmentParams,
     };
 
     #[test]
@@ -1293,6 +1530,93 @@ mod tests {
             },
         )
         .is_err());
+    }
+    #[test]
+    fn storage_challenge_is_canonical_signed_seed_bound_and_network_bound() {
+        let secret = [0x0a_u8; 32];
+        let signing_key = k256::ecdsa::SigningKey::from_slice(&secret).unwrap();
+        let public_key = signing_key.verifying_key().to_encoded_point(true);
+        let challenger_id = derive_service_node_id(public_key.as_bytes()).unwrap();
+        let commitment_id = [0x31; 32];
+        let challenge_block_id = [0x42; 32];
+
+        let mut challenge = build_storage_challenge_v1(
+            b"niahcia-dev",
+            StorageChallengeParams {
+                commitment_id,
+                challenge_block_id,
+                challenge_height: 900,
+                requested_ranges: vec![
+                    ChallengeSegment {
+                        chunk_index: 2,
+                        segment_index: 3,
+                        offset: 12_288,
+                        length: 4096,
+                    },
+                    ChallengeSegment {
+                        chunk_index: 5,
+                        segment_index: 0,
+                        offset: 0,
+                        length: 1024,
+                    },
+                ],
+                issued_at: 1_000_000,
+                response_deadline: 1_000_030,
+                challenger_id,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            challenge.challenge_seed,
+            storage_challenge_seed(challenge_block_id, commitment_id)
+        );
+        assert_eq!(
+            challenge.challenge_id,
+            derive_storage_challenge_id(b"niahcia-dev", &challenge)
+        );
+        sign_storage_challenge(b"niahcia-dev", &mut challenge, &secret).unwrap();
+        verify_storage_challenge_signature(b"niahcia-dev", &challenge, public_key.as_bytes())
+            .unwrap();
+
+        let mut bad_seed = challenge.clone();
+        bad_seed.challenge_seed[0] ^= 1;
+        assert!(verify_storage_challenge_signature(
+            b"niahcia-dev",
+            &bad_seed,
+            public_key.as_bytes(),
+        )
+        .is_err());
+        assert!(verify_storage_challenge_signature(
+            b"other-network",
+            &challenge,
+            public_key.as_bytes(),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn storage_challenge_rejects_empty_ranges_and_bad_deadline() {
+        let base = StorageChallengeParams {
+            commitment_id: [0x31; 32],
+            challenge_block_id: [0x42; 32],
+            challenge_height: 900,
+            requested_ranges: Vec::new(),
+            issued_at: 100,
+            response_deadline: 130,
+            challenger_id: [0x53; 32],
+        };
+        assert!(build_storage_challenge_v1(b"niahcia-dev", base.clone()).is_err());
+
+        let mut bad_deadline = base;
+        bad_deadline.requested_ranges.push(ChallengeSegment {
+            chunk_index: 0,
+            segment_index: 0,
+            offset: 0,
+            length: 1024,
+        });
+        bad_deadline.response_deadline = bad_deadline.issued_at;
+        assert!(build_storage_challenge_v1(b"niahcia-dev", bad_deadline).is_err());
     }
     #[test]
     fn locked_storage_commitment_vector_matches() {
