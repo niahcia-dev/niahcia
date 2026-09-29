@@ -34,12 +34,14 @@ impl WorkManager {
         (state.generation, state.template.clone())
     }
 
+    #[cfg(test)]
     pub fn replace(&self, template: PowWorkTemplate) {
         let mut state = self.inner.write().expect("work state poisoned");
         state.generation = state.generation.saturating_add(1);
         state.template = template;
     }
 
+    #[cfg(test)]
     pub fn is_stale(&self, generation: u64, template_id: &[u8; 32]) -> bool {
         let state = self.inner.read().expect("work state poisoned");
         generation != state.generation || &state.template.template_id() != template_id
