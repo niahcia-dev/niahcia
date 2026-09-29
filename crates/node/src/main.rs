@@ -15,7 +15,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
-use work::PowWorkTemplate;
+use work::BlockHeaderV1;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -186,14 +186,16 @@ fn main() -> ExitCode {
     let execution = &built.commitments;
     let niahcia_parent_hash = [0_u8; 32];
 
-    let work_manager = WorkManager::new(PowWorkTemplate {
+    let work_manager = WorkManager::new(BlockHeaderV1 {
         version: 1,
-        height: execution.block_number,
         parent_hash: niahcia_parent_hash,
-        execution_commitment: execution.commitment_hash(),
+        height: execution.block_number,
         timestamp: execution.timestamp,
-        difficulty: 1,
+        transactions_root: execution.transactions_root,
+        execution_root: execution.commitment_hash(),
         target: [0xff; 32],
+        nonce: 0,
+        extra_nonce: 0,
     });
 
     info!(
@@ -201,8 +203,8 @@ fn main() -> ExitCode {
         niahcia_parent = %hex::encode(niahcia_parent_hash),
         execution_parent = %hex::encode(execution.execution_parent_hash),
         execution_payload_hash = %hex::encode(built.execution_payload_hash),
-        transactions_commitment = %hex::encode(execution.transactions_commitment),
-        execution_commitment = %hex::encode(execution.commitment_hash()),
+        transactions_root = %hex::encode(execution.transactions_root),
+        execution_root = %hex::encode(execution.commitment_hash()),
         "installed Reth-backed NIAHCIA mining template"
     );
 
