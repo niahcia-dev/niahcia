@@ -162,7 +162,6 @@ pub fn verify_storage_manifest_proof(
     current == expected_root
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResponseMeta {
     pub challenge_id: Hash32,
@@ -216,12 +215,9 @@ pub fn evidence_replay_key(
 #[cfg(test)]
 mod tests {
     use super::{
-        select_storage_ranges, storage_challenge_seed, storage_manifest_leaf,
-        storage_manifest_node, storage_manifest_root, verify_storage_manifest_proof,
-        evidence_replay_key, select_storage_ranges, storage_challenge_seed,
-        storage_manifest_leaf, storage_manifest_node, storage_manifest_root,
-        verify_response_meta, verify_storage_manifest_proof, ExpectedResponseMeta,
-        ManifestProofStep, ResponseMeta,
+        evidence_replay_key, select_storage_ranges, storage_challenge_seed, storage_manifest_leaf,
+        storage_manifest_node, storage_manifest_root, verify_response_meta,
+        verify_storage_manifest_proof, ExpectedResponseMeta, ManifestProofStep, ResponseMeta,
     };
 
     #[test]
