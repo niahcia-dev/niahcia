@@ -138,7 +138,7 @@ impl EngineClient {
         }
 
         let execution_payload_hash = parse_hash32(field_str(payload, "blockHash")?)?;
-        let transactions_commitment = transaction_commitment(payload)?;
+        let transactions_root = transaction_merkle_root(payload)?;
 
         Ok(BuiltExecutionPayload {
             commitments: ExecutionPayloadCommitments {
@@ -146,7 +146,7 @@ impl EngineClient {
                 fee_recipient: parse_address20(field_str(payload, "feeRecipient")?)?,
                 state_root: parse_hash32(field_str(payload, "stateRoot")?)?,
                 receipts_root: parse_hash32(field_str(payload, "receiptsRoot")?)?,
-                transactions_commitment,
+                transactions_root,
                 block_number: parse_quantity(field_str(payload, "blockNumber")?)?,
                 gas_limit: parse_quantity(field_str(payload, "gasLimit")?)?,
                 gas_used: parse_quantity(field_str(payload, "gasUsed")?)?,
@@ -226,20 +226,22 @@ impl EngineClient {
     }
 }
 
-fn transaction_commitment(payload: &Value) -> Result<Hash32, String> {
-    const DOMAIN: &[u8] = b"NIAHCIA/TRANSACTIONS/V1";
+fn transaction_merkle_root(payload: &Value) -> Result<Hash32, String> {
+    const TX_DOMAIN: &[u8] = b"NIAHCIA/TX/V1";
+    const EMPTY_DOMAIN: &[u8] = b"NIAHCIA/MERKLE-EMPTY/V1";
+    const LEAF_DOMAIN: &[u8] = b"NIAHCIA/MERKLE-LEAF/V1";
+    const NODE_DOMAIN: &[u8] = b"NIAHCIA/MERKLE-NODE/V1";
 
     let transactions = payload
         .get("transactions")
         .and_then(Value::as_array)
         .ok_or_else(|| format!("execution payload missing transactions array: {payload}"))?;
 
-    let count = u64::try_from(transactions.len())
-        .map_err(|_| "transaction count does not fit in u64".to_string())?;
+    if transactions.is_empty() {
+        return Ok(keccak256(EMPTY_DOMAIN));
+    }
 
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(DOMAIN);
-    bytes.extend_from_slice(&count.to_be_bytes());
+    let mut level = Vec::with_capacity(transactions.len());
 
     for transaction in transactions {
         let raw = transaction
@@ -247,13 +249,36 @@ fn transaction_commitment(payload: &Value) -> Result<Hash32, String> {
             .ok_or_else(|| "execution transaction must be a hex string".to_string())?;
         let decoded =
             hex::decode(strip_hex(raw)).map_err(|e| format!("invalid transaction hex: {e}"))?;
-        let len = u64::try_from(decoded.len())
-            .map_err(|_| "transaction length does not fit in u64".to_string())?;
-        bytes.extend_from_slice(&len.to_be_bytes());
-        bytes.extend_from_slice(&decoded);
+
+        let mut tx_preimage = Vec::with_capacity(TX_DOMAIN.len() + decoded.len());
+        tx_preimage.extend_from_slice(TX_DOMAIN);
+        tx_preimage.extend_from_slice(&decoded);
+        let tx_digest = keccak256(&tx_preimage);
+
+        let mut leaf_preimage = Vec::with_capacity(LEAF_DOMAIN.len() + 32);
+        leaf_preimage.extend_from_slice(LEAF_DOMAIN);
+        leaf_preimage.extend_from_slice(&tx_digest);
+        level.push(keccak256(&leaf_preimage));
     }
 
-    Ok(keccak256(&bytes))
+    while level.len() > 1 {
+        let mut next = Vec::with_capacity(level.len().div_ceil(2));
+
+        for pair in level.chunks(2) {
+            let left = pair[0];
+            let right = if pair.len() == 2 { pair[1] } else { pair[0] };
+
+            let mut node_preimage = Vec::with_capacity(NODE_DOMAIN.len() + 64);
+            node_preimage.extend_from_slice(NODE_DOMAIN);
+            node_preimage.extend_from_slice(&left);
+            node_preimage.extend_from_slice(&right);
+            next.push(keccak256(&node_preimage));
+        }
+
+        level = next;
+    }
+
+    Ok(level[0])
 }
 
 fn field_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
@@ -325,7 +350,7 @@ fn load_jwt_secret(path: &Path) -> Result<Vec<u8>, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{load_jwt_secret, parse_quantity, parse_u256, transaction_commitment};
+    use super::{load_jwt_secret, parse_quantity, parse_u256, transaction_merkle_root};
     use serde_json::json;
     use std::fs;
 
@@ -366,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn transaction_commitment_is_niahcia_native() {
+    fn transaction_merkle_root_is_niahcia_native() {
         let payload = json!({
             "transactions": [
                 "0x010203",
@@ -374,8 +399,8 @@ mod tests {
             ]
         });
 
-        let first = transaction_commitment(&payload).unwrap();
-        let second = transaction_commitment(&payload).unwrap();
+        let first = transaction_merkle_root(&payload).unwrap();
+        let second = transaction_merkle_root(&payload).unwrap();
         assert_eq!(first, second);
 
         let changed = json!({
@@ -384,7 +409,15 @@ mod tests {
                 "0xaabc"
             ]
         });
-        assert_ne!(first, transaction_commitment(&changed).unwrap());
+        assert_ne!(first, transaction_merkle_root(&changed).unwrap());
+    }
+
+    #[test]
+    fn empty_transaction_root_is_stable() {
+        let payload = json!({"transactions": []});
+        let first = transaction_merkle_root(&payload).unwrap();
+        let second = transaction_merkle_root(&payload).unwrap();
+        assert_eq!(first, second);
     }
 
     #[test]
