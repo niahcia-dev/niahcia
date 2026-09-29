@@ -1774,11 +1774,11 @@ mod tests {
         storage_manifest_leaf, storage_manifest_node, storage_manifest_root, storage_range_leaf,
         storage_range_node, storage_range_root, verify_response_meta,
         verify_service_epoch_report_signature, verify_storage_challenge_signature,
-        verify_storage_commitment_signature, verify_storage_response_evidence,
-        verify_storage_response_signature, verify_storage_manifest_proof,
-        verify_storage_range_proof, ChallengeSegment, ExpectedResponseMeta, ManifestProofStep,
-        RangeProofStep, ResponseMeta, ServiceEpochAccumulator, ServiceEpochReportV1,
-        StorageChallengeParams, StorageCommitmentParams, StorageRangeProofV1,
+        verify_storage_commitment_signature, verify_storage_manifest_proof,
+        verify_storage_range_proof, verify_storage_response_evidence,
+        verify_storage_response_signature, ChallengeSegment, ExpectedResponseMeta,
+        ManifestProofStep, RangeProofStep, ResponseMeta, ServiceEpochAccumulator,
+        ServiceEpochReportV1, StorageChallengeParams, StorageCommitmentParams, StorageRangeProofV1,
         StorageResponseParams,
     };
 
