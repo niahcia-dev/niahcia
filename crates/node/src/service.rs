@@ -1926,7 +1926,9 @@ mod tests {
         };
 
         assert_eq!(
-            hex::encode(storage_response_bytes_hash(std::slice::from_ref(&range_proof))),
+            hex::encode(storage_response_bytes_hash(std::slice::from_ref(
+                &range_proof
+            ))),
             "9989bfe991cba8260667c0142441ceeb95d9c4b5873578bd3226ca716e326f7b"
         );
 
