@@ -104,12 +104,18 @@ pub struct ManifestProofStep {
     pub sibling_is_left: bool,
 }
 
-pub fn storage_manifest_leaf(chunk_index: u64, chunk_length: u64, chunk_hash: Hash32) -> Hash32 {
-    let mut preimage = Vec::with_capacity(STORAGE_MANIFEST_LEAF_DOMAIN.len() + 8 + 8 + 32);
+pub fn storage_manifest_leaf(
+    chunk_index: u64,
+    chunk_length: u64,
+    chunk_hash: Hash32,
+    range_root: Hash32,
+) -> Hash32 {
+    let mut preimage = Vec::with_capacity(STORAGE_MANIFEST_LEAF_DOMAIN.len() + 8 + 8 + 32 + 32);
     preimage.extend_from_slice(STORAGE_MANIFEST_LEAF_DOMAIN);
     preimage.extend_from_slice(&chunk_index.to_be_bytes());
     preimage.extend_from_slice(&chunk_length.to_be_bytes());
     preimage.extend_from_slice(&chunk_hash);
+    preimage.extend_from_slice(&range_root);
     keccak256(&preimage)
 }
 
@@ -121,7 +127,7 @@ pub fn storage_manifest_node(left: Hash32, right: Hash32) -> Hash32 {
     keccak256(&preimage)
 }
 
-pub fn storage_manifest_root(chunks: &[(u64, Hash32)]) -> Hash32 {
+pub fn storage_manifest_root(chunks: &[(u64, Hash32, Hash32)]) -> Hash32 {
     if chunks.is_empty() {
         return keccak256(STORAGE_MANIFEST_EMPTY_DOMAIN);
     }
@@ -129,7 +135,9 @@ pub fn storage_manifest_root(chunks: &[(u64, Hash32)]) -> Hash32 {
     let mut level: Vec<Hash32> = chunks
         .iter()
         .enumerate()
-        .map(|(index, (length, hash))| storage_manifest_leaf(index as u64, *length, *hash))
+        .map(|(index, (length, hash, range_root))| {
+            storage_manifest_leaf(index as u64, *length, *hash, *range_root)
+        })
         .collect();
 
     while level.len() > 1 {
@@ -150,9 +158,10 @@ pub fn verify_storage_manifest_proof(
     chunk_index: u64,
     chunk_length: u64,
     chunk_hash: Hash32,
+    range_root: Hash32,
     proof: &[ManifestProofStep],
 ) -> bool {
-    let mut current = storage_manifest_leaf(chunk_index, chunk_length, chunk_hash);
+    let mut current = storage_manifest_leaf(chunk_index, chunk_length, chunk_hash, range_root);
 
     for step in proof {
         current = if step.sibling_is_left {
@@ -341,9 +350,9 @@ mod tests {
     #[test]
     fn manifest_merkle_root_is_deterministic() {
         let chunks = [
-            (100_u64, [0x11; 32]),
-            (200_u64, [0x22; 32]),
-            (300_u64, [0x33; 32]),
+            (100_u64, [0x11; 32], [0xa1; 32]),
+            (200_u64, [0x22; 32], [0xa2; 32]),
+            (300_u64, [0x33; 32], [0xa3; 32]),
         ];
 
         let first = storage_manifest_root(&chunks);
@@ -355,9 +364,9 @@ mod tests {
 
     #[test]
     fn manifest_proof_verifies_and_rejects_tampering() {
-        let leaf0 = storage_manifest_leaf(0, 100, [0x11; 32]);
-        let leaf1 = storage_manifest_leaf(1, 200, [0x22; 32]);
-        let leaf2 = storage_manifest_leaf(2, 300, [0x33; 32]);
+        let leaf0 = storage_manifest_leaf(0, 100, [0x11; 32], [0xa1; 32]);
+        let leaf1 = storage_manifest_leaf(1, 200, [0x22; 32], [0xa2; 32]);
+        let leaf2 = storage_manifest_leaf(2, 300, [0x33; 32], [0xa3; 32]);
 
         let parent01 = storage_manifest_node(leaf0, leaf1);
         let parent22 = storage_manifest_node(leaf2, leaf2);
@@ -375,13 +384,33 @@ mod tests {
         ];
 
         assert!(verify_storage_manifest_proof(
-            root, 1, 200, [0x22; 32], &proof
+            root, 1, 200, [0x22; 32], [0xa2; 32], &proof
         ));
         assert!(!verify_storage_manifest_proof(
-            root, 1, 201, [0x22; 32], &proof
+            root, 1, 201, [0x22; 32], [0xa2; 32], &proof
         ));
         assert!(!verify_storage_manifest_proof(
-            root, 1, 200, [0x23; 32], &proof
+            root, 1, 200, [0x23; 32], [0xa2; 32], &proof
+        ));
+    }
+
+    #[test]
+    fn manifest_proof_rejects_wrong_range_root() {
+        let leaf0 = storage_manifest_leaf(0, 100, [0x11; 32], [0xa1; 32]);
+        let leaf1 = storage_manifest_leaf(1, 200, [0x22; 32], [0xa2; 32]);
+        let root = storage_manifest_node(leaf0, leaf1);
+        let proof = [ManifestProofStep {
+            sibling: leaf0,
+            sibling_is_left: true,
+        }];
+
+        assert!(!verify_storage_manifest_proof(
+            root,
+            1,
+            200,
+            [0x22; 32],
+            [0xff; 32],
+            &proof
         ));
     }
 
