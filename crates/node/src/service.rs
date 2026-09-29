@@ -491,7 +491,6 @@ impl ServiceEpochAccumulator {
     }
 }
 
-
 pub fn record_verified_storage_response(
     epoch: &mut ServiceEpochAccumulator,
     network_id: &[u8],
@@ -1798,18 +1797,18 @@ mod tests {
         derive_service_node_id, derive_storage_challenge_id, derive_storage_commitment_id,
         derive_storage_response_id, evaluate_service_eligibility, evidence_replay_key,
         finalize_service_epoch_report, record_verified_storage_response, select_storage_ranges,
-        select_storage_segments,
-        service_epoch_report_canonical_bytes, service_epoch_report_signing_digest,
-        service_epoch_report_signing_preimage, service_evidence_root, sign_service_epoch_report,
-        sign_storage_challenge, sign_storage_commitment, sign_storage_response,
-        storage_challenge_canonical_bytes, storage_challenge_id_preimage, storage_challenge_seed,
-        storage_challenge_signing_digest, storage_challenge_signing_preimage,
-        storage_commitment_canonical_bytes, storage_commitment_id_preimage,
-        storage_commitment_signing_digest, storage_commitment_signing_preimage,
-        storage_manifest_leaf, storage_manifest_node, storage_manifest_root, storage_range_leaf,
-        storage_range_node, storage_range_root, storage_response_bytes_hash,
-        storage_response_canonical_bytes, storage_response_id_preimage,
-        storage_response_signing_digest, storage_response_signing_preimage, verify_response_meta,
+        select_storage_segments, service_epoch_report_canonical_bytes,
+        service_epoch_report_signing_digest, service_epoch_report_signing_preimage,
+        service_evidence_root, sign_service_epoch_report, sign_storage_challenge,
+        sign_storage_commitment, sign_storage_response, storage_challenge_canonical_bytes,
+        storage_challenge_id_preimage, storage_challenge_seed, storage_challenge_signing_digest,
+        storage_challenge_signing_preimage, storage_commitment_canonical_bytes,
+        storage_commitment_id_preimage, storage_commitment_signing_digest,
+        storage_commitment_signing_preimage, storage_manifest_leaf, storage_manifest_node,
+        storage_manifest_root, storage_range_leaf, storage_range_node, storage_range_root,
+        storage_response_bytes_hash, storage_response_canonical_bytes,
+        storage_response_id_preimage, storage_response_signing_digest,
+        storage_response_signing_preimage, verify_response_meta,
         verify_service_epoch_report_signature, verify_storage_challenge_signature,
         verify_storage_commitment_signature, verify_storage_manifest_proof,
         verify_storage_range_proof, verify_storage_response_evidence,
