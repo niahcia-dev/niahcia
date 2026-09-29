@@ -881,15 +881,16 @@ pub fn sign_service_epoch_report(
     report: &mut ServiceEpochReportV1,
     secret_key: &[u8; 32],
 ) -> Result<(), String> {
-    verify_service_node_identity(report.service_node_id, public_key_sec1)?;
+    let signing_key = SigningKey::from_slice(secret_key)
+        .map_err(|_| "invalid secp256k1 service signing key".to_string())?;
+    let public_key = signing_key.verifying_key().to_encoded_point(true);
+    verify_service_node_identity(report.service_node_id, public_key.as_bytes())?;
 
     let expected_id = derive_service_epoch_report_id(network_id, report);
     if report.report_id != expected_id {
         return Err("service epoch report_id does not match report contents".into());
     }
 
-    let signing_key = SigningKey::from_slice(secret_key)
-        .map_err(|_| "invalid secp256k1 service signing key".to_string())?;
     let digest = service_epoch_report_signing_digest(network_id, report);
     let signature: Signature = signing_key
         .sign_prehash(&digest)
@@ -904,6 +905,8 @@ pub fn verify_service_epoch_report_signature(
     report: &ServiceEpochReportV1,
     public_key_sec1: &[u8],
 ) -> Result<(), String> {
+    verify_service_node_identity(report.service_node_id, public_key_sec1)?;
+
     let expected_id = derive_service_epoch_report_id(network_id, report);
     if report.report_id != expected_id {
         return Err("service epoch report_id does not match report contents".into());
