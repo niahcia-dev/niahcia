@@ -2,7 +2,6 @@ mod config;
 pub mod consensus;
 mod engine;
 mod mining_rpc;
-#[allow(dead_code)] // Activated by the static-peer transport slice immediately after protocol V1.
 mod p2p;
 pub mod pow;
 pub mod service;
@@ -453,6 +452,21 @@ fn main() -> ExitCode {
         }
     };
 
+    let p2p_handle = match p2p::spawn(
+        config.p2p_bind,
+        config.p2p_peers.clone(),
+        Arc::clone(&state),
+        Arc::clone(&running),
+    ) {
+        Ok(handle) => handle,
+        Err(e) => {
+            error!(error = %e, "failed to start P2P listener");
+            running.store(false, Ordering::SeqCst);
+            let _ = rpc_handle.join();
+            return ExitCode::from(1);
+        }
+    };
+
     info!("node bootstrap running; press Ctrl-C to stop");
 
     while running.load(Ordering::SeqCst) {
@@ -463,6 +477,10 @@ fn main() -> ExitCode {
 
     if rpc_handle.join().is_err() {
         error!("mining RPC thread terminated unexpectedly");
+        return ExitCode::from(1);
+    }
+    if p2p_handle.join().is_err() {
+        error!("P2P listener thread terminated unexpectedly");
         return ExitCode::from(1);
     }
 
