@@ -1,3 +1,4 @@
+use crate::address::{AddressKind, AddressNetwork, NiahciaAddressV1};
 use serde::Deserialize;
 use std::env;
 use std::fs;
@@ -95,6 +96,38 @@ impl NodeConfig {
         Ok(cfg)
     }
 
+    fn validate_fee_recipient(&self) -> Result<(), String> {
+        if self.fee_recipient.starts_with("dniah1")
+            || self.fee_recipient.starts_with("tniah1")
+            || self.fee_recipient.starts_with("niah1")
+        {
+            let address = NiahciaAddressV1::decode(&self.fee_recipient)
+                .map_err(|e| format!("invalid native fee_recipient: {e}"))?;
+            if address.network != AddressNetwork::Devnet {
+                return Err(format!(
+                    "fee_recipient network mismatch: devnet requires a dniah1 address, found {}",
+                    address.network.hrp()
+                ));
+            }
+            if address.kind != AddressKind::Account {
+                return Err("fee_recipient must be a NIAHCIA account address".into());
+            }
+            return Ok(());
+        }
+
+        let recipient = self
+            .fee_recipient
+            .strip_prefix("0x")
+            .unwrap_or(&self.fee_recipient);
+        if recipient.len() != 40 || hex::decode(recipient).is_err() {
+            return Err(
+                "fee_recipient must be a devnet dniah1 account address or legacy 20-byte hex address"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+
     fn validate(&self) -> Result<(), String> {
         if self.network != "devnet" {
             return Err(format!(
@@ -115,13 +148,7 @@ impl NodeConfig {
             return Err("reth_http_rpc must start with http:// or https://".into());
         }
 
-        let recipient = self
-            .fee_recipient
-            .strip_prefix("0x")
-            .unwrap_or(&self.fee_recipient);
-        if recipient.len() != 40 || hex::decode(recipient).is_err() {
-            return Err("fee_recipient must be a 20-byte hex address".into());
-        }
+        self.validate_fee_recipient()?;
 
         if self.log_level.trim().is_empty() {
             return Err("log_level must not be empty".into());
