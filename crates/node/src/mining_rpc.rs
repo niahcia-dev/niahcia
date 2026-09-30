@@ -152,7 +152,8 @@ pub fn spawn(
         while running.load(Ordering::SeqCst) {
             match listener.accept() {
                 Ok((stream, peer)) => {
-                    if let Err(e) = handle_connection(stream, &work, &state, &engine, fee_recipient) {
+                    if let Err(e) = handle_connection(stream, &work, &state, &engine, fee_recipient)
+                    {
                         warn!(%peer, error = %e, "mining RPC request failed");
                     }
                 }
@@ -240,7 +241,8 @@ fn handle_connection(
                 })
             }
         }
-        "pow_submitWork" => match submit_work(&request, work, state, Some((engine, fee_recipient))) {
+        "pow_submitWork" => match submit_work(&request, work, state, Some((engine, fee_recipient)))
+        {
             Ok(result) => json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -643,7 +645,9 @@ mod tests {
 
         assert!(!manager.is_stale(generation, &old_id));
 
-        manager.replace(header(2), 0, [0x42; 32], [0x99; 32]).unwrap();
+        manager
+            .replace(header(2), 0, [0x42; 32], [0x99; 32])
+            .unwrap();
 
         assert!(manager.is_stale(generation, &old_id));
     }
