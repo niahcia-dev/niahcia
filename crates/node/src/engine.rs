@@ -326,7 +326,7 @@ impl EngineClient {
             .map_err(|e| format!("failed to encode replay payload: {e}"))
     }
 
-    pub fn replay_execution_payload(&self, encoded: &[u8], expected_hash: Hash32) -> Result<(), String> {
+    pub fn replay_execution_payload(\n        &self,\n        encoded: &[u8],\n        expected_hash: Hash32,\n    ) -> Result<(), String> {
         let replay: ReplayPayload = serde_json::from_slice(encoded)
             .map_err(|e| format!("invalid persisted replay payload: {e}"))?;
         if replay.execution_payload_hash != expected_hash {
@@ -334,7 +334,7 @@ impl EngineClient {
         }
         let actual_hash = parse_hash32(field_str(&replay.execution_payload, "blockHash")?)?;
         if actual_hash != expected_hash {
-            return Err("persisted replay payload blockHash does not match canonical mapping".into());
+            return Err(\n                "persisted replay payload blockHash does not match canonical mapping".into(),\n            );
         }
         let result = match replay.engine_version {
             5 | 4 => self.engine_request(
@@ -343,7 +343,7 @@ impl EngineClient {
                     replay.execution_payload,
                     replay.versioned_hashes,
                     hex32(replay.parent_beacon_block_root),
-                    replay.execution_requests.ok_or_else(|| "replay missing executionRequests".to_string())?
+                    replay\n                        .execution_requests\n                        .ok_or_else(|| "replay missing executionRequests".to_string())?
                 ]),
             )?,
             3 => self.engine_request(
@@ -359,7 +359,7 @@ impl EngineClient {
         let status = result.get("status").and_then(Value::as_str)
             .ok_or_else(|| format!("replay response missing status: {result}"))?;
         if status != "VALID" {
-            return Err(format!("Reth rejected persisted execution replay with status {status}: {result}"));
+            return Err(format!(\n                "Reth rejected persisted execution replay with status {status}: {result}"\n            ));
         }
         let valid_hash = parse_hash32(
             result.get("latestValidHash").and_then(Value::as_str)
