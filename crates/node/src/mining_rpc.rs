@@ -1,4 +1,6 @@
-use crate::consensus::{devnet_next_target, validate_timestamp, DEVNET_GENESIS_TARGET, MEDIAN_TIME_WINDOW};
+use crate::consensus::{
+    devnet_next_target, validate_timestamp, DEVNET_GENESIS_TARGET, MEDIAN_TIME_WINDOW,
+};
 use crate::pow::RandomXVerifier;
 use crate::state::StateStore;
 use crate::work::{BlockHeaderV1, Hash32};
