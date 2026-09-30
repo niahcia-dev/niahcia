@@ -94,7 +94,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(randomx_hash(seed, &header.canonical_bytes()).unwrap()),
-            "0000000000000000000000000000000000000000000000000000000000000000"
+            "b66abdedf1d9a99ae6f82919b4ebe118ac05b2038caefa1e345eed3525d12588"
         );
     }
 
