@@ -333,6 +333,7 @@ fn main() -> ExitCode {
         work_manager,
         Arc::clone(&state),
         Arc::clone(&engine),
+        fee_recipient,
         Arc::clone(&running),
     ) {
         Ok(handle) => handle,

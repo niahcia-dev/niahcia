@@ -68,6 +68,17 @@ impl EngineClient {
             .map_err(|e| format!("invalid engine_exchangeCapabilities response: {e}"))
     }
 
+    pub fn block_by_hash(&self, hash: Hash32) -> Result<LatestBlock, String> {
+        let result = self.public_request("eth_getBlockByHash", json!([hex32(hash), false]))?;
+        if result.is_null() {
+            return Err(format!("Reth block {} not found", hex32(hash)));
+        }
+        Ok(LatestBlock {
+            hash: parse_hash32(field_str(&result, "hash")?)?,
+            timestamp: parse_quantity(field_str(&result, "timestamp")?)?,
+        })
+    }
+
     pub fn latest_block(&self) -> Result<LatestBlock, String> {
         let result = self.public_request("eth_getBlockByNumber", json!(["latest", false]))?;
 
