@@ -1,3 +1,6 @@
+use crate::consensus::{randomx_seed, randomx_seed_height};
+use crate::engine::EngineClient;
+use crate::mining_rpc::validate_block_candidate;
 use crate::state::StateStore;
 use crate::work::{BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
 use std::io::{Read, Write};
@@ -18,6 +21,7 @@ pub fn spawn(
     bind: SocketAddr,
     peers: Vec<SocketAddr>,
     state: Arc<StateStore>,
+    engine: Arc<EngineClient>,
     running: Arc<AtomicBool>,
 ) -> Result<JoinHandle<()>, String> {
     let listener = TcpListener::bind(bind).map_err(io_error)?;
@@ -26,10 +30,11 @@ pub fn spawn(
     Ok(thread::spawn(move || {
         for peer in peers {
             let state = Arc::clone(&state);
+            let engine = Arc::clone(&engine);
             thread::spawn(
                 move || match TcpStream::connect_timeout(&peer, IO_TIMEOUT) {
                     Ok(stream) => {
-                        if let Err(error) = serve_peer(stream, &state) {
+                        if let Err(error) = sync_peer(stream, &state, &engine) {
                             tracing::warn!(%peer, %error, "outbound P2P handshake failed");
                         } else {
                             tracing::info!(%peer, "outbound P2P handshake complete");
@@ -46,8 +51,9 @@ pub fn spawn(
             match listener.accept() {
                 Ok((stream, peer)) => {
                     let state = Arc::clone(&state);
+                    let engine = Arc::clone(&engine);
                     thread::spawn(move || {
-                        if let Err(error) = serve_peer(stream, &state) {
+                        if let Err(error) = serve_peer(stream, &state, &engine) {
                             tracing::warn!(%peer, %error, "inbound P2P handshake failed");
                         } else {
                             tracing::info!(%peer, "inbound P2P handshake complete");
@@ -96,7 +102,11 @@ fn local_hello(state: &StateStore) -> Result<HelloV1, String> {
     }
 }
 
-fn serve_peer(mut stream: TcpStream, state: &StateStore) -> Result<(), String> {
+fn serve_peer(
+    mut stream: TcpStream,
+    state: &StateStore,
+    engine: &EngineClient,
+) -> Result<(), String> {
     exchange_hello(stream.try_clone().map_err(io_error)?, state)?;
 
     loop {
@@ -106,13 +116,60 @@ fn serve_peer(mut stream: TcpStream, state: &StateStore) -> Result<(), String> {
                 write_message(&mut stream, &MessageV1::Blocks(blocks))?;
             }
             Ok(MessageV1::Hello(_)) => return Err("peer sent duplicate Hello".into()),
-            Ok(MessageV1::Blocks(_)) => {
-                return Err("unsolicited Blocks message before sync ingestion is enabled".into())
-            }
+            Ok(MessageV1::Blocks(blocks)) => ingest_blocks(state, engine, blocks)?
             Err(error) if is_disconnect_error(&error) => return Ok(()),
             Err(error) => return Err(error),
         }
     }
+}
+
+
+fn sync_peer(mut stream: TcpStream, state: &StateStore, engine: &EngineClient) -> Result<(), String> {
+    let remote = exchange_hello(stream.try_clone().map_err(io_error)?, state)?;
+    let local_height = state.best_chain_head()?.map(|head| head.header.height);
+    let start_height = local_height.map_or(0, |height| height.saturating_add(1));
+    if remote.best_height.is_some_and(|height| height >= start_height) {
+        write_message(
+            &mut stream,
+            &MessageV1::GetBlocks(GetBlocksV1 {
+                start_height,
+                count: MAX_BLOCKS_PER_MESSAGE,
+            }),
+        )?;
+        match read_message(&mut stream)? {
+            MessageV1::Blocks(blocks) => ingest_blocks(state, engine, blocks)?,
+            _ => return Err("peer did not answer GetBlocks with Blocks".into()),
+        }
+    }
+    Ok(())
+}
+
+fn ingest_blocks(
+    state: &StateStore,
+    engine: &EngineClient,
+    blocks: Vec<BlockTransferV1>,
+) -> Result<(), String> {
+    for transfer in blocks {
+        let seed_height = randomx_seed_height(transfer.header.height);
+        let seed_block_id = if transfer.header.height == 0 {
+            [0_u8; 32]
+        } else {
+            state
+                .canonical_block_at_height(seed_height)?
+                .ok_or_else(|| format!("missing RandomX seed block {seed_height}"))?
+                .block_id()
+        };
+        let seed = randomx_seed(seed_block_id);
+        validate_block_candidate(&transfer.header, seed, state)?;
+        engine.replay_execution_payload(&transfer.replay_payload, transfer.execution_hash)?;
+        state.store_execution_payload(transfer.execution_hash, &transfer.replay_payload)?;
+        let outcome =
+            state.insert_mined_block_with_execution_outcome(transfer.header, transfer.execution_hash)?;
+        if outcome.current_best == outcome.block.block_id() {
+            engine.set_canonical_head_v3(transfer.execution_hash)?;
+        }
+    }
+    Ok(())
 }
 
 fn canonical_transfer_range(
