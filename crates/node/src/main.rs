@@ -199,6 +199,23 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
         };
+        match engine.latest_block() {
+            Ok(reth_head) => {
+                info!(
+                    niahcia_height = head.header.height,
+                    persisted_execution_hash = %hex::encode(execution_hash),
+                    reth_head_hash = %hex::encode(reth_head.hash),
+                    reth_head_timestamp = reth_head.timestamp,
+                    matches_persisted_execution = reth_head.hash == execution_hash,
+                    "restart execution-head comparison"
+                );
+            }
+            Err(e) => {
+                error!(error = %e, "failed to inspect Reth canonical head during restart");
+                return ExitCode::from(1);
+            }
+        }
+
         if let Err(e) =
             engine.set_canonical_head_v3_with_sync_retry(execution_hash, 30, Duration::from_secs(1))
         {
