@@ -54,9 +54,35 @@ pub fn randomx_hash(seed: Hash32, input: &[u8]) -> Result<Hash32, String> {
     randomx_hash_with_key(&seed, input)
 }
 
+pub fn search_nonce_range(
+    seed: Hash32,
+    template: &BlockHeaderV1,
+    nonce_start: u64,
+    nonce_end: u64,
+    extra_nonce: u64,
+) -> Result<Option<(u64, Hash32)>, String> {
+    if nonce_start > nonce_end {
+        return Err("nonce search range is inverted".into());
+    }
+
+    let verifier = RandomXVerifier::new(seed)?;
+    let mut header = template.clone();
+    header.extra_nonce = extra_nonce;
+
+    for nonce in nonce_start..=nonce_end {
+        header.nonce = nonce;
+        let hash = verifier.hash_header(&header)?;
+        if pow_meets_target(hash, header.target) {
+            return Ok(Some((nonce, hash)));
+        }
+    }
+
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{randomx_hash, randomx_hash_with_key, RandomXVerifier};
+    use super::{randomx_hash, randomx_hash_with_key, search_nonce_range, RandomXVerifier};
     use crate::work::BlockHeaderV1;
 
     #[test]
@@ -95,6 +121,58 @@ mod tests {
         assert_eq!(
             hex::encode(randomx_hash(seed, &header.canonical_bytes()).unwrap()),
             "b66abdedf1d9a99ae6f82919b4ebe118ac05b2038caefa1e345eed3525d12588"
+        );
+    }
+
+    #[test]
+    fn nonce_search_finds_solution_without_changing_execution_fields() {
+        let seed = [0x44_u8; 32];
+        let header = BlockHeaderV1 {
+            version: 1,
+            parent_hash: [0x11; 32],
+            height: 7,
+            timestamp: 1_800_000_007,
+            transactions_root: [0x22; 32],
+            execution_root: [0x33; 32],
+            target: [0xff; 32],
+            nonce: 999,
+            extra_nonce: 999,
+        };
+
+        let (nonce, hash) = search_nonce_range(seed, &header, 5, 9, 3)
+            .unwrap()
+            .expect("max target should accept first searched nonce");
+        assert_eq!(nonce, 5);
+
+        let mut solved = header.clone();
+        solved.nonce = nonce;
+        solved.extra_nonce = 3;
+        assert_eq!(hash, randomx_hash(seed, &solved.canonical_bytes()).unwrap());
+
+        assert_eq!(solved.parent_hash, header.parent_hash);
+        assert_eq!(solved.transactions_root, header.transactions_root);
+        assert_eq!(solved.execution_root, header.execution_root);
+        assert_eq!(solved.timestamp, header.timestamp);
+        assert_eq!(solved.target, header.target);
+    }
+
+    #[test]
+    fn nonce_search_rejects_inverted_range() {
+        let header = BlockHeaderV1 {
+            version: 1,
+            parent_hash: [0_u8; 32],
+            height: 0,
+            timestamp: 1_800_000_000,
+            transactions_root: [0_u8; 32],
+            execution_root: [0_u8; 32],
+            target: [0xff; 32],
+            nonce: 0,
+            extra_nonce: 0,
+        };
+
+        assert_eq!(
+            search_nonce_range([0x55; 32], &header, 9, 5, 0).unwrap_err(),
+            "nonce search range is inverted"
         );
     }
 
