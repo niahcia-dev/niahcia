@@ -19,7 +19,8 @@ pub struct BuiltExecutionPayload {
     pub execution_payload_hash: Hash32,
     execution_payload: Value,
     parent_beacon_block_root: Hash32,
-    execution_requests: Value,
+    execution_requests: Option<Value>,
+    engine_version: u8,
 }
 
 #[derive(Debug)]
@@ -59,6 +60,8 @@ impl EngineClient {
         let offered = vec![
             "engine_exchangeCapabilities",
             "engine_forkchoiceUpdatedV3",
+            "engine_getPayloadV3",
+            "engine_newPayloadV3",
             "engine_getPayloadV4",
             "engine_newPayloadV4",
         ];
@@ -141,10 +144,21 @@ impl EngineClient {
             .and_then(Value::as_str)
             .ok_or_else(|| format!("forkchoice response missing payloadId: {update}"))?;
 
-        let envelope = self.engine_request("engine_getPayloadV4", json!([payload_id]))?;
+        let (envelope, engine_version) =
+            match self.engine_request("engine_getPayloadV4", json!([payload_id])) {
+                Ok(envelope) => (envelope, 4_u8),
+                Err(v4_error) if v4_error.contains("Unsupported fork") => (
+                    self.engine_request("engine_getPayloadV3", json!([payload_id]))
+                        .map_err(|v3_error| format!(
+                            "engine_getPayloadV4 unsupported for payload ({v4_error}); engine_getPayloadV3 also failed: {v3_error}"
+                        ))?,
+                    3_u8,
+                ),
+                Err(error) => return Err(error),
+            };
         let payload = envelope
             .get("executionPayload")
-            .ok_or_else(|| format!("engine_getPayloadV4 missing executionPayload: {envelope}"))?;
+            .ok_or_else(|| format!("engine_getPayloadV{engine_version} missing executionPayload: {envelope}"))?;
 
         let parent_hash = parse_hash32(field_str(payload, "parentHash")?)?;
         if parent_hash != parent.hash {
@@ -152,10 +166,16 @@ impl EngineClient {
         }
 
         let execution_payload_hash = parse_hash32(field_str(payload, "blockHash")?)?;
-        let execution_requests = envelope
-            .get("executionRequests")
-            .cloned()
-            .ok_or_else(|| format!("engine_getPayloadV4 missing executionRequests: {envelope}"))?;
+        let execution_requests = if engine_version == 4 {
+            Some(
+                envelope
+                    .get("executionRequests")
+                    .cloned()
+                    .ok_or_else(|| format!("engine_getPayloadV4 missing executionRequests: {envelope}"))?,
+            )
+        } else {
+            None
+        };
         let transactions_root = transaction_merkle_root(payload)?;
 
         Ok(BuiltExecutionPayload {
@@ -175,23 +195,37 @@ impl EngineClient {
             execution_payload: payload.clone(),
             parent_beacon_block_root: [0_u8; 32],
             execution_requests,
+            engine_version,
         })
     }
 
     pub fn validate_payload_v3(&self, built: &BuiltExecutionPayload) -> Result<(), String> {
-        let result = self.engine_request(
-            "engine_newPayloadV4",
-            json!([
-                built.execution_payload,
-                [],
-                hex32(built.parent_beacon_block_root),
-                built.execution_requests
-            ]),
-        )?;
+        let result = match built.engine_version {
+            4 => self.engine_request(
+                "engine_newPayloadV4",
+                json!([
+                    built.execution_payload,
+                    [],
+                    hex32(built.parent_beacon_block_root),
+                    built.execution_requests
+                        .clone()
+                        .ok_or_else(|| "Engine API V4 payload missing executionRequests".to_string())?
+                ]),
+            )?,
+            3 => self.engine_request(
+                "engine_newPayloadV3",
+                json!([
+                    built.execution_payload,
+                    [],
+                    hex32(built.parent_beacon_block_root)
+                ]),
+            )?,
+            version => return Err(format!("unsupported cached Engine API payload version {version}")),
+        };
         let status = result
             .get("status")
             .and_then(Value::as_str)
-            .ok_or_else(|| format!("engine_newPayloadV4 response missing status: {result}"))?;
+            .ok_or_else(|| format!("engine_newPayload response missing status: {result}"))?;
 
         if status != "VALID" {
             return Err(format!(
