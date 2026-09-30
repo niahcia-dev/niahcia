@@ -54,7 +54,10 @@ impl WorkManager {
         nonce: u64,
         extra_nonce: u64,
     ) -> Result<(BlockHeaderV1, Hash32), String> {
-        let state = self.inner.read().map_err(|_| "work state poisoned".to_string())?;
+        let state = self
+            .inner
+            .read()
+            .map_err(|_| "work state poisoned".to_string())?;
         if state.solved {
             return Err("current work template is already solved".into());
         }
@@ -69,7 +72,10 @@ impl WorkManager {
     }
 
     fn mark_solved(&self, generation: u64, template_id: Hash32) -> Result<(), String> {
-        let mut state = self.inner.write().map_err(|_| "work state poisoned".to_string())?;
+        let mut state = self
+            .inner
+            .write()
+            .map_err(|_| "work state poisoned".to_string())?;
         if generation != state.generation || template_id != state.header.mining_template_id() {
             return Err("mining work changed before acceptance".into());
         }
@@ -267,8 +273,7 @@ fn submit_work(request: &Value, work: &WorkManager, state: &StateStore) -> Resul
         .and_then(Value::as_u64)
         .ok_or_else(|| "pow_submitWork extra_nonce must be a u64".to_string())?;
 
-    let (header, seed) =
-        work.submission_candidate(generation, template_id, nonce, extra_nonce)?;
+    let (header, seed) = work.submission_candidate(generation, template_id, nonce, extra_nonce)?;
     let verifier = RandomXVerifier::new(seed)?;
     let pow_hash = verifier.verify_header(&header)?;
     let persisted = state.insert_chain_block(header)?;
