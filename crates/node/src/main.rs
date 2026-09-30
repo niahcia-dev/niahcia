@@ -456,6 +456,7 @@ fn main() -> ExitCode {
         config.p2p_bind,
         config.p2p_peers.clone(),
         Arc::clone(&state),
+        Arc::clone(&engine),
         Arc::clone(&running),
     ) {
         Ok(handle) => handle,
