@@ -192,25 +192,49 @@ impl StateStore {
         if self.load_chain_block(block_id)?.is_none() {
             return Err("cannot map execution hash for an unpersisted NIAHCIA block".into());
         }
-        let write = self.db.begin_write().map_err(|e| format!("failed to begin execution mapping write: {e}"))?;
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("failed to begin execution mapping write: {e}"))?;
         {
-            let mut table = write.open_table(CHAIN_EXECUTION).map_err(|e| format!("failed to open chain execution table: {e}"))?;
-            if let Some(existing) = table.get(block_id.as_slice()).map_err(|e| format!("failed to read execution mapping: {e}"))? {
+            let mut table = write
+                .open_table(CHAIN_EXECUTION)
+                .map_err(|e| format!("failed to open chain execution table: {e}"))?;
+            if let Some(existing) = table
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to read execution mapping: {e}"))?
+            {
                 if existing.value() != execution_hash.as_slice() {
                     return Err("NIAHCIA block already maps to a different execution hash".into());
                 }
             } else {
-                table.insert(block_id.as_slice(), execution_hash.as_slice()).map_err(|e| format!("failed to persist execution mapping: {e}"))?;
+                table
+                    .insert(block_id.as_slice(), execution_hash.as_slice())
+                    .map_err(|e| format!("failed to persist execution mapping: {e}"))?;
             }
         }
-        write.commit().map_err(|e| format!("failed to commit execution mapping: {e}"))
+        write
+            .commit()
+            .map_err(|e| format!("failed to commit execution mapping: {e}"))
     }
 
     pub fn execution_hash(&self, block_id: Hash32) -> Result<Option<Hash32>, String> {
-        let read = self.db.begin_read().map_err(|e| format!("failed to begin execution mapping read: {e}"))?;
-        let table = read.open_table(CHAIN_EXECUTION).map_err(|e| format!("failed to open chain execution table: {e}"))?;
-        match table.get(block_id.as_slice()).map_err(|e| format!("failed to read execution mapping: {e}"))? {
-            Some(value) => value.value().try_into().map(Some).map_err(|_| "invalid persisted execution hash length".to_string()),
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("failed to begin execution mapping read: {e}"))?;
+        let table = read
+            .open_table(CHAIN_EXECUTION)
+            .map_err(|e| format!("failed to open chain execution table: {e}"))?;
+        match table
+            .get(block_id.as_slice())
+            .map_err(|e| format!("failed to read execution mapping: {e}"))?
+        {
+            Some(value) => value
+                .value()
+                .try_into()
+                .map(Some)
+                .map_err(|_| "invalid persisted execution hash length".to_string()),
             None => Ok(None),
         }
     }
