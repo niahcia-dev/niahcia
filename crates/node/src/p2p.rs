@@ -116,7 +116,7 @@ fn serve_peer(
                 write_message(&mut stream, &MessageV1::Blocks(blocks))?;
             }
             Ok(MessageV1::Hello(_)) => return Err("peer sent duplicate Hello".into()),
-            Ok(MessageV1::Blocks(blocks)) => ingest_blocks(state, engine, blocks)?
+            Ok(MessageV1::Blocks(blocks)) => ingest_blocks(state, engine, blocks)?,
             Err(error) if is_disconnect_error(&error) => return Ok(()),
             Err(error) => return Err(error),
         }
