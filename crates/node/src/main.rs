@@ -199,6 +199,27 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
         };
+        // Replay only if Reth no longer has the persisted canonical execution block.
+        if engine.block_by_hash(execution_hash).is_err() {
+            let encoded = match state.execution_payload(execution_hash) {
+                Ok(Some(payload)) => payload,
+                Ok(None) => {
+                    error!(execution_payload_hash = %hex::encode(execution_hash),
+                        "persisted canonical execution is missing from Reth and has no replay payload");
+                    return ExitCode::from(1);
+                }
+                Err(e) => {
+                    error!(error = %e, "failed to read persisted execution replay payload");
+                    return ExitCode::from(1);
+                }
+            };
+            if let Err(e) = engine.replay_execution_payload(&encoded, execution_hash) {
+                error!(error = %e, "failed to replay persisted canonical execution payload");
+                return ExitCode::from(1);
+            }
+            info!(execution_payload_hash = %hex::encode(execution_hash),
+                "replayed missing canonical execution payload into Reth");
+        }
         match engine.latest_block() {
             Ok(reth_head) => {
                 info!(
@@ -269,6 +290,18 @@ fn main() -> ExitCode {
         execution_payload_hash = %hex::encode(built.execution_payload_hash),
         "Reth independently validated execution candidate"
     );
+
+    let replay_bytes = match engine.encode_replay_payload(&built) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            error!(error = %e, "failed to encode validated execution payload for persistence");
+            return ExitCode::from(1);
+        }
+    };
+    if let Err(e) = state.store_execution_payload(built.execution_payload_hash, &replay_bytes) {
+        error!(error = %e, "failed to persist execution payload before exposing mining work");
+        return ExitCode::from(1);
+    }
 
     let execution_payload_hash = built.execution_payload_hash;
     let execution = &built.commitments;
