@@ -2,6 +2,7 @@ mod config;
 pub mod consensus;
 mod engine;
 mod mining_rpc;
+pub mod pow;
 pub mod service;
 pub mod state;
 pub mod work;
