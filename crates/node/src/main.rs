@@ -3,6 +3,7 @@ mod config;
 pub mod consensus;
 mod engine;
 mod mining_rpc;
+pub mod native_rpc;
 mod p2p;
 pub mod pow;
 pub mod service;
@@ -129,341 +130,99 @@ fn main() -> ExitCode {
     };
 
     if let Some(head) = &persisted_head {
-        info!(
-            height = head.header.height,
-            block_id = %hex::encode(head.block_id()),
-            cumulative_work = %head.chain_work.to_str_radix(10),
-            "recovered persisted NIAHCIA best head"
-        );
+        info!(height = head.header.height, block_id = %hex::encode(head.block_id()), cumulative_work = %head.chain_work.to_str_radix(10), "recovered persisted NIAHCIA best head");
     } else {
         info!("no persisted NIAHCIA chain head; starting from genesis template");
     }
 
-    let engine = match EngineClient::new(
-        config.reth_engine_api.clone(),
-        config.reth_http_rpc.clone(),
-        &config.reth_jwt_path,
-    ) {
+    let engine = match EngineClient::new(config.reth_engine_api.clone(), config.reth_http_rpc.clone(), &config.reth_jwt_path) {
         Ok(client) => client,
-        Err(e) => {
-            error!(error = %e, "failed to initialize Reth Engine API client");
-            return ExitCode::from(1);
-        }
+        Err(e) => { error!(error = %e, "failed to initialize Reth Engine API client"); return ExitCode::from(1); }
     };
 
     match engine.exchange_capabilities() {
-        Ok(capabilities) => {
-            info!(
-                count = capabilities.len(),
-                capabilities = ?capabilities,
-                "connected to Reth Engine API"
-            );
-        }
-        Err(e) => {
-            error!(error = %e, "Reth Engine API check failed");
-            return ExitCode::from(1);
-        }
+        Ok(capabilities) => info!(count = capabilities.len(), capabilities = ?capabilities, "connected to Reth Engine API"),
+        Err(e) => { error!(error = %e, "Reth Engine API check failed"); return ExitCode::from(1); }
     }
 
     if let Some(head) = &persisted_head {
         let execution_hash = match state.execution_hash(head.block_id()) {
             Ok(Some(hash)) => hash,
-            Ok(None) => {
-                error!(
-                    block_id = %hex::encode(head.block_id()),
-                    "persisted NIAHCIA canonical head has no Reth execution mapping"
-                );
-                return ExitCode::from(1);
-            }
-            Err(e) => {
-                error!(error = %e, "failed to recover canonical Reth execution mapping");
-                return ExitCode::from(1);
-            }
+            Ok(None) => { error!(block_id = %hex::encode(head.block_id()), "persisted NIAHCIA canonical head has no Reth execution mapping"); return ExitCode::from(1); }
+            Err(e) => { error!(error = %e, "failed to recover canonical Reth execution mapping"); return ExitCode::from(1); }
         };
-        // Rebuild missing canonical execution ancestors in oldest-first order.
-        // Walk the persisted best chain once so restart recovery remains O(H).
         let canonical_chain = match state.canonical_chain() {
             Ok(chain) => chain,
-            Err(e) => {
-                error!(error = %e, "failed to load canonical ancestry for replay");
-                return ExitCode::from(1);
-            }
+            Err(e) => { error!(error = %e, "failed to load canonical ancestry for replay"); return ExitCode::from(1); }
         };
         for canonical in canonical_chain {
             let height = canonical.header.height;
             let mapped = match state.execution_hash(canonical.block_id()) {
                 Ok(Some(hash)) => hash,
-                Ok(None) => {
-                    error!(height, "persisted canonical block has no execution mapping");
-                    return ExitCode::from(1);
-                }
-                Err(e) => {
-                    error!(height, error = %e, "failed to load execution mapping");
-                    return ExitCode::from(1);
-                }
+                Ok(None) => { error!(height, "persisted canonical block has no execution mapping"); return ExitCode::from(1); }
+                Err(e) => { error!(height, error = %e, "failed to load execution mapping"); return ExitCode::from(1); }
             };
             match engine.block_by_hash(mapped) {
                 Ok(_) => continue,
-                Err(e) if !e.contains("not found") => {
-                    error!(height, error = %e, "failed to query Reth execution block");
-                    return ExitCode::from(1);
-                }
+                Err(e) if !e.contains("not found") => { error!(height, error = %e, "failed to query Reth execution block"); return ExitCode::from(1); }
                 Err(_) => {}
             }
             let encoded = match state.execution_payload(mapped) {
                 Ok(Some(payload)) => payload,
-                Ok(None) => {
-                    error!(height, execution_payload_hash = %hex::encode(mapped),
-                        "Reth is missing canonical execution and no replay payload was persisted");
-                    return ExitCode::from(1);
-                }
-                Err(e) => {
-                    error!(height, error = %e, "failed to load execution replay payload");
-                    return ExitCode::from(1);
-                }
+                Ok(None) => { error!(height, execution_payload_hash = %hex::encode(mapped), "Reth is missing canonical execution and no replay payload was persisted"); return ExitCode::from(1); }
+                Err(e) => { error!(height, error = %e, "failed to load execution replay payload"); return ExitCode::from(1); }
             };
-            if let Err(e) = engine.replay_execution_payload(&encoded, mapped) {
-                error!(height, error = %e, "Reth rejected canonical execution replay");
-                return ExitCode::from(1);
-            }
-            info!(height, execution_payload_hash = %hex::encode(mapped),
-                "replayed missing canonical execution payload");
+            if let Err(e) = engine.replay_execution_payload(&encoded, mapped) { error!(height, error = %e, "Reth rejected canonical execution replay"); return ExitCode::from(1); }
+            info!(height, execution_payload_hash = %hex::encode(mapped), "replayed missing canonical execution payload");
         }
         match engine.latest_block() {
-            Ok(reth_head) => {
-                info!(
-                    niahcia_height = head.header.height,
-                    persisted_execution_hash = %hex::encode(execution_hash),
-                    reth_head_hash = %hex::encode(reth_head.hash),
-                    reth_head_timestamp = reth_head.timestamp,
-                    matches_persisted_execution = reth_head.hash == execution_hash,
-                    "restart execution-head comparison"
-                );
-            }
-            Err(e) => {
-                error!(error = %e, "failed to inspect Reth canonical head during restart");
-                return ExitCode::from(1);
-            }
+            Ok(reth_head) => info!(niahcia_height = head.header.height, persisted_execution_hash = %hex::encode(execution_hash), reth_head_hash = %hex::encode(reth_head.hash), reth_head_timestamp = reth_head.timestamp, matches_persisted_execution = reth_head.hash == execution_hash, "restart execution-head comparison"),
+            Err(e) => { error!(error = %e, "failed to inspect Reth canonical head during restart"); return ExitCode::from(1); }
         }
-
-        if let Err(e) =
-            engine.set_canonical_head_v3_with_sync_retry(execution_hash, 30, Duration::from_secs(1))
-        {
-            error!(error = %e, "failed to restore Reth forkchoice from persisted NIAHCIA head");
-            return ExitCode::from(1);
-        }
-        info!(
-            execution_payload_hash = %hex::encode(execution_hash),
-            "restored Reth canonical head from persisted NIAHCIA state"
-        );
+        if let Err(e) = engine.set_canonical_head_v3_with_sync_retry(execution_hash, 30, Duration::from_secs(1)) { error!(error = %e, "failed to restore Reth forkchoice from persisted NIAHCIA head"); return ExitCode::from(1); }
+        info!(execution_payload_hash = %hex::encode(execution_hash), "restored Reth canonical head from persisted NIAHCIA state");
     }
 
-    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(value) => value.as_secs(),
-        Err(e) => {
-            error!(error = %e, "system clock error");
-            return ExitCode::from(1);
-        }
-    };
-
-    let parent = match engine.latest_block() {
-        Ok(block) => block,
-        Err(e) => {
-            error!(error = %e, "failed to read latest Reth block");
-            return ExitCode::from(1);
-        }
-    };
-
-    let fee_recipient = match parse_fee_recipient(&config.fee_recipient) {
-        Ok(address) => address,
-        Err(e) => {
-            error!(error = %e, "invalid fee recipient");
-            return ExitCode::from(1);
-        }
-    };
-
+    let now = match SystemTime::now().duration_since(UNIX_EPOCH) { Ok(value) => value.as_secs(), Err(e) => { error!(error = %e, "system clock error"); return ExitCode::from(1); } };
+    let parent = match engine.latest_block() { Ok(block) => block, Err(e) => { error!(error = %e, "failed to read latest Reth block"); return ExitCode::from(1); } };
+    let fee_recipient = match parse_fee_recipient(&config.fee_recipient) { Ok(address) => address, Err(e) => { error!(error = %e, "invalid fee recipient"); return ExitCode::from(1); } };
     let candidate_timestamp = now.max(parent.timestamp.saturating_add(1));
-    let built = match engine.build_payload_v3(&parent, candidate_timestamp, fee_recipient) {
-        Ok(payload) => payload,
-        Err(e) => {
-            error!(error = %e, "failed to build Reth execution candidate");
-            return ExitCode::from(1);
-        }
-    };
-
-    if let Err(e) = engine.validate_payload_v3(&built) {
-        error!(error = %e, "Reth rejected built execution candidate");
-        return ExitCode::from(1);
-    }
-    info!(
-        execution_payload_hash = %hex::encode(built.execution_payload_hash),
-        "Reth independently validated execution candidate"
-    );
-
-    let replay_bytes = match engine.encode_replay_payload(&built) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            error!(error = %e, "failed to encode validated execution payload for persistence");
-            return ExitCode::from(1);
-        }
-    };
-    if let Err(e) = state.store_execution_payload(built.execution_payload_hash, &replay_bytes) {
-        error!(error = %e, "failed to persist execution payload before exposing mining work");
-        return ExitCode::from(1);
-    }
+    let built = match engine.build_payload_v3(&parent, candidate_timestamp, fee_recipient) { Ok(payload) => payload, Err(e) => { error!(error = %e, "failed to build Reth execution candidate"); return ExitCode::from(1); } };
+    if let Err(e) = engine.validate_payload_v3(&built) { error!(error = %e, "Reth rejected built execution candidate"); return ExitCode::from(1); }
+    info!(execution_payload_hash = %hex::encode(built.execution_payload_hash), "Reth independently validated execution candidate");
+    let replay_bytes = match engine.encode_replay_payload(&built) { Ok(bytes) => bytes, Err(e) => { error!(error = %e, "failed to encode validated execution payload for persistence"); return ExitCode::from(1); } };
+    if let Err(e) = state.store_execution_payload(built.execution_payload_hash, &replay_bytes) { error!(error = %e, "failed to persist execution payload before exposing mining work"); return ExitCode::from(1); }
 
     let execution_payload_hash = built.execution_payload_hash;
     let execution = &built.commitments;
-    let (niahcia_parent_hash, niahcia_height) = match &persisted_head {
-        Some(head) => (
-            head.block_id(),
-            match head.header.height.checked_add(1) {
-                Some(height) => height,
-                None => {
-                    error!("persisted NIAHCIA height overflow");
-                    return ExitCode::from(1);
-                }
-            },
-        ),
-        None => ([0_u8; 32], 0),
-    };
-
+    let (niahcia_parent_hash, niahcia_height) = match &persisted_head { Some(head) => (head.block_id(), match head.header.height.checked_add(1) { Some(height) => height, None => { error!("persisted NIAHCIA height overflow"); return ExitCode::from(1); } }), None => ([0_u8; 32], 0) };
     let target = match &persisted_head {
         Some(head) => {
-            let genesis = match state.canonical_block_at_height(0) {
-                Ok(Some(block)) => block,
-                Ok(None) => {
-                    error!("persisted chain is missing devnet genesis block");
-                    return ExitCode::from(1);
-                }
-                Err(e) => {
-                    error!(error = %e, "failed to load devnet genesis block");
-                    return ExitCode::from(1);
-                }
-            };
-            match devnet_next_target(
-                genesis.header.timestamp,
-                head.header.height,
-                head.header.timestamp,
-            ) {
-                Ok(target) => target,
-                Err(e) => {
-                    error!(error = %e, "failed to derive devnet mining target");
-                    return ExitCode::from(1);
-                }
-            }
+            let genesis = match state.canonical_block_at_height(0) { Ok(Some(block)) => block, Ok(None) => { error!("persisted chain is missing devnet genesis block"); return ExitCode::from(1); }, Err(e) => { error!(error = %e, "failed to load devnet genesis block"); return ExitCode::from(1); } };
+            match devnet_next_target(genesis.header.timestamp, head.header.height, head.header.timestamp) { Ok(target) => target, Err(e) => { error!(error = %e, "failed to derive devnet mining target"); return ExitCode::from(1); } }
         }
         None => DEVNET_GENESIS_TARGET,
     };
-
-    let header = BlockHeaderV1 {
-        version: 1,
-        parent_hash: niahcia_parent_hash,
-        height: niahcia_height,
-        timestamp: execution.timestamp,
-        transactions_root: execution.transactions_root,
-        execution_root: execution.commitment_hash(),
-        target,
-        nonce: 0,
-        extra_nonce: 0,
-    };
-
+    let header = BlockHeaderV1 { version: 1, parent_hash: niahcia_parent_hash, height: niahcia_height, timestamp: execution.timestamp, transactions_root: execution.transactions_root, execution_root: execution.commitment_hash(), target, nonce: 0, extra_nonce: 0 };
     let seed_height = randomx_seed_height(header.height);
     let seed_block_id = if persisted_head.is_some() {
-        match state.canonical_block_at_height(seed_height) {
-            Ok(Some(block)) => block.block_id(),
-            Ok(None) => {
-                error!(
-                    seed_height,
-                    "persisted chain does not contain required RandomX seed block"
-                );
-                return ExitCode::from(1);
-            }
-            Err(e) => {
-                error!(error = %e, seed_height, "failed to resolve RandomX seed block");
-                return ExitCode::from(1);
-            }
-        }
-    } else {
-        [0_u8; 32]
-    };
+        match state.canonical_block_at_height(seed_height) { Ok(Some(block)) => block.block_id(), Ok(None) => { error!(seed_height, "persisted chain does not contain required RandomX seed block"); return ExitCode::from(1); }, Err(e) => { error!(error = %e, seed_height, "failed to resolve RandomX seed block"); return ExitCode::from(1); } }
+    } else { [0_u8; 32] };
     let seed = randomx_seed(seed_block_id);
     let work_manager = WorkManager::new(header, seed_height, seed, execution_payload_hash);
-
-    info!(
-        height = niahcia_height,
-        execution_block_number = execution.block_number,
-        niahcia_parent = %hex::encode(niahcia_parent_hash),
-        execution_parent = %hex::encode(execution.execution_parent_hash),
-        execution_payload_hash = %hex::encode(built.execution_payload_hash),
-        transactions_root = %hex::encode(execution.transactions_root),
-        execution_root = %hex::encode(execution.commitment_hash()),
-        randomx_seed_height = seed_height,
-        randomx_seed = %hex::encode(seed),
-        "installed Reth-backed NIAHCIA mining template"
-    );
+    info!(height = niahcia_height, execution_block_number = execution.block_number, niahcia_parent = %hex::encode(niahcia_parent_hash), execution_parent = %hex::encode(execution.execution_parent_hash), execution_payload_hash = %hex::encode(built.execution_payload_hash), transactions_root = %hex::encode(execution.transactions_root), execution_root = %hex::encode(execution.commitment_hash()), randomx_seed_height = seed_height, randomx_seed = %hex::encode(seed), "installed Reth-backed NIAHCIA mining template");
 
     let engine = Arc::new(engine);
     let running = Arc::new(AtomicBool::new(true));
     let signal_running = Arc::clone(&running);
-
-    if let Err(e) = ctrlc::set_handler(move || {
-        signal_running.store(false, Ordering::SeqCst);
-    }) {
-        error!(error = %e, "failed to install shutdown handler");
-        return ExitCode::from(1);
-    }
-
-    let rpc_handle = match mining_rpc::spawn(
-        config.mining_rpc_bind,
-        work_manager.clone(),
-        Arc::clone(&state),
-        Arc::clone(&engine),
-        fee_recipient,
-        Arc::clone(&running),
-    ) {
-        Ok(handle) => handle,
-        Err(e) => {
-            error!(error = %e, "failed to start mining RPC");
-            return ExitCode::from(1);
-        }
-    };
-
-    let p2p_handle = match p2p::spawn(
-        config.p2p_bind,
-        config.p2p_peers.clone(),
-        Arc::clone(&state),
-        Arc::clone(&engine),
-        work_manager.clone(),
-        fee_recipient,
-        Arc::clone(&running),
-    ) {
-        Ok(handle) => handle,
-        Err(e) => {
-            error!(error = %e, "failed to start P2P listener");
-            running.store(false, Ordering::SeqCst);
-            let _ = rpc_handle.join();
-            return ExitCode::from(1);
-        }
-    };
-
+    if let Err(e) = ctrlc::set_handler(move || { signal_running.store(false, Ordering::SeqCst); }) { error!(error = %e, "failed to install shutdown handler"); return ExitCode::from(1); }
+    let rpc_handle = match mining_rpc::spawn(config.mining_rpc_bind, work_manager.clone(), Arc::clone(&state), Arc::clone(&engine), fee_recipient, Arc::clone(&running)) { Ok(handle) => handle, Err(e) => { error!(error = %e, "failed to start mining RPC"); return ExitCode::from(1); } };
+    let p2p_handle = match p2p::spawn(config.p2p_bind, config.p2p_peers.clone(), Arc::clone(&state), Arc::clone(&engine), work_manager.clone(), fee_recipient, Arc::clone(&running)) { Ok(handle) => handle, Err(e) => { error!(error = %e, "failed to start P2P listener"); running.store(false, Ordering::SeqCst); let _ = rpc_handle.join(); return ExitCode::from(1); } };
     info!("node bootstrap running; press Ctrl-C to stop");
-
-    while running.load(Ordering::SeqCst) {
-        thread::sleep(Duration::from_millis(200));
-    }
-
+    while running.load(Ordering::SeqCst) { thread::sleep(Duration::from_millis(200)); }
     info!("shutdown requested");
-
-    if rpc_handle.join().is_err() {
-        error!("mining RPC thread terminated unexpectedly");
-        return ExitCode::from(1);
-    }
-    if p2p_handle.join().is_err() {
-        error!("P2P listener thread terminated unexpectedly");
-        return ExitCode::from(1);
-    }
-
+    if rpc_handle.join().is_err() { error!("mining RPC thread terminated unexpectedly"); return ExitCode::from(1); }
+    if p2p_handle.join().is_err() { error!("P2P listener thread terminated unexpectedly"); return ExitCode::from(1); }
     info!("NIAHCIA stopped cleanly");
     ExitCode::SUCCESS
 }
