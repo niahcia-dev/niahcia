@@ -24,7 +24,7 @@ seed_height = max(0, epoch_start - 64)
 seed = keccak256("NIAHCIA/RANDOMX-SEED/V1" || seed_block_id)
 ```
 
-The first bootstrap implementation still lacks persistent NIAHCIA chain history, so its seed-block lookup is provisional. The seed formula itself is implemented and unit-tested.
+The node now resolves the seed block from persisted NIAHCIA canonical chain history whenever a chain head exists. Only the initial empty-chain/genesis bootstrap still uses the zero block ID as a provisional seed source until genesis/network parameters are frozen. The seed formula itself is implemented and unit-tested.
 
 ## Target comparison
 
