@@ -60,10 +60,14 @@ mine_a() {
 
 wait_equal_work() {
   for _ in $(seq 1 120); do
-    local a b; a="$(rpc "$A_MINING" pow_getWork '{}' | jq -r '.result.height')"; b="$(rpc "$B_MINING" pow_getWork '{}' | jq -r '.result.height')"
-    if [[ "$a" == "$b" ]]; then echo "$a"; return 0; fi; sleep 1
+    local a_work b_work a_height b_height a_parent b_parent
+    a_work="$(rpc "$A_MINING" pow_getWork '{}')"; b_work="$(rpc "$B_MINING" pow_getWork '{}')"
+    a_height="$(jq -r '.result.height' <<<"$a_work")"; b_height="$(jq -r '.result.height' <<<"$b_work")"
+    a_parent="$(jq -r '.result.parent_hash' <<<"$a_work")"; b_parent="$(jq -r '.result.parent_hash' <<<"$b_work")"
+    if [[ "$a_height" == "$b_height" && "$a_parent" == "$b_parent" ]]; then echo "$a_height"; return 0; fi
+    sleep 1
   done
-  echo "Node B did not catch Node A" >&2; cat "$tmp/niahcia-b.log" >&2; return 1
+  echo "Node B did not reach Node A canonical NIAHCIA tip" >&2; cat "$tmp/niahcia-b.log" >&2; return 1
 }
 
 command -v curl >/dev/null; command -v jq >/dev/null
