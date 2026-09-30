@@ -129,12 +129,13 @@ fn sync_peer(
     engine: &EngineClient,
 ) -> Result<(), String> {
     let remote = exchange_hello(stream.try_clone().map_err(io_error)?, state)?;
+    let Some(remote_height) = remote.best_height else {
+        return Ok(());
+    };
     let local_height = state.best_chain_head()?.map(|head| head.header.height);
-    let start_height = local_height.map_or(0, |height| height.saturating_add(1));
-    if remote
-        .best_height
-        .is_some_and(|height| height >= start_height)
-    {
+    let mut start_height = local_height.map_or(0, |height| height.saturating_add(1));
+
+    while start_height <= remote_height {
         write_message(
             &mut stream,
             &MessageV1::GetBlocks(GetBlocksV1 {
@@ -142,10 +143,19 @@ fn sync_peer(
                 count: MAX_BLOCKS_PER_MESSAGE,
             }),
         )?;
-        match read_message(&mut stream)? {
-            MessageV1::Blocks(blocks) => ingest_blocks(state, engine, blocks)?,
+        let blocks = match read_message(&mut stream)? {
+            MessageV1::Blocks(blocks) => blocks,
             _ => return Err("peer did not answer GetBlocks with Blocks".into()),
+        };
+        if blocks.is_empty() {
+            return Err("peer advertised blocks but returned an empty range".into());
         }
+        let received = u64::try_from(blocks.len())
+            .map_err(|_| "received block count does not fit u64".to_string())?;
+        ingest_blocks(state, engine, blocks)?;
+        start_height = start_height
+            .checked_add(received)
+            .ok_or_else(|| "P2P sync height overflow".to_string())?;
     }
     Ok(())
 }
