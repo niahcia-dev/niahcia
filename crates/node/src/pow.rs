@@ -36,10 +36,10 @@ impl RandomXVerifier {
     }
 }
 
-pub fn randomx_hash(seed: Hash32, input: &[u8]) -> Result<Hash32, String> {
+fn randomx_hash_with_key(key: &[u8], input: &[u8]) -> Result<Hash32, String> {
     let flags = RandomXFlag::FLAG_DEFAULT;
     let cache =
-        RandomXCache::new(flags, &seed).map_err(|e| format!("RandomX cache init failed: {e}"))?;
+        RandomXCache::new(flags, key).map_err(|e| format!("RandomX cache init failed: {e}"))?;
     let vm = RandomXVM::new(flags, Some(cache), None)
         .map_err(|e| format!("RandomX VM init failed: {e}"))?;
     let hash = vm
@@ -50,22 +50,31 @@ pub fn randomx_hash(seed: Hash32, input: &[u8]) -> Result<Hash32, String> {
         .map_err(|value: Vec<u8>| format!("RandomX hash must be 32 bytes; found {}", value.len()))
 }
 
+pub fn randomx_hash(seed: Hash32, input: &[u8]) -> Result<Hash32, String> {
+    randomx_hash_with_key(&seed, input)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{randomx_hash, RandomXVerifier};
+    use super::{randomx_hash, randomx_hash_with_key, RandomXVerifier};
     use crate::work::BlockHeaderV1;
 
     #[test]
     fn randomx_matches_reference_vector() {
-        let mut key = [0_u8; 32];
-        let source = b"test key 000";
-        key[..source.len()].copy_from_slice(source);
+        let hash = randomx_hash_with_key(b"test key 000", b"This is a test").unwrap();
+        assert_eq!(
+            hex::encode(hash),
+            "639183aae1bf4c9a35884cb46b09cad9175f04efd7684e7262a0ac1c2f0b4e3f"
+        );
+    }
 
-        // This checks the binding and the reference implementation path.
-        // NIAHCIA consensus vectors use a fixed 32-byte seed rather than a text key.
-        let first = randomx_hash(key, b"This is a test").unwrap();
-        let second = randomx_hash(key, b"This is a test").unwrap();
-        assert_eq!(first, second);
+    #[test]
+    fn consensus_seed_is_exactly_32_bytes() {
+        let seed = [0x42_u8; 32];
+        assert_eq!(
+            randomx_hash(seed, b"NIAHCIA").unwrap(),
+            randomx_hash_with_key(&seed, b"NIAHCIA").unwrap()
+        );
     }
 
     #[test]
