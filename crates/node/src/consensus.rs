@@ -37,8 +37,6 @@ pub fn devnet_next_target(
     )
 }
 
-
-
 pub fn randomx_seed_height(height: u64) -> u64 {
     let epoch_start = (height / RANDOMX_EPOCH_LENGTH) * RANDOMX_EPOCH_LENGTH;
     epoch_start.saturating_sub(RANDOMX_SEED_LAG)
