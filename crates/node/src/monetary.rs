@@ -3,7 +3,7 @@
 //! These constants implement `docs/emission-candidate-v1.md`. They remain a
 //! candidate until the comparison/vector review promotes them to production.
 
-pub const ANIAH_PER_NIAH: u128 = 1_000_000_000_000_000_000;
+pub const ANIAH_PER_NIAH: u128 = 100_000_000;
 pub const MAIN_EMISSION_REFERENCE: u128 = 41_943_040u128 * ANIAH_PER_NIAH;
 pub const EMISSION_SHIFT: u32 = 22;
 pub const TAIL_SUBSIDY: u128 = ANIAH_PER_NIAH / 4;
@@ -55,8 +55,9 @@ mod tests {
 
     #[test]
     fn candidate_constants_are_exact() {
+        assert_eq!(ANIAH_PER_NIAH, 100_000_000);
         assert_eq!(MonetaryPolicyV1::cpu_subsidy(0), 10 * ANIAH_PER_NIAH);
-        assert_eq!(TAIL_SUBSIDY, 250_000_000_000_000_000);
+        assert_eq!(TAIL_SUBSIDY, 25_000_000);
     }
 
     #[test]
