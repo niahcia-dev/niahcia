@@ -244,7 +244,24 @@ fn main() -> ExitCode {
     };
 
     let seed_height = randomx_seed_height(header.height);
-    let seed_block_id = niahcia_parent_hash;
+    let seed_block_id = if persisted_head.is_some() {
+        match state.canonical_block_at_height(seed_height) {
+            Ok(Some(block)) => block.block_id(),
+            Ok(None) => {
+                error!(
+                    seed_height,
+                    "persisted chain does not contain required RandomX seed block"
+                );
+                return ExitCode::from(1);
+            }
+            Err(e) => {
+                error!(error = %e, seed_height, "failed to resolve RandomX seed block");
+                return ExitCode::from(1);
+            }
+        }
+    } else {
+        [0_u8; 32]
+    };
     let seed = randomx_seed(seed_block_id);
     let work_manager = WorkManager::new(header, seed_height, seed);
 
