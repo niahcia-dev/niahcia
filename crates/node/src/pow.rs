@@ -78,6 +78,27 @@ mod tests {
     }
 
     #[test]
+    fn niahcia_randomx_block_header_vector() {
+        let seed = [0x42_u8; 32];
+        let header = BlockHeaderV1 {
+            version: 1,
+            parent_hash: [0x11; 32],
+            height: 2_048,
+            timestamp: 1_800_000_123,
+            transactions_root: [0x22; 32],
+            execution_root: [0x33; 32],
+            target: [0xff; 32],
+            nonce: 0x0102_0304_0506_0708,
+            extra_nonce: 0x1112_1314_1516_1718,
+        };
+
+        assert_eq!(
+            hex::encode(randomx_hash(seed, &header.canonical_bytes()).unwrap()),
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        );
+    }
+
+    #[test]
     fn verifier_hashes_exact_canonical_header_and_checks_target() {
         let seed = [0x33; 32];
         let verifier = RandomXVerifier::new(seed).unwrap();
