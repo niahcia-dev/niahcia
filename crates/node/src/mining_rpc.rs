@@ -298,8 +298,22 @@ fn parse_hash32_hex(value: &str) -> Result<Hash32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::WorkManager;
+    use super::{submit_work, WorkManager};
+    use crate::state::StateStore;
     use crate::work::BlockHeaderV1;
+    use serde_json::json;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_state_path(name: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "niahcia-mining-{name}-{}-{nonce}.redb",
+            std::process::id()
+        ))
+    }
 
     fn header(marker: u8) -> BlockHeaderV1 {
         BlockHeaderV1 {
@@ -313,6 +327,85 @@ mod tests {
             nonce: 0,
             extra_nonce: 0,
         }
+    }
+
+    #[test]
+    fn submit_work_independently_verifies_and_persists_block() {
+        let path = temp_state_path("submit-valid");
+        let store = StateStore::open(&path).unwrap();
+
+        let header = BlockHeaderV1 {
+            version: 1,
+            parent_hash: [0_u8; 32],
+            height: 0,
+            timestamp: 1_800_000_000,
+            transactions_root: [0x22; 32],
+            execution_root: [0x33; 32],
+            target: [0xff; 32],
+            nonce: 0,
+            extra_nonce: 0,
+        };
+        let manager = WorkManager::new(header.clone(), 0, [0x42; 32]);
+        let template_id = header.mining_template_id();
+
+        let request = json!({
+            "params": {
+                "generation": 0,
+                "template_id": hex::encode(template_id),
+                "nonce": 7,
+                "extra_nonce": 9
+            }
+        });
+
+        let result = submit_work(&request, &manager, &store).unwrap();
+        assert_eq!(result["accepted"], true);
+
+        let mut solved = header;
+        solved.nonce = 7;
+        solved.extra_nonce = 9;
+        let persisted = store.load_chain_block(solved.block_id()).unwrap().unwrap();
+        assert_eq!(persisted.header, solved);
+        assert!(manager.is_solved().unwrap());
+
+        let duplicate = submit_work(&request, &manager, &store).unwrap_err();
+        assert_eq!(duplicate, "current work template is already solved");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn submit_work_rejects_stale_template_before_hashing() {
+        let path = temp_state_path("submit-stale");
+        let store = StateStore::open(&path).unwrap();
+        let header = BlockHeaderV1 {
+            version: 1,
+            parent_hash: [0_u8; 32],
+            height: 0,
+            timestamp: 1_800_000_000,
+            transactions_root: [0x22; 32],
+            execution_root: [0x33; 32],
+            target: [0xff; 32],
+            nonce: 0,
+            extra_nonce: 0,
+        };
+        let manager = WorkManager::new(header, 0, [0x42; 32]);
+
+        let request = json!({
+            "params": {
+                "generation": 99,
+                "template_id": hex::encode([0x55_u8; 32]),
+                "nonce": 7,
+                "extra_nonce": 9
+            }
+        });
+
+        assert_eq!(
+            submit_work(&request, &manager, &store).unwrap_err(),
+            "stale mining work"
+        );
+        assert!(store.best_chain_head().unwrap().is_none());
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
