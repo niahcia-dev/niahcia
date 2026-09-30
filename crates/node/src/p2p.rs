@@ -184,13 +184,13 @@ fn find_sync_start(
     let mut height = local_head.header.height.min(remote_height);
     loop {
         write_message(
-            stream,
+            &mut *stream,
             &MessageV1::GetBlocks(GetBlocksV1 {
                 start_height: height,
                 count: 1,
             }),
         )?;
-        let blocks = match read_message(stream)? {
+        let blocks = match read_message(&mut *stream)? {
             MessageV1::Blocks(blocks) => blocks,
             _ => return Err("peer did not answer common-ancestor probe with Blocks".into()),
         };
