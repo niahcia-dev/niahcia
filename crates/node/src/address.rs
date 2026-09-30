@@ -76,7 +76,9 @@ impl NiahciaAddressV1 {
         public_key: &[u8],
     ) -> Result<Self, String> {
         if public_key.len() != 65 || public_key[0] != 0x04 {
-            return Err("account public key must be uncompressed SEC1 (65 bytes, 0x04 prefix)".into());
+            return Err(
+                "account public key must be uncompressed SEC1 (65 bytes, 0x04 prefix)".into(),
+            );
         }
         let digest = Keccak256::digest(&public_key[1..]);
         let mut payload = [0u8; ADDRESS_PAYLOAD_LEN];
@@ -98,10 +100,14 @@ impl NiahciaAddressV1 {
     }
 
     pub fn decode(text: &str) -> Result<Self, String> {
-        let (hrp, data) = bech32::decode(text).map_err(|e| format!("invalid NIAHCIA address: {e}"))?;
+        let (hrp, data) =
+            bech32::decode(text).map_err(|e| format!("invalid NIAHCIA address: {e}"))?;
         let network = AddressNetwork::from_hrp(hrp.as_str())?;
         if data.len() != ADDRESS_PAYLOAD_LEN + 2 {
-            return Err(format!("invalid NIAHCIA address payload length: {}", data.len()));
+            return Err(format!(
+                "invalid NIAHCIA address payload length: {}",
+                data.len()
+            ));
         }
         if data[0] != ADDRESS_VERSION {
             return Err(format!("unsupported NIAHCIA address version: {}", data[0]));
@@ -136,9 +142,14 @@ mod tests {
 
     #[test]
     fn round_trip_all_networks_and_kinds() {
-        for network in [AddressNetwork::Mainnet, AddressNetwork::Testnet, AddressNetwork::Devnet] {
+        for network in [
+            AddressNetwork::Mainnet,
+            AddressNetwork::Testnet,
+            AddressNetwork::Devnet,
+        ] {
             for kind in [AddressKind::Account, AddressKind::Contract] {
-                let address = NiahciaAddressV1::new(network, kind, [0x42; ADDRESS_PAYLOAD_LEN]);
+                let address =
+                    NiahciaAddressV1::new(network, kind, [0x42; ADDRESS_PAYLOAD_LEN]);
                 let encoded = address.encode().unwrap();
                 assert_eq!(NiahciaAddressV1::decode(&encoded).unwrap(), address);
                 assert!(encoded.starts_with(network.hrp()));
@@ -181,7 +192,9 @@ mod tests {
         let mut key = [0u8; 65];
         key[0] = 0x04;
         key[1..].copy_from_slice(&[0x22; 64]);
-        let address = NiahciaAddressV1::account_from_uncompressed_public_key(AddressNetwork::Devnet, &key).unwrap();
+        let address =
+            NiahciaAddressV1::account_from_uncompressed_public_key(AddressNetwork::Devnet, &key)
+                .unwrap();
         assert_eq!(address.kind, AddressKind::Account);
         assert_eq!(address.network, AddressNetwork::Devnet);
         assert_eq!(address.payload.len(), ADDRESS_PAYLOAD_LEN);
