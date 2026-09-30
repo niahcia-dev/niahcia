@@ -1,5 +1,5 @@
-use crate::work::{BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
 use crate::state::StateStore;
+use crate::work::{BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,16 +26,20 @@ pub fn spawn(
     Ok(thread::spawn(move || {
         for peer in peers {
             let state = Arc::clone(&state);
-            thread::spawn(move || match TcpStream::connect_timeout(&peer, IO_TIMEOUT) {
-                Ok(stream) => {
-                    if let Err(error) = exchange_hello(stream, &state) {
-                        tracing::warn!(%peer, %error, "outbound P2P handshake failed");
-                    } else {
-                        tracing::info!(%peer, "outbound P2P handshake complete");
+            thread::spawn(
+                move || match TcpStream::connect_timeout(&peer, IO_TIMEOUT) {
+                    Ok(stream) => {
+                        if let Err(error) = exchange_hello(stream, &state) {
+                            tracing::warn!(%peer, %error, "outbound P2P handshake failed");
+                        } else {
+                            tracing::info!(%peer, "outbound P2P handshake complete");
+                        }
                     }
-                }
-                Err(error) => tracing::warn!(%peer, %error, "failed to connect static P2P peer"),
-            });
+                    Err(error) => {
+                        tracing::warn!(%peer, %error, "failed to connect static P2P peer")
+                    }
+                },
+            );
         }
 
         while running.load(Ordering::SeqCst) {
@@ -63,8 +67,12 @@ pub fn spawn(
 }
 
 fn exchange_hello(mut stream: TcpStream, state: &StateStore) -> Result<HelloV1, String> {
-    stream.set_read_timeout(Some(IO_TIMEOUT)).map_err(io_error)?;
-    stream.set_write_timeout(Some(IO_TIMEOUT)).map_err(io_error)?;
+    stream
+        .set_read_timeout(Some(IO_TIMEOUT))
+        .map_err(io_error)?;
+    stream
+        .set_write_timeout(Some(IO_TIMEOUT))
+        .map_err(io_error)?;
     let local = local_hello(state)?;
     write_message(&mut stream, &MessageV1::Hello(local))?;
     match read_message(&mut stream)? {
