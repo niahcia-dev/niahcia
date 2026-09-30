@@ -94,12 +94,19 @@ rm -rf "$SMOKE_ROOT"; mkdir -p "$SMOKE_ROOT"
 
 echo "Starting independent Reth A and B..."
 start_reth a "$A_RETH_DATA" 18545 18551 30303; start_reth b "$B_RETH_DATA" 19545 19551 30304
-echo "Starting Node A..."; start_node a "$A_DATA" "$A_RETH_HTTP" "$A_RETH_ENGINE" "$A_MINING" "$A_P2P" ""
+
+echo "Starting Node B first with configured Node A still unavailable..."
+start_node b "$B_DATA" "$B_RETH_HTTP" "$B_RETH_ENGINE" "$B_MINING" "$B_P2P" "$A_P2P"
+sleep 3
+rpc "$B_MINING" pow_getWork '{}' >/dev/null
+echo "B remained healthy while its static peer was unavailable"
+
+echo "Starting Node A after B is already retrying..."
+start_node a "$A_DATA" "$A_RETH_HTTP" "$A_RETH_ENGINE" "$A_MINING" "$A_P2P" ""
 for _ in $(seq 1 "$BLOCKS"); do echo "Mined on A height $(mine_a)"; done
 
-echo "Starting Node B and syncing from A..."
-start_node b "$B_DATA" "$B_RETH_HTTP" "$B_RETH_ENGINE" "$B_MINING" "$B_P2P" "$A_P2P"
-synced_height="$(wait_equal_work)"; echo "B caught A at next work height $synced_height"
+echo "Waiting for already-running B to discover A and synchronize..."
+synced_height="$(wait_equal_work)"; echo "B discovered A after startup and caught it at next work height $synced_height"
 a_reth="$(rpc "$A_RETH_HTTP" eth_blockNumber '[]' | jq -r '.result')"; b_reth="$(rpc "$B_RETH_HTTP" eth_blockNumber '[]' | jq -r '.result')"
 [[ "$a_reth" == "$b_reth" ]] || { echo "Execution canonical height mismatch after initial sync: A=$a_reth B=$b_reth" >&2; exit 1; }
 
