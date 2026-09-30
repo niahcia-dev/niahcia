@@ -364,7 +364,9 @@ impl EngineClient {
             )?,
             other => return Err(format!("unsupported persisted Engine API version {other}")),
         };
-        let status = result.get("status").and_then(Value::as_str)
+        let status = result
+            .get("status")
+            .and_then(Value::as_str)
             .ok_or_else(|| format!("replay response missing status: {result}"))?;
         if status != "VALID" {
             return Err(format!(
@@ -372,8 +374,12 @@ impl EngineClient {
             ));
         }
         let valid_hash = parse_hash32(
-            result.get("latestValidHash").and_then(Value::as_str)
-                .ok_or_else(|| format!("replay VALID response missing latestValidHash: {result}"))?
+            result
+                .get("latestValidHash")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    format!("replay VALID response missing latestValidHash: {result}")
+                })?,
         )?;
         if valid_hash != expected_hash {
             return Err("Reth replay VALID latestValidHash differs from persisted mapping".into());
