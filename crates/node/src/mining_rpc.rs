@@ -1,3 +1,4 @@
+use crate::consensus::{validate_timestamp, MEDIAN_TIME_WINDOW};
 use crate::pow::RandomXVerifier;
 use crate::state::StateStore;
 use crate::work::{BlockHeaderV1, Hash32};
@@ -7,7 +8,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
 #[derive(Clone)]
@@ -274,8 +275,7 @@ fn submit_work(request: &Value, work: &WorkManager, state: &StateStore) -> Resul
         .ok_or_else(|| "pow_submitWork extra_nonce must be a u64".to_string())?;
 
     let (header, seed) = work.submission_candidate(generation, template_id, nonce, extra_nonce)?;
-    let verifier = RandomXVerifier::new(seed)?;
-    let pow_hash = verifier.verify_header(&header)?;
+    let pow_hash = validate_block_candidate(&header, seed, state)?;
     let outcome = state.insert_chain_block_with_outcome(header)?;
     work.mark_solved(generation, template_id)?;
 
@@ -300,6 +300,44 @@ fn submit_work(request: &Value, work: &WorkManager, state: &StateStore) -> Resul
         "current_best": hex::encode(outcome.current_best),
         "reorg": reorg
     }))
+}
+
+fn validate_block_candidate(
+    header: &BlockHeaderV1,
+    seed: Hash32,
+    state: &StateStore,
+) -> Result<Hash32, String> {
+    let adjusted_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("system clock error during block validation: {e}"))?
+        .as_secs();
+
+    let mut ancestor_timestamps = Vec::with_capacity(MEDIAN_TIME_WINDOW);
+    if header.height == 0 {
+        if header.parent_hash != [0_u8; 32] {
+            return Err("genesis block must have a zero parent hash".into());
+        }
+    } else {
+        let mut cursor = state
+            .load_chain_block(header.parent_hash)?
+            .ok_or_else(|| "candidate parent is not persisted".to_string())?;
+        if cursor.header.height.checked_add(1) != Some(header.height) {
+            return Err("candidate height does not follow persisted parent".into());
+        }
+
+        loop {
+            ancestor_timestamps.push(cursor.header.timestamp);
+            if ancestor_timestamps.len() == MEDIAN_TIME_WINDOW || cursor.header.height == 0 {
+                break;
+            }
+            cursor = state
+                .load_chain_block(cursor.header.parent_hash)?
+                .ok_or_else(|| "candidate ancestry references missing parent".to_string())?;
+        }
+    }
+
+    validate_timestamp(header.timestamp, &ancestor_timestamps, adjusted_time)?;
+    RandomXVerifier::new(seed)?.verify_header(header)
 }
 
 fn parse_hash32_hex(value: &str) -> Result<Hash32, String> {
@@ -352,7 +390,10 @@ mod tests {
             version: 1,
             parent_hash: [0_u8; 32],
             height: 0,
-            timestamp: 1_800_000_000,
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             transactions_root: [0x22; 32],
             execution_root: [0x33; 32],
             target: [0xff; 32],
@@ -385,6 +426,44 @@ mod tests {
 
         let duplicate = submit_work(&request, &manager, &store).unwrap_err();
         assert_eq!(duplicate, "current work template is already solved");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn submit_work_rejects_future_timestamp_before_persistence() {
+        let path = temp_state_path("submit-future-time");
+        let store = StateStore::open(&path).unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let header = BlockHeaderV1 {
+            version: 1,
+            parent_hash: [0_u8; 32],
+            height: 0,
+            timestamp: now + crate::consensus::MAX_FUTURE_DRIFT + 1,
+            transactions_root: [0x22; 32],
+            execution_root: [0x33; 32],
+            target: [0xff; 32],
+            nonce: 0,
+            extra_nonce: 0,
+        };
+        let manager = WorkManager::new(header.clone(), 0, [0x42; 32]);
+        let request = json!({
+            "params": {
+                "generation": 0,
+                "template_id": hex::encode(header.mining_template_id()),
+                "nonce": 7,
+                "extra_nonce": 9
+            }
+        });
+
+        assert!(submit_work(&request, &manager, &store)
+            .unwrap_err()
+            .contains("exceeds maximum future time"));
+        assert!(store.best_chain_head().unwrap().is_none());
+        assert!(!manager.is_solved().unwrap());
 
         let _ = std::fs::remove_file(path);
     }
