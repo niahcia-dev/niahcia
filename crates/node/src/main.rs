@@ -8,7 +8,7 @@ pub mod state;
 pub mod work;
 
 use config::NodeConfig;
-use consensus::{randomx_seed, randomx_seed_height};
+use consensus::{devnet_next_target, randomx_seed, randomx_seed_height, DEVNET_GENESIS_TARGET};
 use engine::EngineClient;
 use mining_rpc::WorkManager;
 use state::StateStore;
@@ -232,6 +232,34 @@ fn main() -> ExitCode {
         None => ([0_u8; 32], 0),
     };
 
+    let target = match &persisted_head {
+        Some(head) => {
+            let genesis = match state.canonical_block_at_height(0) {
+                Ok(Some(block)) => block,
+                Ok(None) => {
+                    error!("persisted chain is missing devnet genesis block");
+                    return ExitCode::from(1);
+                }
+                Err(e) => {
+                    error!(error = %e, "failed to load devnet genesis block");
+                    return ExitCode::from(1);
+                }
+            };
+            match devnet_next_target(
+                genesis.header.timestamp,
+                head.header.height,
+                head.header.timestamp,
+            ) {
+                Ok(target) => target,
+                Err(e) => {
+                    error!(error = %e, "failed to derive devnet mining target");
+                    return ExitCode::from(1);
+                }
+            }
+        }
+        None => DEVNET_GENESIS_TARGET,
+    };
+
     let header = BlockHeaderV1 {
         version: 1,
         parent_hash: niahcia_parent_hash,
@@ -239,7 +267,7 @@ fn main() -> ExitCode {
         timestamp: execution.timestamp,
         transactions_root: execution.transactions_root,
         execution_root: execution.commitment_hash(),
-        target: [0xff; 32],
+        target,
         nonce: 0,
         extra_nonce: 0,
     };
