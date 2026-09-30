@@ -110,6 +110,7 @@ impl EngineClient {
         let parent_hex = hex32(parent.hash);
         let fee_hex = format!("0x{}", hex::encode(fee_recipient));
         let zero32 = format!("0x{}", "00".repeat(32));
+        let parent_beacon_block_root = parse_hash32(&zero32)?;
 
         let forkchoice = json!({
             "headBlockHash": parent_hex,
@@ -124,6 +125,12 @@ impl EngineClient {
             "withdrawals": [],
             "parentBeaconBlockRoot": zero32
         });
+
+        debug!(
+            forkchoice = %forkchoice,
+            attributes = %attributes,
+            "submitting forkchoice payload attributes"
+        );
 
         let update = self.engine_request(
             "engine_forkchoiceUpdatedV3",
@@ -203,7 +210,7 @@ impl EngineClient {
             },
             execution_payload_hash,
             execution_payload: payload.clone(),
-            parent_beacon_block_root: [0_u8; 32],
+            parent_beacon_block_root,
             execution_requests,
             versioned_hashes,
             engine_version,
