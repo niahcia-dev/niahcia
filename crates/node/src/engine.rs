@@ -184,7 +184,9 @@ impl EngineClient {
         let validated_hash = result
             .get("latestValidHash")
             .and_then(Value::as_str)
-            .ok_or_else(|| format!("VALID engine_newPayloadV3 response missing latestValidHash: {result}"))?;
+            .ok_or_else(|| {
+                format!("VALID engine_newPayloadV3 response missing latestValidHash: {result}")
+            })?;
         if parse_hash32(validated_hash)? != built.execution_payload_hash {
             return Err(format!(
                 "Reth VALID latestValidHash {validated_hash} does not match built payload {}",
