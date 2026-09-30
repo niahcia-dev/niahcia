@@ -345,7 +345,9 @@ fn validate_block_candidate(
                 while genesis_cursor.header.height != 0 {
                     genesis_cursor = state
                         .load_chain_block(genesis_cursor.header.parent_hash)?
-                        .ok_or_else(|| "candidate ancestry references missing parent".to_string())?;
+                        .ok_or_else(|| {
+                            "candidate ancestry references missing parent".to_string()
+                        })?;
                 }
                 break genesis_cursor.header.timestamp;
             }
