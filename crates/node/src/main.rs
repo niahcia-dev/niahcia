@@ -217,6 +217,15 @@ fn main() -> ExitCode {
         }
     };
 
+    if let Err(e) = engine.validate_payload_v3(&built) {
+        error!(error = %e, "Reth rejected built execution candidate");
+        return ExitCode::from(1);
+    }
+    info!(
+        execution_payload_hash = %hex::encode(built.execution_payload_hash),
+        "Reth independently validated execution candidate"
+    );
+
     let execution = &built.commitments;
     let (niahcia_parent_hash, niahcia_height) = match &persisted_head {
         Some(head) => (
