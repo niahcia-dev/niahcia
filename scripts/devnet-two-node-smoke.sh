@@ -36,8 +36,8 @@ wait_rpc() {
 }
 
 start_reth() {
-  local name="$1" data="$2" http_port="$3" engine_port="$4"
-  "$RETH_BIN" node --chain dev --datadir "$data" --http --http.addr 127.0.0.1 --http.port "$http_port" --http.api eth,net,web3 --authrpc.addr 127.0.0.1 --authrpc.port "$engine_port" --authrpc.jwtsecret "$JWT" --ipcdisable >"$tmp/reth-$name.log" 2>&1 &
+  local name="$1" data="$2" http_port="$3" engine_port="$4" p2p_port="$5"
+  "$RETH_BIN" node --chain dev --datadir "$data" --port "$p2p_port" --http --http.addr 127.0.0.1 --http.port "$http_port" --http.api eth,net,web3 --authrpc.addr 127.0.0.1 --authrpc.port "$engine_port" --authrpc.jwtsecret "$JWT" --ipcdisable >"$tmp/reth-$name.log" 2>&1 &
   local pid=$!; if [[ "$name" == "a" ]]; then a_reth_pid="$pid"; else b_reth_pid="$pid"; fi
   for _ in $(seq 1 120); do
     if ! kill -0 "$pid" 2>/dev/null; then
@@ -88,7 +88,7 @@ command -v curl >/dev/null; command -v jq >/dev/null
 rm -rf "$SMOKE_ROOT"; mkdir -p "$SMOKE_ROOT"
 
 echo "Starting independent Reth A and B..."
-start_reth a "$A_RETH_DATA" 18545 18551; start_reth b "$B_RETH_DATA" 19545 19551
+start_reth a "$A_RETH_DATA" 18545 18551 30303; start_reth b "$B_RETH_DATA" 19545 19551 30304
 echo "Starting Node A..."; start_node a "$A_DATA" "$A_RETH_HTTP" "$A_RETH_ENGINE" "$A_MINING" "$A_P2P" ""
 for _ in $(seq 1 "$BLOCKS"); do echo "Mined on A height $(mine_a)"; done
 
