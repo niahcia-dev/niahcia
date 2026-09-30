@@ -1,10 +1,11 @@
 use crate::consensus::{
-    devnet_next_target, validate_timestamp, DEVNET_GENESIS_TARGET, MEDIAN_TIME_WINDOW,
+    devnet_next_target, randomx_seed, randomx_seed_height, validate_timestamp,
+    DEVNET_GENESIS_TARGET, MEDIAN_TIME_WINDOW,
 };
 use crate::engine::EngineClient;
 use crate::pow::RandomXVerifier;
 use crate::state::StateStore;
-use crate::work::{BlockHeaderV1, Hash32};
+use crate::work::{Address20, BlockHeaderV1, Hash32};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -136,6 +137,7 @@ pub fn spawn(
     work: WorkManager,
     state: Arc<StateStore>,
     engine: Arc<EngineClient>,
+    fee_recipient: Address20,
     running: Arc<AtomicBool>,
 ) -> Result<thread::JoinHandle<()>, String> {
     let listener =
@@ -150,7 +152,7 @@ pub fn spawn(
         while running.load(Ordering::SeqCst) {
             match listener.accept() {
                 Ok((stream, peer)) => {
-                    if let Err(e) = handle_connection(stream, &work, &state, &engine) {
+                    if let Err(e) = handle_connection(stream, &work, &state, &engine, fee_recipient) {
                         warn!(%peer, error = %e, "mining RPC request failed");
                     }
                 }
@@ -171,6 +173,7 @@ fn handle_connection(
     work: &WorkManager,
     state: &StateStore,
     engine: &EngineClient,
+    fee_recipient: Address20,
 ) -> Result<(), String> {
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
@@ -237,7 +240,7 @@ fn handle_connection(
                 })
             }
         }
-        "pow_submitWork" => match submit_work(&request, work, state, Some(engine)) {
+        "pow_submitWork" => match submit_work(&request, work, state, Some((engine, fee_recipient))) {
             Ok(result) => json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -280,7 +283,7 @@ fn submit_work(
     request: &Value,
     work: &WorkManager,
     state: &StateStore,
-    engine: Option<&EngineClient>,
+    engine: Option<(&EngineClient, Address20)>,
 ) -> Result<Value, String> {
     let params = request
         .get("params")
@@ -312,11 +315,15 @@ fn submit_work(
     let outcome = state.insert_chain_block_with_outcome(header)?;
     state.store_execution_hash(outcome.block.block_id(), execution_hash)?;
     if outcome.current_best == outcome.block.block_id() {
-        if let Some(engine) = engine {
+        if let Some((engine, fee_recipient)) = engine {
             engine.set_canonical_head_v3(execution_hash)?;
+            install_next_work(work, state, engine, fee_recipient, execution_hash)?;
+        } else {
+            work.mark_solved(generation, template_id)?;
         }
+    } else {
+        work.mark_solved(generation, template_id)?;
     }
-    work.mark_solved(generation, template_id)?;
 
     let reorg = outcome.reorg.as_ref().map(|reorg| {
         json!({
@@ -339,6 +346,66 @@ fn submit_work(
         "current_best": hex::encode(outcome.current_best),
         "reorg": reorg
     }))
+}
+
+fn install_next_work(
+    work: &WorkManager,
+    state: &StateStore,
+    engine: &EngineClient,
+    fee_recipient: Address20,
+    execution_parent_hash: Hash32,
+) -> Result<(), String> {
+    let parent = engine.block_by_hash(execution_parent_hash)?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("system clock error while refreshing mining work: {e}"))?
+        .as_secs();
+    let timestamp = now.max(parent.timestamp.saturating_add(1));
+    let built = engine.build_payload_v3(&parent, timestamp, fee_recipient)?;
+    engine.validate_payload_v3(&built)?;
+
+    let niahcia_parent = state
+        .best_chain_head()?
+        .ok_or_else(|| "accepted canonical block missing from state".to_string())?;
+    let height = niahcia_parent
+        .header
+        .height
+        .checked_add(1)
+        .ok_or_else(|| "NIAHCIA height overflow".to_string())?;
+    let genesis = state
+        .canonical_block_at_height(0)?
+        .ok_or_else(|| "canonical chain is missing devnet genesis".to_string())?;
+    let target = devnet_next_target(
+        genesis.header.timestamp,
+        niahcia_parent.header.height,
+        niahcia_parent.header.timestamp,
+    )?;
+    let execution = &built.commitments;
+    let header = BlockHeaderV1 {
+        version: 1,
+        parent_hash: niahcia_parent.block_id(),
+        height,
+        timestamp: execution.timestamp,
+        transactions_root: execution.transactions_root,
+        execution_root: execution.commitment_hash(),
+        target,
+        nonce: 0,
+        extra_nonce: 0,
+    };
+    let seed_height = randomx_seed_height(height);
+    let seed_block = state
+        .canonical_block_at_height(seed_height)?
+        .ok_or_else(|| format!("canonical chain missing RandomX seed block {seed_height}"))?;
+    let seed = randomx_seed(seed_block.block_id());
+    let execution_hash = built.execution_payload_hash;
+    let next_generation = work.replace(header, seed_height, seed, execution_hash)?;
+    info!(
+        generation = next_generation,
+        height,
+        execution_payload_hash = %hex::encode(execution_hash),
+        "installed next Reth-backed NIAHCIA mining template"
+    );
+    Ok(())
 }
 
 fn validate_block_candidate(
