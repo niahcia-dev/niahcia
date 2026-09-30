@@ -1,12 +1,20 @@
-//! Deterministic NIAHCIA monetary-policy candidate arithmetic.
+//! Deterministic NIAHCIA monetary-policy V1 arithmetic.
 //!
-//! These constants implement `docs/emission-candidate-v1.md`. They remain a
-//! candidate until the comparison/vector review promotes them to production.
+//! The selected pre-production monetary-policy candidate is:
+//! - 100,000,000 aniah = 1 NIAH
+//! - 10 NIAH initial CPU-PoW subsidy
+//! - smooth shift=22 decay
+//! - 0.25 NIAH permanent CPU-PoW tail subsidy
+//!
+//! Consensus activation remains gated on fee-policy and canonical-state
+//! integration tests.
 
 pub const ANIAH_PER_NIAH: u128 = 100_000_000;
 pub const MAIN_EMISSION_REFERENCE: u128 = 41_943_040u128 * ANIAH_PER_NIAH;
 pub const EMISSION_SHIFT: u32 = 22;
 pub const TAIL_SUBSIDY: u128 = ANIAH_PER_NIAH / 4;
+pub const TAIL_TRANSITION_BLOCKS: u64 = 15_472_280;
+pub const TAIL_TRANSITION_ISSUED: u128 = 4_089_446_397_817_847;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MonetaryPolicyV1;
@@ -54,10 +62,61 @@ mod tests {
     use super::*;
 
     #[test]
-    fn candidate_constants_are_exact() {
+    fn selected_constants_are_exact() {
         assert_eq!(ANIAH_PER_NIAH, 100_000_000);
+        assert_eq!(MAIN_EMISSION_REFERENCE, 4_194_304_000_000_000);
+        assert_eq!(EMISSION_SHIFT, 22);
         assert_eq!(MonetaryPolicyV1::cpu_subsidy(0), 10 * ANIAH_PER_NIAH);
         assert_eq!(TAIL_SUBSIDY, 25_000_000);
+    }
+
+    #[test]
+    fn canonical_early_vectors_match() {
+        let vectors = [
+            (0u64, 0u128, 1_000_000_000u128),
+            (1, 1_000_000_000, 999_999_761),
+            (2, 1_999_999_761, 999_999_523),
+            (10, 9_999_989_267, 999_997_615),
+            (100, 99_998_819_787, 999_976_158),
+            (1_000, 999_880_918_866, 999_761_609),
+        ];
+        for (blocks, expected_issued, expected_next) in vectors {
+            let issued = MonetaryPolicyV1::cumulative_after(blocks).unwrap();
+            assert_eq!(issued, expected_issued, "issued mismatch at {blocks}");
+            assert_eq!(
+                MonetaryPolicyV1::cpu_subsidy(issued),
+                expected_next,
+                "subsidy mismatch at {blocks}"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_time_vectors_match() {
+        let vectors = [
+            (1_051_920u64, 930_380_129_401_329u128, 778_180_091u128),
+            (5_259_600, 2_997_396_786_764_314, 285_364_917),
+            (10_519_200, 3_852_748_671_251_556, 81_433_136),
+        ];
+        for (blocks, expected_issued, expected_next) in vectors {
+            let issued = MonetaryPolicyV1::cumulative_after(blocks).unwrap();
+            assert_eq!(issued, expected_issued, "issued mismatch at {blocks}");
+            assert_eq!(
+                MonetaryPolicyV1::cpu_subsidy(issued),
+                expected_next,
+                "subsidy mismatch at {blocks}"
+            );
+        }
+    }
+
+    #[test]
+    fn tail_transition_is_exact() {
+        let issued = MonetaryPolicyV1::cumulative_after(TAIL_TRANSITION_BLOCKS).unwrap();
+        assert_eq!(issued, TAIL_TRANSITION_ISSUED);
+        assert_eq!(MonetaryPolicyV1::cpu_subsidy(issued), TAIL_SUBSIDY);
+
+        let before = MonetaryPolicyV1::cumulative_after(TAIL_TRANSITION_BLOCKS - 1).unwrap();
+        assert!(MonetaryPolicyV1::cpu_subsidy(before) > TAIL_SUBSIDY);
     }
 
     #[test]
