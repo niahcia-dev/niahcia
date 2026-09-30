@@ -436,6 +436,161 @@ impl StateStore {
         }
     }
 
+    pub fn insert_mined_block_with_execution_outcome(
+        &self,
+        header: BlockHeaderV1,
+        execution_hash: Hash32,
+    ) -> Result<ChainInsertOutcome, String> {
+        let previous_best = self.best_chain_head()?.map(|block| block.block_id());
+
+        let parent_work = if header.height == 0 {
+            if header.parent_hash != [0_u8; 32] {
+                return Err("genesis block must have a zero parent hash".into());
+            }
+            BigUint::default()
+        } else {
+            let parent = self
+                .load_chain_block(header.parent_hash)?
+                .ok_or_else(|| "chain block parent is not persisted".to_string())?;
+            if parent.header.height.checked_add(1) != Some(header.height) {
+                return Err("chain block height does not follow persisted parent".into());
+            }
+            parent.chain_work
+        };
+
+        let record = PersistedChainBlock {
+            chain_work: parent_work + block_work(header.target),
+            header,
+        };
+        let block_id = record.block_id();
+        let encoded = record.encode_value()?;
+
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("failed to begin mined block transaction: {e}"))?;
+
+        {
+            let payloads = write
+                .open_table(EXECUTION_PAYLOADS)
+                .map_err(|e| format!("failed to open execution payload table: {e}"))?;
+            if payloads
+                .get(execution_hash.as_slice())
+                .map_err(|e| format!("failed to verify replay payload: {e}"))?
+                .is_none()
+            {
+                return Err("cannot persist mined block without its replay payload journal".into());
+            }
+        }
+
+        {
+            let mut blocks = write
+                .open_table(CHAIN_BLOCKS)
+                .map_err(|e| format!("failed to open chain block table: {e}"))?;
+            if let Some(existing) = blocks
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to check existing chain block: {e}"))?
+            {
+                let existing = PersistedChainBlock::decode(existing.value())?;
+                if existing != record {
+                    return Err("block ID collision with different persisted record".into());
+                }
+            } else {
+                blocks
+                    .insert(block_id.as_slice(), encoded.as_slice())
+                    .map_err(|e| format!("failed to persist chain block: {e}"))?;
+            }
+        }
+
+        {
+            let mut mappings = write
+                .open_table(CHAIN_EXECUTION)
+                .map_err(|e| format!("failed to open chain execution table: {e}"))?;
+            let existing: Option<Hash32> = mappings
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to read execution mapping: {e}"))?
+                .map(|value| {
+                    value
+                        .value()
+                        .try_into()
+                        .map_err(|_| "invalid persisted execution hash length".to_string())
+                })
+                .transpose()?;
+            match existing {
+                Some(existing) if existing != execution_hash => {
+                    return Err("NIAHCIA block already maps to a different execution hash".into());
+                }
+                Some(_) => {}
+                None => {
+                    mappings
+                        .insert(block_id.as_slice(), execution_hash.as_slice())
+                        .map_err(|e| format!("failed to persist execution mapping: {e}"))?;
+                }
+            }
+        }
+
+        let current_best_id: Option<Hash32> = {
+            let meta = write
+                .open_table(CHAIN_META)
+                .map_err(|e| format!("failed to open chain metadata table: {e}"))?;
+            meta.get(BEST_HEAD_KEY)
+                .map_err(|e| format!("failed to read current best head: {e}"))?
+                .map(|best_id| {
+                    best_id
+                        .value()
+                        .try_into()
+                        .map_err(|_| "invalid persisted best-head ID length".to_string())
+                })
+                .transpose()?
+        };
+
+        let should_promote = match current_best_id {
+            Some(best_id) => {
+                let blocks = write
+                    .open_table(CHAIN_BLOCKS)
+                    .map_err(|e| format!("failed to open chain block table: {e}"))?;
+                let best = blocks
+                    .get(best_id.as_slice())
+                    .map_err(|e| format!("failed to read current best block: {e}"))?
+                    .ok_or_else(|| "best-head metadata references missing block".to_string())?;
+                let best = PersistedChainBlock::decode(best.value())?;
+                record.chain_work > best.chain_work
+                    || (record.chain_work == best.chain_work && block_id < best_id)
+            }
+            None => true,
+        };
+
+        if should_promote {
+            let mut meta = write
+                .open_table(CHAIN_META)
+                .map_err(|e| format!("failed to open chain metadata table: {e}"))?;
+            meta.insert(BEST_HEAD_KEY, block_id.as_slice())
+                .map_err(|e| format!("failed to persist best-head ID: {e}"))?;
+        }
+
+        write
+            .commit()
+            .map_err(|e| format!("failed to commit mined block transaction: {e}"))?;
+
+        let current_best = self
+            .best_chain_head()?
+            .ok_or_else(|| "mined block transaction committed without a best head".to_string())?
+            .block_id();
+        let reorg = match previous_best {
+            Some(old_head) if old_head != current_best => {
+                self.canonical_reorg(old_head, current_best)?
+            }
+            _ => None,
+        };
+
+        Ok(ChainInsertOutcome {
+            block: record,
+            previous_best,
+            current_best,
+            reorg,
+        })
+    }
+
     pub fn insert_chain_block_with_outcome(
         &self,
         header: BlockHeaderV1,
@@ -680,6 +835,77 @@ mod tests {
             nonce: marker as u64,
             extra_nonce: 0,
         }
+    }
+
+    #[test]
+    fn mined_block_commit_requires_replay_journal_and_is_atomic() {
+        let path = temp_state_path("mined-block-atomic");
+        let store = StateStore::open(&path).unwrap();
+        let execution_hash = [0x91; 32];
+        let genesis = header([0_u8; 32], 0, [0xff; 32], 1);
+        let genesis_id = genesis.block_id();
+
+        let err = store
+            .insert_mined_block_with_execution_outcome(genesis.clone(), execution_hash)
+            .unwrap_err();
+        assert!(err.contains("replay payload journal"));
+        assert!(store.load_chain_block(genesis_id).unwrap().is_none());
+        assert!(store.execution_hash(genesis_id).unwrap().is_none());
+        assert!(store.best_chain_head().unwrap().is_none());
+
+        store
+            .store_execution_payload(execution_hash, b"replay-payload")
+            .unwrap();
+        let outcome = store
+            .insert_mined_block_with_execution_outcome(genesis, execution_hash)
+            .unwrap();
+        assert_eq!(outcome.block.block_id(), genesis_id);
+        assert_eq!(outcome.current_best, genesis_id);
+        assert_eq!(
+            store.execution_hash(genesis_id).unwrap(),
+            Some(execution_hash)
+        );
+        assert!(store.execution_payload(execution_hash).unwrap().is_some());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn mined_block_commit_is_idempotent_but_rejects_mapping_change() {
+        let path = temp_state_path("mined-block-idempotent");
+        let store = StateStore::open(&path).unwrap();
+        let execution_hash = [0xa1; 32];
+        let conflicting_hash = [0xa2; 32];
+        let genesis = header([0_u8; 32], 0, [0xff; 32], 1);
+        let genesis_id = genesis.block_id();
+
+        store
+            .store_execution_payload(execution_hash, b"replay-a")
+            .unwrap();
+        store
+            .store_execution_payload(conflicting_hash, b"replay-b")
+            .unwrap();
+        store
+            .insert_mined_block_with_execution_outcome(genesis.clone(), execution_hash)
+            .unwrap();
+        store
+            .insert_mined_block_with_execution_outcome(genesis.clone(), execution_hash)
+            .unwrap();
+
+        let err = store
+            .insert_mined_block_with_execution_outcome(genesis, conflicting_hash)
+            .unwrap_err();
+        assert!(err.contains("different execution hash"));
+        assert_eq!(
+            store.execution_hash(genesis_id).unwrap(),
+            Some(execution_hash)
+        );
+        assert_eq!(
+            store.best_chain_head().unwrap().unwrap().block_id(),
+            genesis_id
+        );
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
