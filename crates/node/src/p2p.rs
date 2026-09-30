@@ -37,7 +37,8 @@ pub fn spawn(
             thread::spawn(
                 move || match TcpStream::connect_timeout(&peer, IO_TIMEOUT) {
                     Ok(stream) => {
-                        if let Err(error) = sync_peer(stream, &state, &engine, &work, fee_recipient) {
+                        if let Err(error) = sync_peer(stream, &state, &engine, &work, fee_recipient)
+                        {
                             tracing::warn!(%peer, %error, "outbound P2P handshake failed");
                         } else {
                             tracing::info!(%peer, "outbound P2P handshake complete");
@@ -57,7 +58,9 @@ pub fn spawn(
                     let engine = Arc::clone(&engine);
                     let work = work.clone();
                     thread::spawn(move || {
-                        if let Err(error) = serve_peer(stream, &state, &engine, &work, fee_recipient) {
+                        if let Err(error) =
+                            serve_peer(stream, &state, &engine, &work, fee_recipient)
+                        {
                             tracing::warn!(%peer, %error, "inbound P2P handshake failed");
                         } else {
                             tracing::info!(%peer, "inbound P2P handshake complete");
