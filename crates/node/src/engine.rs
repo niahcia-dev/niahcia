@@ -1,7 +1,7 @@
 use crate::work::{keccak256, Address20, ExecutionPayloadCommitments, Hash32};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::blocking::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::Path;
@@ -23,6 +23,29 @@ pub struct BuiltExecutionPayload {
     execution_requests: Option<Value>,
     versioned_hashes: Value,
     engine_version: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ReplayPayload {
+    execution_payload_hash: Hash32,
+    execution_payload: Value,
+    parent_beacon_block_root: Hash32,
+    execution_requests: Option<Value>,
+    versioned_hashes: Value,
+    engine_version: u8,
+}
+
+impl From<&BuiltExecutionPayload> for ReplayPayload {
+    fn from(value: &BuiltExecutionPayload) -> Self {
+        Self {
+            execution_payload_hash: value.execution_payload_hash,
+            execution_payload: value.execution_payload.clone(),
+            parent_beacon_block_root: value.parent_beacon_block_root,
+            execution_requests: value.execution_requests.clone(),
+            versioned_hashes: value.versioned_hashes.clone(),
+            engine_version: value.engine_version,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -295,6 +318,56 @@ impl EngineClient {
             ));
         }
 
+        Ok(())
+    }
+
+    pub fn encode_replay_payload(&self, built: &BuiltExecutionPayload) -> Result<Vec<u8>, String> {
+        serde_json::to_vec(&ReplayPayload::from(built))
+            .map_err(|e| format!("failed to encode replay payload: {e}"))
+    }
+
+    pub fn replay_execution_payload(&self, encoded: &[u8], expected_hash: Hash32) -> Result<(), String> {
+        let replay: ReplayPayload = serde_json::from_slice(encoded)
+            .map_err(|e| format!("invalid persisted replay payload: {e}"))?;
+        if replay.execution_payload_hash != expected_hash {
+            return Err("persisted replay payload hash does not match canonical mapping".into());
+        }
+        let actual_hash = parse_hash32(field_str(&replay.execution_payload, "blockHash")?)?;
+        if actual_hash != expected_hash {
+            return Err("persisted replay payload blockHash does not match canonical mapping".into());
+        }
+        let result = match replay.engine_version {
+            5 | 4 => self.engine_request(
+                "engine_newPayloadV4",
+                json!([
+                    replay.execution_payload,
+                    replay.versioned_hashes,
+                    hex32(replay.parent_beacon_block_root),
+                    replay.execution_requests.ok_or_else(|| "replay missing executionRequests".to_string())?
+                ]),
+            )?,
+            3 => self.engine_request(
+                "engine_newPayloadV3",
+                json!([
+                    replay.execution_payload,
+                    replay.versioned_hashes,
+                    hex32(replay.parent_beacon_block_root)
+                ]),
+            )?,
+            other => return Err(format!("unsupported persisted Engine API version {other}")),
+        };
+        let status = result.get("status").and_then(Value::as_str)
+            .ok_or_else(|| format!("replay response missing status: {result}"))?;
+        if status != "VALID" {
+            return Err(format!("Reth rejected persisted execution replay with status {status}: {result}"));
+        }
+        let valid_hash = parse_hash32(
+            result.get("latestValidHash").and_then(Value::as_str)
+                .ok_or_else(|| format!("replay VALID response missing latestValidHash: {result}"))?
+        )?;
+        if valid_hash != expected_hash {
+            return Err("Reth replay VALID latestValidHash differs from persisted mapping".into());
+        }
         Ok(())
     }
 
