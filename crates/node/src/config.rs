@@ -76,8 +76,11 @@ impl NodeConfig {
     }
 
     fn validate(&self) -> Result<(), String> {
-        if self.network.trim().is_empty() {
-            return Err("network must not be empty".into());
+        if self.network != "devnet" {
+            return Err(format!(
+                "unsupported network '{}'; this pre-alpha node currently defines consensus parameters only for devnet",
+                self.network
+            ));
         }
 
         if !(self.reth_engine_api.starts_with("http://")
