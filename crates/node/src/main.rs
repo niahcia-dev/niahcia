@@ -2,6 +2,7 @@ mod config;
 pub mod consensus;
 mod engine;
 mod mining_rpc;
+mod p2p;
 pub mod pow;
 pub mod service;
 pub mod state;
@@ -45,6 +46,8 @@ Environment overrides:
   NIAHCIA_FEE_RECIPIENT
   NIAHCIA_RETH_JWT_PATH
   NIAHCIA_MINING_RPC_BIND
+  NIAHCIA_P2P_BIND
+  NIAHCIA_P2P_PEERS
   NIAHCIA_LOG_LEVEL
 
 Status:
@@ -124,6 +127,7 @@ fn main() -> ExitCode {
     info!(reth_http_rpc = %config.reth_http_rpc, "Reth public RPC");
     info!(reth_jwt_path = %config.reth_jwt_path.display(), "Reth JWT path");
     info!(mining_rpc_bind = %config.mining_rpc_bind, "mining RPC bind");
+    info!(p2p_bind = %config.p2p_bind, peers = config.p2p_peers.len(), "P2P configuration");
 
     if let Err(e) = std::fs::create_dir_all(&config.data_dir) {
         error!(error = %e, path = %config.data_dir.display(), "failed to create data directory");
