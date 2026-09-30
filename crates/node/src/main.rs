@@ -1,5 +1,5 @@
-mod config;
 pub mod address;
+mod config;
 pub mod consensus;
 mod engine;
 mod mining_rpc;
