@@ -537,10 +537,16 @@ mod tests {
         };
 
         store.insert_chain_block(first).unwrap();
-        assert_eq!(store.best_chain_head().unwrap().unwrap().block_id(), first_id);
+        assert_eq!(
+            store.best_chain_head().unwrap().unwrap().block_id(),
+            first_id
+        );
 
         store.insert_chain_block(second).unwrap();
-        assert_eq!(store.best_chain_head().unwrap().unwrap().block_id(), second_id);
+        assert_eq!(
+            store.best_chain_head().unwrap().unwrap().block_id(),
+            second_id
+        );
         assert!(second_id < first_id);
 
         let _ = std::fs::remove_file(path);
