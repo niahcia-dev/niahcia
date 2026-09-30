@@ -101,12 +101,27 @@ impl WorkManager {
             .map_err(|_| "work state poisoned".to_string())
     }
 
-    #[cfg(test)]
-    pub fn replace(&self, header: BlockHeaderV1) {
-        let mut state = self.inner.write().expect("work state poisoned");
-        state.generation = state.generation.saturating_add(1);
+    pub fn replace(
+        &self,
+        header: BlockHeaderV1,
+        randomx_seed_height: u64,
+        randomx_seed: Hash32,
+        execution_hash: Hash32,
+    ) -> Result<u64, String> {
+        let mut state = self
+            .inner
+            .write()
+            .map_err(|_| "work state poisoned".to_string())?;
+        state.generation = state
+            .generation
+            .checked_add(1)
+            .ok_or_else(|| "mining work generation overflow".to_string())?;
         state.header = header;
+        state.randomx_seed_height = randomx_seed_height;
+        state.randomx_seed = randomx_seed;
+        state.execution_hash = execution_hash;
         state.solved = false;
+        Ok(state.generation)
     }
 
     #[cfg(test)]
@@ -561,7 +576,7 @@ mod tests {
 
         assert!(!manager.is_stale(generation, &old_id));
 
-        manager.replace(header(2));
+        manager.replace(header(2), 0, [0x42; 32], [0x99; 32]).unwrap();
 
         assert!(manager.is_stale(generation, &old_id));
     }
