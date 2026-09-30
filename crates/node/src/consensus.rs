@@ -10,7 +10,34 @@ pub const MAX_FUTURE_DRIFT: u64 = 90;
 pub const ASERT_HALF_LIFE: i128 = 4_320;
 pub const ASERT_RADIX: i128 = 65_536;
 
-const RANDOMX_SEED_DOMAIN: &[u8] = b"NIAHCIA/RANDOMX-SEED/V1";
+const RANDOMX_SEED_DOMAIN: &[u8] = b"NIAHCIA/RANDOMX-SEED/V1";\n\n/// Devnet V1 launches at the easiest representable target. This is intentionally
+/// a resettable development-network parameter, not a testnet/mainnet freeze.
+pub const DEVNET_POW_LIMIT: Hash32 = [0xff; 32];
+pub const DEVNET_GENESIS_TARGET: Hash32 = DEVNET_POW_LIMIT;
+
+/// Derive the target required for a child of an accepted devnet parent.
+/// The ASERT anchor is deterministically defined by the chain's genesis block:
+/// height 0, genesis target, and a synthetic parent time one target interval
+/// before the accepted genesis timestamp. This makes block 1 start on schedule.
+pub fn devnet_next_target(
+    genesis_timestamp: u64,
+    parent_height: u64,
+    parent_timestamp: u64,
+) -> Result<Hash32, String> {
+    let anchor_parent_time = genesis_timestamp
+        .checked_sub(TARGET_BLOCK_INTERVAL)
+        .ok_or_else(|| "devnet genesis timestamp precedes ASERT anchor interval".to_string())?;
+    asert_next_target(
+        DEVNET_GENESIS_TARGET,
+        0,
+        anchor_parent_time,
+        parent_height,
+        parent_timestamp,
+        DEVNET_POW_LIMIT,
+    )
+}
+
+
 
 pub fn randomx_seed_height(height: u64) -> u64 {
     let epoch_start = (height / RANDOMX_EPOCH_LENGTH) * RANDOMX_EPOCH_LENGTH;
