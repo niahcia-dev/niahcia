@@ -370,6 +370,24 @@ impl StateStore {
         }))
     }
 
+    pub fn canonical_chain(&self) -> Result<Vec<PersistedChainBlock>, String> {
+        let Some(mut cursor) = self.best_chain_head()? else {
+            return Ok(Vec::new());
+        };
+        let mut reverse = Vec::with_capacity(cursor.header.height.saturating_add(1) as usize);
+        loop {
+            reverse.push(cursor.clone());
+            if cursor.header.height == 0 {
+                break;
+            }
+            cursor = self
+                .load_chain_block(cursor.header.parent_hash)?
+                .ok_or_else(|| "best-chain ancestry references missing parent".to_string())?;
+        }
+        reverse.reverse();
+        Ok(reverse)
+    }
+
     pub fn canonical_block_at_height(
         &self,
         height: u64,
