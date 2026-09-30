@@ -65,9 +65,20 @@ stop_b() { kill -INT "$b_pid"; wait "$b_pid"; b_pid=""; }
 mine_on() {
   local mining="$1"
   local work gen template height result
-  work="$(rpc "$mining" pow_getWork '{}')"; gen="$(jq -r '.result.generation' <<<"$work")"; template="$(jq -r '.result.template_id' <<<"$work")"; height="$(jq -r '.result.height' <<<"$work")"
-  result="$(rpc "$mining" pow_submitWork "$(jq -nc --argjson generation "$gen" --arg template_id "$template" '{generation:$generation,template_id:$template_id,nonce:0,extra_nonce:0}')")"
-  jq -e '.result.accepted == true and .result.became_canonical == true' <<<"$result" >/dev/null; echo "$height"
+  work="$(rpc "$mining" pow_getWork '{}')" || return 1
+  jq -e '.error == null and .result != null' <<<"$work" >/dev/null || {
+    echo "pow_getWork failed: $work" >&2
+    return 1
+  }
+  gen="$(jq -r '.result.generation' <<<"$work")"
+  template="$(jq -r '.result.template_id' <<<"$work")"
+  height="$(jq -r '.result.height' <<<"$work")"
+  result="$(rpc "$mining" pow_submitWork "$(jq -nc --argjson generation "$gen" --arg template_id "$template" '{generation:$generation,template_id:$template_id,nonce:0,extra_nonce:0}')")" || return 1
+  jq -e '.error == null and .result.accepted == true and .result.became_canonical == true' <<<"$result" >/dev/null || {
+    echo "pow_submitWork failed at height $height: $result" >&2
+    return 1
+  }
+  echo "$height"
 }
 
 mine_a() { mine_on "$A_MINING"; }
@@ -104,9 +115,19 @@ start_reth b "$B_RETH_DATA" 19545 19551 30304
 echo "Starting A and building a $BACKLOG-block synchronization backlog..."
 start_node a "$A_DATA" "$A_RETH_HTTP" "$A_RETH_ENGINE" "$A_MINING" "$A_P2P" ""
 for _ in $(seq 1 "$BACKLOG"); do
-  height="$(mine_a)"
+  if ! height="$(mine_a)"; then
+    echo "Failed while building A backlog" >&2
+    cat "$tmp/niahcia-a.log" >&2
+    exit 1
+  fi
   if (( height % 20 == 0 || height + 1 == BACKLOG )); then echo "A backlog reached next height $((height + 1))"; fi
 done
+a_backlog_height="$(rpc "$A_MINING" pow_getWork '{}' | jq -r '.result.height')"
+if (( a_backlog_height != BACKLOG )); then
+  echo "A backlog incomplete: expected next work height $BACKLOG, got $a_backlog_height" >&2
+  exit 1
+fi
+echo "A backlog verified at next work height $a_backlog_height"
 
 echo "Starting B and waiting for partial first-batch progress..."
 start_node b "$B_DATA" "$B_RETH_HTTP" "$B_RETH_ENGINE" "$B_MINING" "$B_P2P" "$A_P2P"
