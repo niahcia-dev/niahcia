@@ -119,6 +119,17 @@ Static-peer reconnect/catch-up is also verified live:
 
 This removes the startup-order/manual-restart dependency for static peers on the current devnet transport.
 
+Static-peer startup-order recovery is now verified live as well:
+
+- Node B started first with Node A configured but unavailable
+- B remained healthy while outbound connection attempts failed
+- Node A was started later and mined heights 0 through 2
+- already-running B discovered A through its retry loop and synchronized to next-work height 3 without restart
+- B subsequently caught another A block through automatic reconnect at next-work height 4
+- the divergent-fork common-ancestor reorg still converged afterward to next-work height 6 / execution height 6
+
+This verifies that static-peer availability at process startup is no longer required for devnet synchronization.
+
 ## v0.4.0 — EVM Usable Network
 
 Goal: ordinary Ethereum-style transactions and Solidity contracts work on the CPU-PoW network.
