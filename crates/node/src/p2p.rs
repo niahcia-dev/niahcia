@@ -16,6 +16,7 @@ pub const FRAME_HEADER_LEN: usize = 12;
 pub const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 pub const MAX_BLOCKS_PER_MESSAGE: u16 = 128;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
+const STATIC_PEER_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 pub fn spawn(
     bind: SocketAddr,
@@ -34,21 +35,25 @@ pub fn spawn(
             let state = Arc::clone(&state);
             let engine = Arc::clone(&engine);
             let work = work.clone();
-            thread::spawn(
-                move || match TcpStream::connect_timeout(&peer, IO_TIMEOUT) {
-                    Ok(stream) => {
-                        if let Err(error) = sync_peer(stream, &state, &engine, &work, fee_recipient)
-                        {
-                            tracing::warn!(%peer, %error, "outbound P2P handshake failed");
-                        } else {
-                            tracing::info!(%peer, "outbound P2P handshake complete");
+            let running = Arc::clone(&running);
+            thread::spawn(move || {
+                while running.load(Ordering::SeqCst) {
+                    match TcpStream::connect_timeout(&peer, IO_TIMEOUT) {
+                        Ok(stream) => {
+                            match sync_peer(stream, &state, &engine, &work, fee_recipient) {
+                                Ok(()) => tracing::info!(%peer, "outbound P2P sync complete"),
+                                Err(error) => {
+                                    tracing::warn!(%peer, %error, "outbound P2P sync failed")
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            tracing::warn!(%peer, %error, "failed to connect static P2P peer")
                         }
                     }
-                    Err(error) => {
-                        tracing::warn!(%peer, %error, "failed to connect static P2P peer")
-                    }
-                },
-            );
+                    sleep_while_running(&running, STATIC_PEER_RETRY_DELAY);
+                }
+            });
         }
 
         while running.load(Ordering::SeqCst) {
@@ -77,6 +82,17 @@ pub fn spawn(
             }
         }
     }))
+}
+
+fn sleep_while_running(running: &AtomicBool, duration: Duration) {
+    let step = Duration::from_millis(100);
+    let mut slept = Duration::ZERO;
+    while running.load(Ordering::SeqCst) && slept < duration {
+        let remaining = duration.saturating_sub(slept);
+        let nap = remaining.min(step);
+        thread::sleep(nap);
+        slept += nap;
+    }
 }
 
 fn exchange_hello(mut stream: TcpStream, state: &StateStore) -> Result<HelloV1, String> {
