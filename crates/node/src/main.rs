@@ -132,7 +132,7 @@ fn main() -> ExitCode {
 
     let state_path = config.data_dir.join("niahcia-state.redb");
     let state = match StateStore::open(&state_path) {
-        Ok(store) => store,
+        Ok(store) => Arc::new(store),
         Err(e) => {
             error!(error = %e, path = %state_path.display(), "failed to open NIAHCIA state");
             return ExitCode::from(1);
@@ -290,7 +290,12 @@ fn main() -> ExitCode {
     }
 
     let rpc_handle =
-        match mining_rpc::spawn(config.mining_rpc_bind, work_manager, Arc::clone(&running)) {
+        match mining_rpc::spawn(
+            config.mining_rpc_bind,
+            work_manager,
+            Arc::clone(&state),
+            Arc::clone(&running),
+        ) {
             Ok(handle) => handle,
             Err(e) => {
                 error!(error = %e, "failed to start mining RPC");
