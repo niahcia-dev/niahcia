@@ -11,6 +11,7 @@ name = "niahcia"
 path = "src/main.rs"
 
 [dependencies]
+bech32 = "0.11"
 ctrlc = { version = "3.4", features = ["termination"] }
 hex = "0.4"
 jsonwebtoken = "9"
