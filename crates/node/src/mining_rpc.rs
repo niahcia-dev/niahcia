@@ -390,7 +390,7 @@ mod tests {
             version: 1,
             parent_hash: [0_u8; 32],
             height: 0,
-            timestamp: 1_800_000_000,
+            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
             transactions_root: [0x22; 32],
             execution_root: [0x33; 32],
             target: [0xff; 32],
@@ -423,6 +423,41 @@ mod tests {
 
         let duplicate = submit_work(&request, &manager, &store).unwrap_err();
         assert_eq!(duplicate, "current work template is already solved");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn submit_work_rejects_future_timestamp_before_persistence() {
+        let path = temp_state_path("submit-future-time");
+        let store = StateStore::open(&path).unwrap();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let header = BlockHeaderV1 {
+            version: 1,
+            parent_hash: [0_u8; 32],
+            height: 0,
+            timestamp: now + crate::consensus::MAX_FUTURE_DRIFT + 1,
+            transactions_root: [0x22; 32],
+            execution_root: [0x33; 32],
+            target: [0xff; 32],
+            nonce: 0,
+            extra_nonce: 0,
+        };
+        let manager = WorkManager::new(header.clone(), 0, [0x42; 32]);
+        let request = json!({
+            "params": {
+                "generation": 0,
+                "template_id": hex::encode(header.mining_template_id()),
+                "nonce": 7,
+                "extra_nonce": 9
+            }
+        });
+
+        assert!(submit_work(&request, &manager, &store)
+            .unwrap_err()
+            .contains("exceeds maximum future time"));
+        assert!(store.best_chain_head().unwrap().is_none());
+        assert!(!manager.is_solved().unwrap());
 
         let _ = std::fs::remove_file(path);
     }
