@@ -109,6 +109,16 @@ Additional verified fork/reorg result:
 
 This verifies basic common-ancestor discovery and live two-node reorg convergence on the current devnet implementation.
 
+Static-peer reconnect/catch-up is also verified live:
+
+- Node B remained running after initial synchronization
+- Node A mined an additional canonical block while B's previous sync connection had ended
+- B's static-peer worker reconnected automatically without process restart
+- B caught up to NIAHCIA next-work height 4 and execution canonical height 4
+- the subsequent divergent-fork reorg test still converged successfully to NIAHCIA next-work height 6 / execution height 6
+
+This removes the startup-order/manual-restart dependency for static peers on the current devnet transport.
+
 ## v0.4.0 — EVM Usable Network
 
 Goal: ordinary Ethereum-style transactions and Solidity contracts work on the CPU-PoW network.
