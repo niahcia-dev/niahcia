@@ -93,16 +93,24 @@ impl NodeConfig {
         }
 
         cfg.validate()?;
+        cfg.normalize_fee_recipient_for_execution()?;
         Ok(cfg)
     }
 
-    fn validate_fee_recipient(&self) -> Result<(), String> {
+    fn native_fee_recipient(&self) -> Result<Option<NiahciaAddressV1>, String> {
         if self.fee_recipient.starts_with("dniah1")
             || self.fee_recipient.starts_with("tniah1")
             || self.fee_recipient.starts_with("niah1")
         {
-            let address = NiahciaAddressV1::decode(&self.fee_recipient)
-                .map_err(|e| format!("invalid native fee_recipient: {e}"))?;
+            return NiahciaAddressV1::decode(&self.fee_recipient)
+                .map(Some)
+                .map_err(|e| format!("invalid native fee_recipient: {e}"));
+        }
+        Ok(None)
+    }
+
+    fn validate_fee_recipient(&self) -> Result<(), String> {
+        if let Some(address) = self.native_fee_recipient()? {
             if address.network != AddressNetwork::Devnet {
                 return Err(format!(
                     "fee_recipient network mismatch: devnet requires a dniah1 address, found {}",
@@ -124,6 +132,15 @@ impl NodeConfig {
                 "fee_recipient must be a devnet dniah1 account address or legacy 20-byte hex address"
                     .into(),
             );
+        }
+        Ok(())
+    }
+
+    fn normalize_fee_recipient_for_execution(&mut self) -> Result<(), String> {
+        if let Some(address) = self.native_fee_recipient()? {
+            // NIAHCIA exposes the Bech32m address at its native boundary, while
+            // Reth's Engine API consumes the same account as its 20-byte payload.
+            self.fee_recipient = format!("0x{}", hex::encode(address.payload));
         }
         Ok(())
     }
@@ -155,5 +172,63 @@ impl NodeConfig {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_devnet_account_normalizes_to_execution_payload() {
+        let payload = [0x42; 20];
+        let native = NiahciaAddressV1::new(AddressNetwork::Devnet, AddressKind::Account, payload)
+            .encode()
+            .unwrap();
+        let mut cfg = NodeConfig {
+            fee_recipient: native,
+            ..NodeConfig::default()
+        };
+
+        cfg.validate().unwrap();
+        cfg.normalize_fee_recipient_for_execution().unwrap();
+        assert_eq!(cfg.fee_recipient, format!("0x{}", hex::encode(payload)));
+    }
+
+    #[test]
+    fn native_wrong_network_is_rejected_before_normalization() {
+        let native = NiahciaAddressV1::new(
+            AddressNetwork::Mainnet,
+            AddressKind::Account,
+            [0x11; 20],
+        )
+        .encode()
+        .unwrap();
+        let cfg = NodeConfig {
+            fee_recipient: native,
+            ..NodeConfig::default()
+        };
+
+        assert!(cfg.validate().unwrap_err().contains("network mismatch"));
+    }
+
+    #[test]
+    fn native_contract_is_rejected_as_fee_recipient() {
+        let native = NiahciaAddressV1::new(
+            AddressNetwork::Devnet,
+            AddressKind::Contract,
+            [0x22; 20],
+        )
+        .encode()
+        .unwrap();
+        let cfg = NodeConfig {
+            fee_recipient: native,
+            ..NodeConfig::default()
+        };
+
+        assert!(cfg
+            .validate()
+            .unwrap_err()
+            .contains("must be a NIAHCIA account address"));
     }
 }
