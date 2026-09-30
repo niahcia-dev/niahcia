@@ -1,6 +1,7 @@
 use crate::consensus::{
     devnet_next_target, validate_timestamp, DEVNET_GENESIS_TARGET, MEDIAN_TIME_WINDOW,
 };
+use crate::engine::EngineClient;
 use crate::pow::RandomXVerifier;
 use crate::state::StateStore;
 use crate::work::{BlockHeaderV1, Hash32};
@@ -24,17 +25,24 @@ struct WorkState {
     header: BlockHeaderV1,
     randomx_seed_height: u64,
     randomx_seed: [u8; 32],
+    execution_hash: Hash32,
     solved: bool,
 }
 
 impl WorkManager {
-    pub fn new(header: BlockHeaderV1, randomx_seed_height: u64, randomx_seed: [u8; 32]) -> Self {
+    pub fn new(
+        header: BlockHeaderV1,
+        randomx_seed_height: u64,
+        randomx_seed: [u8; 32],
+        execution_hash: Hash32,
+    ) -> Self {
         Self {
             inner: Arc::new(RwLock::new(WorkState {
                 generation: 0,
                 header,
                 randomx_seed_height,
                 randomx_seed,
+                execution_hash,
                 solved: false,
             })),
         }
@@ -56,7 +64,7 @@ impl WorkManager {
         template_id: Hash32,
         nonce: u64,
         extra_nonce: u64,
-    ) -> Result<(BlockHeaderV1, Hash32), String> {
+    ) -> Result<(BlockHeaderV1, Hash32, Hash32), String> {
         let state = self
             .inner
             .read()
@@ -71,7 +79,7 @@ impl WorkManager {
         let mut header = state.header.clone();
         header.nonce = nonce;
         header.extra_nonce = extra_nonce;
-        Ok((header, state.randomx_seed))
+        Ok((header, state.randomx_seed, state.execution_hash))
     }
 
     fn mark_solved(&self, generation: u64, template_id: Hash32) -> Result<(), String> {
@@ -112,6 +120,7 @@ pub fn spawn(
     bind: SocketAddr,
     work: WorkManager,
     state: Arc<StateStore>,
+    engine: Arc<EngineClient>,
     running: Arc<AtomicBool>,
 ) -> Result<thread::JoinHandle<()>, String> {
     let listener =
@@ -126,7 +135,7 @@ pub fn spawn(
         while running.load(Ordering::SeqCst) {
             match listener.accept() {
                 Ok((stream, peer)) => {
-                    if let Err(e) = handle_connection(stream, &work, &state) {
+                    if let Err(e) = handle_connection(stream, &work, &state, &engine) {
                         warn!(%peer, error = %e, "mining RPC request failed");
                     }
                 }
@@ -146,6 +155,7 @@ fn handle_connection(
     mut stream: TcpStream,
     work: &WorkManager,
     state: &StateStore,
+    engine: &EngineClient,
 ) -> Result<(), String> {
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
@@ -212,7 +222,7 @@ fn handle_connection(
                 })
             }
         }
-        "pow_submitWork" => match submit_work(&request, work, state) {
+        "pow_submitWork" => match submit_work(&request, work, state, Some(engine)) {
             Ok(result) => json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -251,7 +261,12 @@ fn handle_connection(
         .map_err(|e| format!("failed to write RPC response: {e}"))
 }
 
-fn submit_work(request: &Value, work: &WorkManager, state: &StateStore) -> Result<Value, String> {
+fn submit_work(
+    request: &Value,
+    work: &WorkManager,
+    state: &StateStore,
+    engine: Option<&EngineClient>,
+) -> Result<Value, String> {
     let params = request
         .get("params")
         .and_then(Value::as_object)
@@ -276,9 +291,16 @@ fn submit_work(request: &Value, work: &WorkManager, state: &StateStore) -> Resul
         .and_then(Value::as_u64)
         .ok_or_else(|| "pow_submitWork extra_nonce must be a u64".to_string())?;
 
-    let (header, seed) = work.submission_candidate(generation, template_id, nonce, extra_nonce)?;
+    let (header, seed, execution_hash) =
+        work.submission_candidate(generation, template_id, nonce, extra_nonce)?;
     let pow_hash = validate_block_candidate(&header, seed, state)?;
     let outcome = state.insert_chain_block_with_outcome(header)?;
+    state.store_execution_hash(outcome.block.block_id(), execution_hash)?;
+    if outcome.current_best == outcome.block.block_id() {
+        if let Some(engine) = engine {
+            engine.set_canonical_head_v3(execution_hash)?;
+        }
+    }
     work.mark_solved(generation, template_id)?;
 
     let reorg = outcome.reorg.as_ref().map(|reorg| {
@@ -428,7 +450,7 @@ mod tests {
             nonce: 0,
             extra_nonce: 0,
         };
-        let manager = WorkManager::new(header.clone(), 0, [0x42; 32]);
+        let manager = WorkManager::new(header.clone(), 0, [0x42; 32], [0x99; 32]);
         let template_id = header.mining_template_id();
 
         let request = json!({
@@ -440,7 +462,7 @@ mod tests {
             }
         });
 
-        let result = submit_work(&request, &manager, &store).unwrap();
+        let result = submit_work(&request, &manager, &store, None).unwrap();
         assert_eq!(result["accepted"], true);
 
         let mut solved = header;
@@ -452,7 +474,7 @@ mod tests {
         assert_eq!(result["current_best"], hex::encode(solved.block_id()));
         assert!(manager.is_solved().unwrap());
 
-        let duplicate = submit_work(&request, &manager, &store).unwrap_err();
+        let duplicate = submit_work(&request, &manager, &store, None).unwrap_err();
         assert_eq!(duplicate, "current work template is already solved");
 
         let _ = std::fs::remove_file(path);
@@ -477,7 +499,7 @@ mod tests {
             nonce: 0,
             extra_nonce: 0,
         };
-        let manager = WorkManager::new(header.clone(), 0, [0x42; 32]);
+        let manager = WorkManager::new(header.clone(), 0, [0x42; 32], [0x99; 32]);
         let request = json!({
             "params": {
                 "generation": 0,
@@ -487,7 +509,7 @@ mod tests {
             }
         });
 
-        assert!(submit_work(&request, &manager, &store)
+        assert!(submit_work(&request, &manager, &store, None)
             .unwrap_err()
             .contains("exceeds maximum future time"));
         assert!(store.best_chain_head().unwrap().is_none());
@@ -511,7 +533,7 @@ mod tests {
             nonce: 0,
             extra_nonce: 0,
         };
-        let manager = WorkManager::new(header, 0, [0x42; 32]);
+        let manager = WorkManager::new(header, 0, [0x42; 32], [0x99; 32]);
 
         let request = json!({
             "params": {
@@ -523,7 +545,7 @@ mod tests {
         });
 
         assert_eq!(
-            submit_work(&request, &manager, &store).unwrap_err(),
+            submit_work(&request, &manager, &store, None).unwrap_err(),
             "stale mining work"
         );
         assert!(store.best_chain_head().unwrap().is_none());
@@ -533,7 +555,7 @@ mod tests {
 
     #[test]
     fn replacing_work_marks_previous_generation_stale() {
-        let manager = WorkManager::new(header(1), 0, [0x33; 32]);
+        let manager = WorkManager::new(header(1), 0, [0x33; 32], [0x99; 32]);
         let (generation, current, _, _) = manager.current();
         let old_id = current.mining_template_id();
 

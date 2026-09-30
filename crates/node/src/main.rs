@@ -226,6 +226,7 @@ fn main() -> ExitCode {
         "Reth independently validated execution candidate"
     );
 
+    let execution_payload_hash = built.execution_payload_hash;
     let execution = &built.commitments;
     let (niahcia_parent_hash, niahcia_height) = match &persisted_head {
         Some(head) => (
@@ -301,7 +302,7 @@ fn main() -> ExitCode {
         [0_u8; 32]
     };
     let seed = randomx_seed(seed_block_id);
-    let work_manager = WorkManager::new(header, seed_height, seed);
+    let work_manager = WorkManager::new(header, seed_height, seed, execution_payload_hash);
 
     info!(
         height = niahcia_height,
@@ -316,6 +317,7 @@ fn main() -> ExitCode {
         "installed Reth-backed NIAHCIA mining template"
     );
 
+    let engine = Arc::new(engine);
     let running = Arc::new(AtomicBool::new(true));
     let signal_running = Arc::clone(&running);
 
@@ -330,6 +332,7 @@ fn main() -> ExitCode {
         config.mining_rpc_bind,
         work_manager,
         Arc::clone(&state),
+        Arc::clone(&engine),
         Arc::clone(&running),
     ) {
         Ok(handle) => handle,

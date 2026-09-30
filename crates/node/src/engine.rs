@@ -197,6 +197,27 @@ impl EngineClient {
         Ok(())
     }
 
+    pub fn set_canonical_head_v3(&self, head: Hash32) -> Result<(), String> {
+        let head_hex = hex32(head);
+        let forkchoice = json!({
+            "headBlockHash": head_hex,
+            "safeBlockHash": head_hex,
+            "finalizedBlockHash": head_hex
+        });
+        let result =
+            self.engine_request("engine_forkchoiceUpdatedV3", json!([forkchoice, null]))?;
+        let status = result
+            .pointer("/payloadStatus/status")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("forkchoice response missing payloadStatus.status: {result}"))?;
+        if status != "VALID" {
+            return Err(format!(
+                "Reth rejected canonical head with status {status}: {result}"
+            ));
+        }
+        Ok(())
+    }
+
     fn engine_request(&self, method: &str, params: Value) -> Result<Value, String> {
         let token = self.jwt_token()?;
         self.request(&self.engine_endpoint, method, params, Some(token))

@@ -7,6 +7,7 @@ use std::path::Path;
 const SERVICE_EVIDENCE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("service_evidence_v1");
 const SERVICE_EPOCHS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("service_epochs_v1");
 const CHAIN_BLOCKS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_blocks_v1");
+const CHAIN_EXECUTION: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_execution_v1");
 const CHAIN_META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_meta_v1");
 
 const BEST_HEAD_KEY: &[u8] = b"best_head";
@@ -149,6 +150,9 @@ impl StateStore {
                 .open_table(CHAIN_BLOCKS)
                 .map_err(|e| format!("failed to initialize chain block table: {e}"))?;
             write
+                .open_table(CHAIN_EXECUTION)
+                .map_err(|e| format!("failed to initialize chain execution table: {e}"))?;
+            write
                 .open_table(CHAIN_META)
                 .map_err(|e| format!("failed to initialize chain metadata table: {e}"))?;
         }
@@ -176,6 +180,69 @@ impl StateStore {
             .map_err(|e| format!("failed to read chain block: {e}"))?
         {
             Some(value) => PersistedChainBlock::decode(value.value()).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    pub fn store_execution_hash(
+        &self,
+        block_id: Hash32,
+        execution_hash: Hash32,
+    ) -> Result<(), String> {
+        if self.load_chain_block(block_id)?.is_none() {
+            return Err("cannot map execution hash for an unpersisted NIAHCIA block".into());
+        }
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("failed to begin execution mapping write: {e}"))?;
+        {
+            let mut table = write
+                .open_table(CHAIN_EXECUTION)
+                .map_err(|e| format!("failed to open chain execution table: {e}"))?;
+            let existing: Option<Hash32> = table
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to read execution mapping: {e}"))?
+                .map(|value| {
+                    value
+                        .value()
+                        .try_into()
+                        .map_err(|_| "invalid persisted execution hash length".to_string())
+                })
+                .transpose()?;
+
+            if let Some(existing) = existing {
+                if existing != execution_hash {
+                    return Err("NIAHCIA block already maps to a different execution hash".into());
+                }
+            } else {
+                table
+                    .insert(block_id.as_slice(), execution_hash.as_slice())
+                    .map_err(|e| format!("failed to persist execution mapping: {e}"))?;
+            }
+        }
+        write
+            .commit()
+            .map_err(|e| format!("failed to commit execution mapping: {e}"))
+    }
+
+    pub fn execution_hash(&self, block_id: Hash32) -> Result<Option<Hash32>, String> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("failed to begin execution mapping read: {e}"))?;
+        let table = read
+            .open_table(CHAIN_EXECUTION)
+            .map_err(|e| format!("failed to open chain execution table: {e}"))?;
+        match table
+            .get(block_id.as_slice())
+            .map_err(|e| format!("failed to read execution mapping: {e}"))?
+        {
+            Some(value) => value
+                .value()
+                .try_into()
+                .map(Some)
+                .map_err(|_| "invalid persisted execution hash length".to_string()),
             None => Ok(None),
         }
     }
