@@ -123,12 +123,18 @@ fn serve_peer(
     }
 }
 
-
-fn sync_peer(mut stream: TcpStream, state: &StateStore, engine: &EngineClient) -> Result<(), String> {
+fn sync_peer(
+    mut stream: TcpStream,
+    state: &StateStore,
+    engine: &EngineClient,
+) -> Result<(), String> {
     let remote = exchange_hello(stream.try_clone().map_err(io_error)?, state)?;
     let local_height = state.best_chain_head()?.map(|head| head.header.height);
     let start_height = local_height.map_or(0, |height| height.saturating_add(1));
-    if remote.best_height.is_some_and(|height| height >= start_height) {
+    if remote
+        .best_height
+        .is_some_and(|height| height >= start_height)
+    {
         write_message(
             &mut stream,
             &MessageV1::GetBlocks(GetBlocksV1 {
@@ -163,8 +169,8 @@ fn ingest_blocks(
         validate_block_candidate(&transfer.header, seed, state)?;
         engine.replay_execution_payload(&transfer.replay_payload, transfer.execution_hash)?;
         state.store_execution_payload(transfer.execution_hash, &transfer.replay_payload)?;
-        let outcome =
-            state.insert_mined_block_with_execution_outcome(transfer.header, transfer.execution_hash)?;
+        let outcome = state
+            .insert_mined_block_with_execution_outcome(transfer.header, transfer.execution_hash)?;
         if outcome.current_best == outcome.block.block_id() {
             engine.set_canonical_head_v3(transfer.execution_hash)?;
         }
