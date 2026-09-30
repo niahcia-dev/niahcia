@@ -67,6 +67,8 @@ block accepted
 
 Goal: two or more independent nodes agree on the same CPU-PoW chain.
 
+Implementation handoff: [v0.3.0 multi-node devnet](multi-node-devnet-handoff.md)
+
 Required work:
 
 - chain P2P
