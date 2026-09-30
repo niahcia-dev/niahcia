@@ -2,6 +2,7 @@ mod config;
 pub mod consensus;
 mod engine;
 mod mining_rpc;
+#[allow(dead_code)] // Activated by the static-peer transport slice immediately after protocol V1.
 mod p2p;
 pub mod pow;
 pub mod service;
