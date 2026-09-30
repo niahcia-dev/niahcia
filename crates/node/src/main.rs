@@ -199,6 +199,55 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
         };
+        // Rebuild missing canonical execution ancestors in oldest-first order.
+        // Walk the persisted best chain once so restart recovery remains O(H).
+        let canonical_chain = match state.canonical_chain() {
+            Ok(chain) => chain,
+            Err(e) => {
+                error!(error = %e, "failed to load canonical ancestry for replay");
+                return ExitCode::from(1);
+            }
+        };
+        for canonical in canonical_chain {
+            let height = canonical.header.height;
+            let mapped = match state.execution_hash(canonical.block_id()) {
+                Ok(Some(hash)) => hash,
+                Ok(None) => {
+                    error!(height, "persisted canonical block has no execution mapping");
+                    return ExitCode::from(1);
+                }
+                Err(e) => {
+                    error!(height, error = %e, "failed to load execution mapping");
+                    return ExitCode::from(1);
+                }
+            };
+            match engine.block_by_hash(mapped) {
+                Ok(_) => continue,
+                Err(e) if !e.contains("not found") => {
+                    error!(height, error = %e, "failed to query Reth execution block");
+                    return ExitCode::from(1);
+                }
+                Err(_) => {}
+            }
+            let encoded = match state.execution_payload(mapped) {
+                Ok(Some(payload)) => payload,
+                Ok(None) => {
+                    error!(height, execution_payload_hash = %hex::encode(mapped),
+                        "Reth is missing canonical execution and no replay payload was persisted");
+                    return ExitCode::from(1);
+                }
+                Err(e) => {
+                    error!(height, error = %e, "failed to load execution replay payload");
+                    return ExitCode::from(1);
+                }
+            };
+            if let Err(e) = engine.replay_execution_payload(&encoded, mapped) {
+                error!(height, error = %e, "Reth rejected canonical execution replay");
+                return ExitCode::from(1);
+            }
+            info!(height, execution_payload_hash = %hex::encode(mapped),
+                "replayed missing canonical execution payload");
+        }
         match engine.latest_block() {
             Ok(reth_head) => {
                 info!(
@@ -269,6 +318,18 @@ fn main() -> ExitCode {
         execution_payload_hash = %hex::encode(built.execution_payload_hash),
         "Reth independently validated execution candidate"
     );
+
+    let replay_bytes = match engine.encode_replay_payload(&built) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            error!(error = %e, "failed to encode validated execution payload for persistence");
+            return ExitCode::from(1);
+        }
+    };
+    if let Err(e) = state.store_execution_payload(built.execution_payload_hash, &replay_bytes) {
+        error!(error = %e, "failed to persist execution payload before exposing mining work");
+        return ExitCode::from(1);
+    }
 
     let execution_payload_hash = built.execution_payload_hash;
     let execution = &built.commitments;

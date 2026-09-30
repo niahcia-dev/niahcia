@@ -400,6 +400,8 @@ fn install_next_work(
         .ok_or_else(|| format!("canonical chain missing RandomX seed block {seed_height}"))?;
     let seed = randomx_seed(seed_block.block_id());
     let execution_hash = built.execution_payload_hash;
+    let replay_bytes = engine.encode_replay_payload(&built)?;
+    state.store_execution_payload(execution_hash, &replay_bytes)?;
     let next_generation = work.replace(header, seed_height, seed, execution_hash)?;
     info!(
         generation = next_generation,

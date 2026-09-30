@@ -13,6 +13,7 @@ RETH_ENGINE="${NIAHCIA_RETH_ENGINE_API:-http://127.0.0.1:8551}"
 MINING_HTTP="${NIAHCIA_MINING_RPC_HTTP:-http://127.0.0.1:9332}"
 MINING_BIND="${NIAHCIA_MINING_RPC_BIND:-127.0.0.1:9332}"
 BLOCKS_BEFORE_RESTART="${NIAHCIA_SMOKE_BLOCKS:-3}"
+FORCE_REPLAY="${NIAHCIA_SMOKE_FORCE_REPLAY:-0}"
 
 tmp="$(mktemp -d)"
 reth_pid=""
@@ -135,14 +136,30 @@ echo "Restart checkpoint: next NIAHCIA=$pre_restart_height Reth=$pre_restart_ret
 stop_niahcia
 stop_reth
 
+if [[ "$FORCE_REPLAY" == "1" ]]; then
+  echo "Forcing execution replay with a fresh Reth database..."
+  rm -rf "$RETH_DATA"
+fi
+
 start_reth
 recovered_reth="$(rpc "$RETH_HTTP" eth_blockNumber '[]' | jq -r '.result')"
-[[ "$recovered_reth" == "$pre_restart_reth" ]] || {
-  echo "Reth persistence mismatch: before=$pre_restart_reth after=$recovered_reth" >&2
-  exit 1
-}
+if [[ "$FORCE_REPLAY" != "1" ]]; then
+  [[ "$recovered_reth" == "$pre_restart_reth" ]] || {
+    echo "Reth persistence mismatch: before=$pre_restart_reth after=$recovered_reth" >&2
+    exit 1
+  }
+fi
 
 start_niahcia
+if [[ "$FORCE_REPLAY" == "1" ]]; then
+  replay_count="$(grep -c 'replayed missing canonical execution payload' "$tmp/niahcia.log" || true)"
+  [[ "$replay_count" -gt 0 ]] || {
+    echo "Forced replay mode observed no execution payload replay" >&2
+    cat "$tmp/niahcia.log" >&2
+    exit 1
+  }
+  echo "Observed $replay_count replayed canonical execution payload(s)"
+fi
 post_restart_work="$(rpc "$MINING_HTTP" pow_getWork '{}')"
 post_restart_height="$(jq -r '.result.height' <<<"$post_restart_work")"
 post_restart_parent="$(jq -r '.result.parent_hash' <<<"$post_restart_work")"
@@ -174,6 +191,10 @@ expected_reth="$((next_height))"
   exit 1
 }
 
-echo "PASS: restart recovery and post-restart mining succeeded"
+if [[ "$FORCE_REPLAY" == "1" ]]; then
+  echo "PASS: forced execution replay and post-replay mining succeeded"
+else
+  echo "PASS: restart recovery and post-restart mining succeeded"
+fi
 echo "NIAHCIA next height: $next_height"
 echo "Reth execution height: $final_reth_dec"
