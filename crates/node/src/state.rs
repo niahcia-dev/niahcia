@@ -195,16 +195,20 @@ impl StateStore {
             .begin_write()
             .map_err(|e| format!("failed to begin payload write: {e}"))?;
         {
-            let mut table = write.open_table(EXECUTION_PAYLOADS)
+            let mut table = write
+                .open_table(EXECUTION_PAYLOADS)
                 .map_err(|e| format!("failed to open payload table: {e}"))?;
-            if let Some(existing) = table.get(hash.as_slice())
-                .map_err(|e| format!("failed to inspect payload: {e}"))? {
+            if let Some(existing) = table
+                .get(hash.as_slice())
+                .map_err(|e| format!("failed to inspect payload: {e}"))?
+            {
                 if existing.value() != payload {
                     return Err("execution hash already has a different replay payload".into());
                 }
                 return Ok(());
             }
-            table.insert(hash.as_slice(), payload)
+            table
+                .insert(hash.as_slice(), payload)
                 .map_err(|e| format!("failed to persist execution payload: {e}"))?;
         }
         write
@@ -213,10 +217,15 @@ impl StateStore {
     }
 
     pub fn execution_payload(&self, hash: Hash32) -> Result<Option<Vec<u8>>, String> {
-        let read = self.db.begin_read().map_err(|e| format!("failed to begin payload read: {e}"))?;
-        let table = read.open_table(EXECUTION_PAYLOADS)
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("failed to begin payload read: {e}"))?;
+        let table = read
+            .open_table(EXECUTION_PAYLOADS)
             .map_err(|e| format!("failed to open payload table: {e}"))?;
-        let result = table.get(hash.as_slice())
+        let result = table
+            .get(hash.as_slice())
             .map_err(|e| format!("failed to read execution payload: {e}"))?
             .map(|value| value.value().to_vec());
         Ok(result)
