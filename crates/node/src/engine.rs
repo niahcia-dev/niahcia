@@ -204,11 +204,16 @@ impl EngineClient {
             "safeBlockHash": head_hex,
             "finalizedBlockHash": head_hex
         });
-        let result = self.engine_request("engine_forkchoiceUpdatedV3", json!([forkchoice, null]))?;
-        let status = result.pointer("/payloadStatus/status").and_then(Value::as_str)
+        let result =
+            self.engine_request("engine_forkchoiceUpdatedV3", json!([forkchoice, null]))?;
+        let status = result
+            .pointer("/payloadStatus/status")
+            .and_then(Value::as_str)
             .ok_or_else(|| format!("forkchoice response missing payloadStatus.status: {result}"))?;
         if status != "VALID" {
-            return Err(format!("Reth rejected canonical head with status {status}: {result}"));
+            return Err(format!(
+                "Reth rejected canonical head with status {status}: {result}"
+            ));
         }
         Ok(())
     }
