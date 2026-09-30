@@ -134,12 +134,18 @@ fn canonical_transfer_range(
     let mut transfers = Vec::with_capacity(end - start);
     for block in &chain[start..end] {
         let block_id = block.block_id();
-        let execution_hash = state
-            .execution_hash(block_id)?
-            .ok_or_else(|| format!("canonical block {} has no execution mapping", block.header.height))?;
-        let replay_payload = state
-            .execution_payload(execution_hash)?
-            .ok_or_else(|| format!("canonical block {} has no execution replay payload", block.header.height))?;
+        let execution_hash = state.execution_hash(block_id)?.ok_or_else(|| {
+            format!(
+                "canonical block {} has no execution mapping",
+                block.header.height
+            )
+        })?;
+        let replay_payload = state.execution_payload(execution_hash)?.ok_or_else(|| {
+            format!(
+                "canonical block {} has no execution replay payload",
+                block.header.height
+            )
+        })?;
         transfers.push(BlockTransferV1 {
             header: block.header.clone(),
             execution_hash,
