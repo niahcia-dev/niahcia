@@ -1,8 +1,8 @@
 use crate::consensus::{randomx_seed, randomx_seed_height};
 use crate::engine::EngineClient;
-use crate::mining_rpc::validate_block_candidate;
+use crate::mining_rpc::{install_next_work, validate_block_candidate, WorkManager};
 use crate::state::StateStore;
-use crate::work::{BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
+use crate::work::{Address20, BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,6 +22,8 @@ pub fn spawn(
     peers: Vec<SocketAddr>,
     state: Arc<StateStore>,
     engine: Arc<EngineClient>,
+    work: WorkManager,
+    fee_recipient: Address20,
     running: Arc<AtomicBool>,
 ) -> Result<JoinHandle<()>, String> {
     let listener = TcpListener::bind(bind).map_err(io_error)?;
@@ -31,10 +33,11 @@ pub fn spawn(
         for peer in peers {
             let state = Arc::clone(&state);
             let engine = Arc::clone(&engine);
+            let work = work.clone();
             thread::spawn(
                 move || match TcpStream::connect_timeout(&peer, IO_TIMEOUT) {
                     Ok(stream) => {
-                        if let Err(error) = sync_peer(stream, &state, &engine) {
+                        if let Err(error) = sync_peer(stream, &state, &engine, &work, fee_recipient) {
                             tracing::warn!(%peer, %error, "outbound P2P handshake failed");
                         } else {
                             tracing::info!(%peer, "outbound P2P handshake complete");
@@ -52,8 +55,9 @@ pub fn spawn(
                 Ok((stream, peer)) => {
                     let state = Arc::clone(&state);
                     let engine = Arc::clone(&engine);
+                    let work = work.clone();
                     thread::spawn(move || {
-                        if let Err(error) = serve_peer(stream, &state, &engine) {
+                        if let Err(error) = serve_peer(stream, &state, &engine, &work, fee_recipient) {
                             tracing::warn!(%peer, %error, "inbound P2P handshake failed");
                         } else {
                             tracing::info!(%peer, "inbound P2P handshake complete");
@@ -106,6 +110,8 @@ fn serve_peer(
     mut stream: TcpStream,
     state: &StateStore,
     engine: &EngineClient,
+    work: &WorkManager,
+    fee_recipient: Address20,
 ) -> Result<(), String> {
     exchange_hello(stream.try_clone().map_err(io_error)?, state)?;
 
@@ -116,7 +122,9 @@ fn serve_peer(
                 write_message(&mut stream, &MessageV1::Blocks(blocks))?;
             }
             Ok(MessageV1::Hello(_)) => return Err("peer sent duplicate Hello".into()),
-            Ok(MessageV1::Blocks(blocks)) => ingest_blocks(state, engine, blocks)?,
+            Ok(MessageV1::Blocks(blocks)) => {
+                ingest_blocks(state, engine, work, fee_recipient, blocks)?
+            }
             Err(error) if is_disconnect_error(&error) => return Ok(()),
             Err(error) => return Err(error),
         }
@@ -127,6 +135,8 @@ fn sync_peer(
     mut stream: TcpStream,
     state: &StateStore,
     engine: &EngineClient,
+    work: &WorkManager,
+    fee_recipient: Address20,
 ) -> Result<(), String> {
     let remote = exchange_hello(stream.try_clone().map_err(io_error)?, state)?;
     let Some(remote_height) = remote.best_height else {
@@ -152,7 +162,7 @@ fn sync_peer(
         }
         let received = u64::try_from(blocks.len())
             .map_err(|_| "received block count does not fit u64".to_string())?;
-        ingest_blocks(state, engine, blocks)?;
+        ingest_blocks(state, engine, work, fee_recipient, blocks)?;
         start_height = start_height
             .checked_add(received)
             .ok_or_else(|| "P2P sync height overflow".to_string())?;
@@ -163,6 +173,8 @@ fn sync_peer(
 fn ingest_blocks(
     state: &StateStore,
     engine: &EngineClient,
+    work: &WorkManager,
+    fee_recipient: Address20,
     blocks: Vec<BlockTransferV1>,
 ) -> Result<(), String> {
     for transfer in blocks {
@@ -180,6 +192,7 @@ fn ingest_blocks(
             .insert_mined_block_with_execution_outcome(transfer.header, transfer.execution_hash)?;
         if outcome.current_best == outcome.block.block_id() {
             engine.set_canonical_head_v3(transfer.execution_hash)?;
+            install_next_work(work, state, engine, fee_recipient, transfer.execution_hash)?;
         }
     }
     Ok(())
