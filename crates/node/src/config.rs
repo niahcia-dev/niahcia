@@ -197,13 +197,10 @@ mod tests {
 
     #[test]
     fn native_wrong_network_is_rejected_before_normalization() {
-        let native = NiahciaAddressV1::new(
-            AddressNetwork::Mainnet,
-            AddressKind::Account,
-            [0x11; 20],
-        )
-        .encode()
-        .unwrap();
+        let native =
+            NiahciaAddressV1::new(AddressNetwork::Mainnet, AddressKind::Account, [0x11; 20])
+                .encode()
+                .unwrap();
         let cfg = NodeConfig {
             fee_recipient: native,
             ..NodeConfig::default()
@@ -214,13 +211,10 @@ mod tests {
 
     #[test]
     fn native_contract_is_rejected_as_fee_recipient() {
-        let native = NiahciaAddressV1::new(
-            AddressNetwork::Devnet,
-            AddressKind::Contract,
-            [0x22; 20],
-        )
-        .encode()
-        .unwrap();
+        let native =
+            NiahciaAddressV1::new(AddressNetwork::Devnet, AddressKind::Contract, [0x22; 20])
+                .encode()
+                .unwrap();
         let cfg = NodeConfig {
             fee_recipient: native,
             ..NodeConfig::default()
