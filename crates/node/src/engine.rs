@@ -20,6 +20,7 @@ pub struct BuiltExecutionPayload {
     execution_payload: Value,
     parent_beacon_block_root: Hash32,
     execution_requests: Option<Value>,
+    versioned_hashes: Value,
     engine_version: u8,
 }
 
@@ -166,6 +167,19 @@ impl EngineClient {
         }
 
         let execution_payload_hash = parse_hash32(field_str(payload, "blockHash")?)?;
+        let versioned_hashes = envelope
+            .pointer("/blobsBundle/commitments")
+            .and_then(Value::as_array)
+            .map(|commitments| {
+                Value::Array(
+                    commitments
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(|_| Value::Null)
+                        .collect(),
+                )
+            })
+            .unwrap_or_else(|| Value::Array(Vec::new()));
         let execution_requests = if engine_version == 4 {
             Some(
                 envelope
@@ -195,6 +209,7 @@ impl EngineClient {
             execution_payload: payload.clone(),
             parent_beacon_block_root: [0_u8; 32],
             execution_requests,
+            versioned_hashes,
             engine_version,
         })
     }
@@ -205,7 +220,7 @@ impl EngineClient {
                 "engine_newPayloadV4",
                 json!([
                     built.execution_payload,
-                    [],
+                    built.versioned_hashes,
                     hex32(built.parent_beacon_block_root),
                     built.execution_requests
                         .clone()
@@ -216,7 +231,7 @@ impl EngineClient {
                 "engine_newPayloadV3",
                 json!([
                     built.execution_payload,
-                    [],
+                    built.versioned_hashes,
                     hex32(built.parent_beacon_block_root)
                 ]),
             )?,
