@@ -46,7 +46,16 @@ wait_rpc() {
 start_reth() {
   "$RETH_BIN" node --chain dev --datadir "$RETH_DATA"     --http --http.addr 127.0.0.1 --http.port 8545 --http.api eth,net,web3     --authrpc.addr 127.0.0.1 --authrpc.port 8551 --authrpc.jwtsecret "$JWT"     --ipcdisable >"$tmp/reth.log" 2>&1 &
   reth_pid=$!
-  wait_rpc "$RETH_HTTP" eth_blockNumber '[]'
+  for _ in $(seq 1 120); do
+    if ! kill -0 "$reth_pid" 2>/dev/null; then
+      echo "Reth exited during startup" >&2
+      cat "$tmp/reth.log" >&2
+      return 1
+    fi
+    if rpc "$RETH_HTTP" eth_blockNumber '[]' >/dev/null 2>&1; then break; fi
+    sleep 1
+  done
+  kill -0 "$reth_pid" 2>/dev/null || { echo "Reth died after RPC readiness" >&2; cat "$tmp/reth.log" >&2; return 1; }
 }
 
 start_niahcia() {
@@ -55,16 +64,35 @@ start_niahcia() {
     NIAHCIA_NETWORK=devnet     NIAHCIA_DATA_DIR="$NIAHCIA_DATA"     NIAHCIA_RETH_HTTP_RPC="$RETH_HTTP"     NIAHCIA_RETH_ENGINE_API="$RETH_ENGINE"     NIAHCIA_RETH_JWT_PATH="$JWT"     NIAHCIA_MINING_RPC_BIND="$MINING_BIND"     NIAHCIA_LOG_LEVEL=info     "$NIAHCIA_BIN"
   ) >"$tmp/niahcia.log" 2>&1 &
   niahcia_pid=$!
-  wait_rpc "$MINING_HTTP" pow_getWork '{}'
+  for _ in $(seq 1 120); do
+    if ! kill -0 "$niahcia_pid" 2>/dev/null; then
+      echo "NIAHCIA exited during startup" >&2
+      cat "$tmp/niahcia.log" >&2
+      return 1
+    fi
+    if rpc "$MINING_HTTP" pow_getWork '{}' >/dev/null 2>&1; then break; fi
+    sleep 1
+  done
+  kill -0 "$niahcia_pid" 2>/dev/null || { echo "NIAHCIA died after RPC readiness" >&2; cat "$tmp/niahcia.log" >&2; return 1; }
 }
 
 stop_niahcia() {
+  if ! kill -0 "$niahcia_pid" 2>/dev/null; then
+    echo "NIAHCIA exited before requested shutdown" >&2
+    cat "$tmp/niahcia.log" >&2
+    return 1
+  fi
   kill -INT "$niahcia_pid"
   wait "$niahcia_pid"
   niahcia_pid=""
 }
 
 stop_reth() {
+  if ! kill -0 "$reth_pid" 2>/dev/null; then
+    echo "Reth exited before requested shutdown" >&2
+    cat "$tmp/reth.log" >&2
+    return 1
+  fi
   kill -INT "$reth_pid"
   wait "$reth_pid"
   reth_pid=""
