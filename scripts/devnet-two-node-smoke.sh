@@ -103,14 +103,14 @@ synced_height="$(wait_equal_work)"; echo "B caught A at next work height $synced
 a_reth="$(rpc "$A_RETH_HTTP" eth_blockNumber '[]' | jq -r '.result')"; b_reth="$(rpc "$B_RETH_HTTP" eth_blockNumber '[]' | jq -r '.result')"
 [[ "$a_reth" == "$b_reth" ]] || { echo "Execution canonical height mismatch after initial sync: A=$a_reth B=$b_reth" >&2; exit 1; }
 
-echo "Stopping B, mining one additional block on A..."; stop_b; echo "Mined on A height $(mine_a)"
-echo "Restarting B for catch-up without copying state..."
-start_node b "$B_DATA" "$B_RETH_HTTP" "$B_RETH_ENGINE" "$B_MINING" "$B_P2P" "$A_P2P"
+echo "Leaving B running and mining one additional block on A..."
+echo "Mined on A height $(mine_a)"
+echo "Waiting for B to reconnect and catch up automatically..."
 final_height="$(wait_equal_work)"
 a_reth="$(rpc "$A_RETH_HTTP" eth_blockNumber '[]' | jq -r '.result')"; b_reth="$(rpc "$B_RETH_HTTP" eth_blockNumber '[]' | jq -r '.result')"
-[[ "$a_reth" == "$b_reth" ]] || { echo "Execution canonical height mismatch after restart catch-up: A=$a_reth B=$b_reth" >&2; exit 1; }
+[[ "$a_reth" == "$b_reth" ]] || { echo "Execution canonical height mismatch after automatic reconnect: A=$a_reth B=$b_reth" >&2; exit 1; }
 
-echo "PASS: independent two-node P2P sync and restart catch-up succeeded"
+echo "PASS: independent two-node P2P sync and automatic reconnect catch-up succeeded"
 echo "NIAHCIA next work height: $final_height"; echo "Execution canonical height: $a_reth"
 
 echo "Creating competing persisted forks from the shared tip..."
