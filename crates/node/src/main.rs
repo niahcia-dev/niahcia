@@ -8,9 +8,7 @@ pub mod state;
 pub mod work;
 
 use config::NodeConfig;
-use consensus::{
-    devnet_next_target, randomx_seed, randomx_seed_height, DEVNET_GENESIS_TARGET,
-};
+use consensus::{devnet_next_target, randomx_seed, randomx_seed_height, DEVNET_GENESIS_TARGET};
 use engine::EngineClient;
 use mining_rpc::WorkManager;
 use state::StateStore;
