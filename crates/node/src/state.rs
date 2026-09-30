@@ -8,6 +8,7 @@ const SERVICE_EVIDENCE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("se
 const SERVICE_EPOCHS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("service_epochs_v1");
 const CHAIN_BLOCKS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_blocks_v1");
 const CHAIN_EXECUTION: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_execution_v1");
+const EXECUTION_PAYLOADS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("execution_payloads_v1");
 const CHAIN_META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_meta_v1");
 
 const BEST_HEAD_KEY: &[u8] = b"best_head";
@@ -153,6 +154,9 @@ impl StateStore {
                 .open_table(CHAIN_EXECUTION)
                 .map_err(|e| format!("failed to initialize chain execution table: {e}"))?;
             write
+                .open_table(EXECUTION_PAYLOADS)
+                .map_err(|e| format!("failed to initialize execution payload table: {e}"))?;
+            write
                 .open_table(CHAIN_META)
                 .map_err(|e| format!("failed to initialize chain metadata table: {e}"))?;
         }
@@ -182,6 +186,34 @@ impl StateStore {
             Some(value) => PersistedChainBlock::decode(value.value()).map(Some),
             None => Ok(None),
         }
+    }
+
+    pub fn store_execution_payload(&self, hash: Hash32, payload: &[u8]) -> Result<(), String> {
+        let write = self.db.begin_write().map_err(|e| format!("failed to begin payload write: {e}"))?;
+        {
+            let mut table = write.open_table(EXECUTION_PAYLOADS)
+                .map_err(|e| format!("failed to open payload table: {e}"))?;
+            if let Some(existing) = table.get(hash.as_slice())
+                .map_err(|e| format!("failed to inspect payload: {e}"))? {
+                if existing.value() != payload {
+                    return Err("execution hash already has a different replay payload".into());
+                }
+                return Ok(());
+            }
+            table.insert(hash.as_slice(), payload)
+                .map_err(|e| format!("failed to persist execution payload: {e}"))?;
+        }
+        write.commit().map_err(|e| format!("failed to commit execution payload: {e}"))
+    }
+
+    pub fn execution_payload(&self, hash: Hash32) -> Result<Option<Vec<u8>>, String> {
+        let read = self.db.begin_read().map_err(|e| format!("failed to begin payload read: {e}"))?;
+        let table = read.open_table(EXECUTION_PAYLOADS)
+            .map_err(|e| format!("failed to open payload table: {e}"))?;
+        let result = table.get(hash.as_slice())
+            .map_err(|e| format!("failed to read execution payload: {e}"))?
+            .map(|value| value.value().to_vec());
+        Ok(result)
     }
 
     pub fn store_execution_hash(
