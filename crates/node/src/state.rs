@@ -8,7 +8,7 @@ const SERVICE_EVIDENCE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("se
 const SERVICE_EPOCHS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("service_epochs_v1");
 const CHAIN_BLOCKS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_blocks_v1");
 const CHAIN_EXECUTION: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_execution_v1");
-const EXECUTION_PAYLOADS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("execution_payloads_v1");
+const EXECUTION_PAYLOADS: TableDefinition<&[u8], &[u8]> =\n    TableDefinition::new("execution_payloads_v1");
 const CHAIN_META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_meta_v1");
 
 const BEST_HEAD_KEY: &[u8] = b"best_head";
@@ -189,7 +189,7 @@ impl StateStore {
     }
 
     pub fn store_execution_payload(&self, hash: Hash32, payload: &[u8]) -> Result<(), String> {
-        let write = self.db.begin_write().map_err(|e| format!("failed to begin payload write: {e}"))?;
+        let write = self\n            .db\n            .begin_write()\n            .map_err(|e| format!("failed to begin payload write: {e}"))?;
         {
             let mut table = write.open_table(EXECUTION_PAYLOADS)
                 .map_err(|e| format!("failed to open payload table: {e}"))?;
@@ -203,7 +203,7 @@ impl StateStore {
             table.insert(hash.as_slice(), payload)
                 .map_err(|e| format!("failed to persist execution payload: {e}"))?;
         }
-        write.commit().map_err(|e| format!("failed to commit execution payload: {e}"))
+        write\n            .commit()\n            .map_err(|e| format!("failed to commit execution payload: {e}"))
     }
 
     pub fn execution_payload(&self, hash: Hash32) -> Result<Option<Vec<u8>>, String> {
