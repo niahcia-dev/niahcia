@@ -390,7 +390,10 @@ mod tests {
             version: 1,
             parent_hash: [0_u8; 32],
             height: 0,
-            timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             transactions_root: [0x22; 32],
             execution_root: [0x33; 32],
             target: [0xff; 32],
@@ -431,7 +434,10 @@ mod tests {
     fn submit_work_rejects_future_timestamp_before_persistence() {
         let path = temp_state_path("submit-future-time");
         let store = StateStore::open(&path).unwrap();
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let header = BlockHeaderV1 {
             version: 1,
             parent_hash: [0_u8; 32],
