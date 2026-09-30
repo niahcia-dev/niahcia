@@ -1,4 +1,6 @@
-use crate::consensus::{validate_timestamp, MEDIAN_TIME_WINDOW};
+use crate::consensus::{
+    devnet_next_target, validate_timestamp, DEVNET_GENESIS_TARGET, MEDIAN_TIME_WINDOW,
+};
 use crate::pow::RandomXVerifier;
 use crate::state::StateStore;
 use crate::work::{BlockHeaderV1, Hash32};
@@ -313,10 +315,11 @@ fn validate_block_candidate(
         .as_secs();
 
     let mut ancestor_timestamps = Vec::with_capacity(MEDIAN_TIME_WINDOW);
-    if header.height == 0 {
+    let expected_target = if header.height == 0 {
         if header.parent_hash != [0_u8; 32] {
             return Err("genesis block must have a zero parent hash".into());
         }
+        DEVNET_GENESIS_TARGET
     } else {
         let mut cursor = state
             .load_chain_block(header.parent_hash)?
@@ -325,15 +328,40 @@ fn validate_block_candidate(
             return Err("candidate height does not follow persisted parent".into());
         }
 
-        loop {
+        let parent_height = cursor.header.height;
+        let parent_timestamp = cursor.header.timestamp;
+        let genesis_timestamp = loop {
             ancestor_timestamps.push(cursor.header.timestamp);
-            if ancestor_timestamps.len() == MEDIAN_TIME_WINDOW || cursor.header.height == 0 {
-                break;
+            if cursor.header.height == 0 {
+                break cursor.header.timestamp;
             }
-            cursor = state
+            let parent = state
                 .load_chain_block(cursor.header.parent_hash)?
                 .ok_or_else(|| "candidate ancestry references missing parent".to_string())?;
-        }
+            if ancestor_timestamps.len() < MEDIAN_TIME_WINDOW {
+                cursor = parent;
+            } else {
+                let mut genesis_cursor = parent;
+                while genesis_cursor.header.height != 0 {
+                    genesis_cursor = state
+                        .load_chain_block(genesis_cursor.header.parent_hash)?
+                        .ok_or_else(|| {
+                            "candidate ancestry references missing parent".to_string()
+                        })?;
+                }
+                break genesis_cursor.header.timestamp;
+            }
+        };
+
+        devnet_next_target(genesis_timestamp, parent_height, parent_timestamp)?
+    };
+
+    if header.target != expected_target {
+        return Err(format!(
+            "candidate target {} does not match expected devnet target {}",
+            hex::encode(header.target),
+            hex::encode(expected_target)
+        ));
     }
 
     validate_timestamp(header.timestamp, &ancestor_timestamps, adjusted_time)?;
