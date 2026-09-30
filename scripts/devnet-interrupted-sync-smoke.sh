@@ -64,7 +64,7 @@ stop_b() { kill -INT "$b_pid"; wait "$b_pid"; b_pid=""; }
 
 mine_on() {
   local mining="$1"
-  local work gen template height result
+  local work gen template height result nonce message
   work="$(rpc "$mining" pow_getWork '{}')" || return 1
   jq -e '.error == null and .result != null' <<<"$work" >/dev/null || {
     echo "pow_getWork failed: $work" >&2
@@ -73,12 +73,22 @@ mine_on() {
   gen="$(jq -r '.result.generation' <<<"$work")"
   template="$(jq -r '.result.template_id' <<<"$work")"
   height="$(jq -r '.result.height' <<<"$work")"
-  result="$(rpc "$mining" pow_submitWork "$(jq -nc --argjson generation "$gen" --arg template_id "$template" '{generation:$generation,template_id:$template_id,nonce:0,extra_nonce:0}')")" || return 1
-  jq -e '.error == null and .result.accepted == true and .result.became_canonical == true' <<<"$result" >/dev/null || {
-    echo "pow_submitWork failed at height $height: $result" >&2
-    return 1
-  }
-  echo "$height"
+
+  for nonce in $(seq 0 4095); do
+    result="$(rpc "$mining" pow_submitWork "$(jq -nc --argjson generation "$gen" --arg template_id "$template" --argjson nonce "$nonce" '{generation:$generation,template_id:$template_id,nonce:$nonce,extra_nonce:0}')")" || return 1
+    if jq -e '.error == null and .result.accepted == true and .result.became_canonical == true' <<<"$result" >/dev/null; then
+      echo "$height"
+      return 0
+    fi
+    message="$(jq -r '.error.message // empty' <<<"$result")"
+    if [[ "$message" != "RandomX hash does not meet block target" ]]; then
+      echo "pow_submitWork failed at height $height nonce $nonce: $result" >&2
+      return 1
+    fi
+  done
+
+  echo "No valid nonce found for height $height within 4096 attempts" >&2
+  return 1
 }
 
 mine_a() { mine_on "$A_MINING"; }
