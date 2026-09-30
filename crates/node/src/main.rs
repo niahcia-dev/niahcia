@@ -180,6 +180,8 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
         };
+        // Rebuild missing canonical execution ancestors in oldest-first order.
+        // Walk the persisted best chain once so restart recovery remains O(H).
         let canonical_chain = match state.canonical_chain() {
             Ok(chain) => chain,
             Err(e) => {
@@ -404,6 +406,7 @@ fn main() -> ExitCode {
     let engine = Arc::new(engine);
     let running = Arc::new(AtomicBool::new(true));
     let signal_running = Arc::clone(&running);
+
     if let Err(e) = ctrlc::set_handler(move || {
         signal_running.store(false, Ordering::SeqCst);
     }) {
@@ -411,33 +414,35 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
-    let mining = match mining_rpc::start_server(
-        &config.mining_rpc_bind,
-        Arc::new(work_manager),
+    let rpc_handle = match mining_rpc::spawn(
+        config.mining_rpc_bind,
+        work_manager.clone(),
         Arc::clone(&state),
         Arc::clone(&engine),
         fee_recipient,
         Arc::clone(&running),
     ) {
-        Ok(server) => server,
+        Ok(handle) => handle,
         Err(e) => {
             error!(error = %e, "failed to start mining RPC");
             return ExitCode::from(1);
         }
     };
 
-    let p2p = match p2p::start_server(
-        &config.p2p_bind,
-        &config.p2p_peers,
+    let p2p_handle = match p2p::spawn(
+        config.p2p_bind,
+        config.p2p_peers.clone(),
         Arc::clone(&state),
         Arc::clone(&engine),
-        mining.work_manager(),
+        work_manager.clone(),
         fee_recipient,
         Arc::clone(&running),
     ) {
-        Ok(server) => server,
+        Ok(handle) => handle,
         Err(e) => {
-            error!(error = %e, "failed to start P2P transport");
+            error!(error = %e, "failed to start P2P listener");
+            running.store(false, Ordering::SeqCst);
+            let _ = rpc_handle.join();
             return ExitCode::from(1);
         }
     };
@@ -449,7 +454,16 @@ fn main() -> ExitCode {
     }
 
     info!("shutdown requested");
-    drop(p2p);
-    drop(mining);
+
+    if rpc_handle.join().is_err() {
+        error!("mining RPC thread terminated unexpectedly");
+        return ExitCode::from(1);
+    }
+    if p2p_handle.join().is_err() {
+        error!("P2P listener thread terminated unexpectedly");
+        return ExitCode::from(1);
+    }
+
+    info!("NIAHCIA stopped cleanly");
     ExitCode::SUCCESS
 }
