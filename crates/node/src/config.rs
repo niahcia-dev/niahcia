@@ -81,7 +81,10 @@ impl NodeConfig {
                 .split(',')
                 .map(str::trim)
                 .filter(|peer| !peer.is_empty())
-                .map(|peer| peer.parse().map_err(|e| format!("invalid NIAHCIA_P2P_PEERS entry '{peer}': {e}")))
+                .map(|peer| {
+                    peer.parse()
+                        .map_err(|e| format!("invalid NIAHCIA_P2P_PEERS entry '{peer}': {e}"))
+                })
                 .collect::<Result<Vec<_>, _>>()?;
         }
         if let Ok(v) = env::var("NIAHCIA_LOG_LEVEL") {
