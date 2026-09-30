@@ -21,6 +21,14 @@ pub struct ChainReorg {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChainInsertOutcome {
+    pub block: PersistedChainBlock,
+    pub previous_best: Option<Hash32>,
+    pub current_best: Hash32,
+    pub reorg: Option<ChainReorg>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PersistedChainBlock {
     pub header: BlockHeaderV1,
     pub chain_work: BigUint,
@@ -296,6 +304,32 @@ impl StateStore {
         }
     }
 
+    pub fn insert_chain_block_with_outcome(
+        &self,
+        header: BlockHeaderV1,
+    ) -> Result<ChainInsertOutcome, String> {
+        let previous_best = self.best_chain_head()?.map(|block| block.block_id());
+        let block = self.insert_chain_block(header)?;
+        let current_best = self
+            .best_chain_head()?
+            .ok_or_else(|| "chain insert committed without a best head".to_string())?
+            .block_id();
+
+        let reorg = match previous_best {
+            Some(old_head) if old_head != current_best => {
+                self.canonical_reorg(old_head, current_best)?
+            }
+            _ => None,
+        };
+
+        Ok(ChainInsertOutcome {
+            block,
+            previous_best,
+            current_best,
+            reorg,
+        })
+    }
+
     pub fn insert_chain_block(&self, header: BlockHeaderV1) -> Result<PersistedChainBlock, String> {
         let parent_work = if header.height == 0 {
             if header.parent_hash != [0_u8; 32] {
@@ -487,7 +521,7 @@ impl StateStore {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChainReorg, PersistedServiceSuccess, StateStore};
+    use super::{ChainInsertOutcome, ChainReorg, PersistedServiceSuccess, StateStore};
     use crate::work::BlockHeaderV1;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -514,6 +548,44 @@ mod tests {
             nonce: marker as u64,
             extra_nonce: 0,
         }
+    }
+
+    #[test]
+    fn insert_outcome_surfaces_canonical_head_change() {
+        let path = temp_state_path("insert-outcome");
+        let store = StateStore::open(&path).unwrap();
+
+        let genesis = header([0_u8; 32], 0, [0xff; 32], 1);
+        let genesis_id = genesis.block_id();
+        let genesis_outcome = store.insert_chain_block_with_outcome(genesis).unwrap();
+        assert_eq!(
+            genesis_outcome,
+            ChainInsertOutcome {
+                block: store.load_chain_block(genesis_id).unwrap().unwrap(),
+                previous_best: None,
+                current_best: genesis_id,
+                reorg: None,
+            }
+        );
+
+        let easy = header(genesis_id, 1, [0xff; 32], 2);
+        let easy_id = easy.block_id();
+        store.insert_chain_block(easy).unwrap();
+
+        let hard = header(genesis_id, 1, [0x7f; 32], 3);
+        let hard_id = hard.block_id();
+        let outcome = store.insert_chain_block_with_outcome(hard).unwrap();
+
+        assert_eq!(outcome.previous_best, Some(easy_id));
+        assert_eq!(outcome.current_best, hard_id);
+        let reorg = outcome.reorg.unwrap();
+        assert_eq!(reorg.old_head, easy_id);
+        assert_eq!(reorg.new_head, hard_id);
+        assert_eq!(reorg.common_ancestor, genesis_id);
+        assert_eq!(reorg.detached, vec![easy_id]);
+        assert_eq!(reorg.attached, vec![hard_id]);
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
