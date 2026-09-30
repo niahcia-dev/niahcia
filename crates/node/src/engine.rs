@@ -17,6 +17,8 @@ pub struct LatestBlock {
 pub struct BuiltExecutionPayload {
     pub commitments: ExecutionPayloadCommitments,
     pub execution_payload_hash: Hash32,
+    execution_payload: Value,
+    parent_beacon_block_root: Hash32,
 }
 
 #[derive(Debug)]
@@ -154,7 +156,43 @@ impl EngineClient {
                 base_fee_per_gas: parse_u256(field_str(payload, "baseFeePerGas")?)?,
             },
             execution_payload_hash,
+            execution_payload: payload.clone(),
+            parent_beacon_block_root: [0_u8; 32],
         })
+    }
+
+    pub fn validate_payload_v3(&self, built: &BuiltExecutionPayload) -> Result<(), String> {
+        let result = self.engine_request(
+            "engine_newPayloadV3",
+            json!([
+                built.execution_payload,
+                [],
+                hex32(built.parent_beacon_block_root)
+            ]),
+        )?;
+        let status = result
+            .get("status")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("engine_newPayloadV3 response missing status: {result}"))?;
+
+        if status != "VALID" {
+            return Err(format!(
+                "Reth did not validate execution payload; status {status}: {result}"
+            ));
+        }
+
+        let validated_hash = result
+            .get("latestValidHash")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("VALID engine_newPayloadV3 response missing latestValidHash: {result}"))?;
+        if parse_hash32(validated_hash)? != built.execution_payload_hash {
+            return Err(format!(
+                "Reth VALID latestValidHash {validated_hash} does not match built payload {}",
+                hex32(built.execution_payload_hash)
+            ));
+        }
+
+        Ok(())
     }
 
     fn engine_request(&self, method: &str, params: Value) -> Result<Value, String> {
