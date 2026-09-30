@@ -1,4 +1,5 @@
 mod config;
+pub mod address;
 pub mod consensus;
 mod engine;
 mod mining_rpc;
@@ -28,31 +29,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_help() {
     println!(
-        "NIAHCIA {VERSION}
-
-Usage:
-  niahcia [OPTIONS]
-
-Options:
-  -c, --config <PATH>  Load TOML config file
-  -h, --help           Print help
-  -V, --version        Print version
-
-Environment overrides:
-  NIAHCIA_NETWORK
-  NIAHCIA_DATA_DIR
-  NIAHCIA_RETH_ENGINE_API
-  NIAHCIA_RETH_HTTP_RPC
-  NIAHCIA_FEE_RECIPIENT
-  NIAHCIA_RETH_JWT_PATH
-  NIAHCIA_MINING_RPC_BIND
-  NIAHCIA_P2P_BIND
-  NIAHCIA_P2P_PEERS
-  NIAHCIA_LOG_LEVEL
-
-Status:
-  Pre-alpha reference node.
-"
+        "NIAHCIA {VERSION}\n\nUsage:\n  niahcia [OPTIONS]\n\nOptions:\n  -c, --config <PATH>  Load TOML config file\n  -h, --help           Print help\n  -V, --version        Print version\n\nEnvironment overrides:\n  NIAHCIA_NETWORK\n  NIAHCIA_DATA_DIR\n  NIAHCIA_RETH_ENGINE_API\n  NIAHCIA_RETH_HTTP_RPC\n  NIAHCIA_FEE_RECIPIENT\n  NIAHCIA_RETH_JWT_PATH\n  NIAHCIA_MINING_RPC_BIND\n  NIAHCIA_P2P_BIND\n  NIAHCIA_P2P_PEERS\n  NIAHCIA_LOG_LEVEL\n\nStatus:\n  Pre-alpha reference node.\n"
     );
 }
 
@@ -203,8 +180,6 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
         };
-        // Rebuild missing canonical execution ancestors in oldest-first order.
-        // Walk the persisted best chain once so restart recovery remains O(H).
         let canonical_chain = match state.canonical_chain() {
             Ok(chain) => chain,
             Err(e) => {
@@ -429,7 +404,6 @@ fn main() -> ExitCode {
     let engine = Arc::new(engine);
     let running = Arc::new(AtomicBool::new(true));
     let signal_running = Arc::clone(&running);
-
     if let Err(e) = ctrlc::set_handler(move || {
         signal_running.store(false, Ordering::SeqCst);
     }) {
@@ -437,35 +411,33 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
-    let rpc_handle = match mining_rpc::spawn(
-        config.mining_rpc_bind,
-        work_manager.clone(),
+    let mining = match mining_rpc::start_server(
+        &config.mining_rpc_bind,
+        Arc::new(work_manager),
         Arc::clone(&state),
         Arc::clone(&engine),
         fee_recipient,
         Arc::clone(&running),
     ) {
-        Ok(handle) => handle,
+        Ok(server) => server,
         Err(e) => {
             error!(error = %e, "failed to start mining RPC");
             return ExitCode::from(1);
         }
     };
 
-    let p2p_handle = match p2p::spawn(
-        config.p2p_bind,
-        config.p2p_peers.clone(),
+    let p2p = match p2p::start_server(
+        &config.p2p_bind,
+        &config.p2p_peers,
         Arc::clone(&state),
         Arc::clone(&engine),
-        work_manager.clone(),
+        mining.work_manager(),
         fee_recipient,
         Arc::clone(&running),
     ) {
-        Ok(handle) => handle,
+        Ok(server) => server,
         Err(e) => {
-            error!(error = %e, "failed to start P2P listener");
-            running.store(false, Ordering::SeqCst);
-            let _ = rpc_handle.join();
+            error!(error = %e, "failed to start P2P transport");
             return ExitCode::from(1);
         }
     };
@@ -477,16 +449,7 @@ fn main() -> ExitCode {
     }
 
     info!("shutdown requested");
-
-    if rpc_handle.join().is_err() {
-        error!("mining RPC thread terminated unexpectedly");
-        return ExitCode::from(1);
-    }
-    if p2p_handle.join().is_err() {
-        error!("P2P listener thread terminated unexpectedly");
-        return ExitCode::from(1);
-    }
-
-    info!("NIAHCIA stopped cleanly");
+    drop(p2p);
+    drop(mining);
     ExitCode::SUCCESS
 }
