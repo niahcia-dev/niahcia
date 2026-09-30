@@ -276,15 +276,29 @@ fn submit_work(request: &Value, work: &WorkManager, state: &StateStore) -> Resul
     let (header, seed) = work.submission_candidate(generation, template_id, nonce, extra_nonce)?;
     let verifier = RandomXVerifier::new(seed)?;
     let pow_hash = verifier.verify_header(&header)?;
-    let persisted = state.insert_chain_block(header)?;
+    let outcome = state.insert_chain_block_with_outcome(header)?;
     work.mark_solved(generation, template_id)?;
+
+    let reorg = outcome.reorg.as_ref().map(|reorg| {
+        json!({
+            "old_head": hex::encode(reorg.old_head),
+            "new_head": hex::encode(reorg.new_head),
+            "common_ancestor": hex::encode(reorg.common_ancestor),
+            "detached": reorg.detached.iter().map(hex::encode).collect::<Vec<_>>(),
+            "attached": reorg.attached.iter().map(hex::encode).collect::<Vec<_>>()
+        })
+    });
 
     Ok(json!({
         "accepted": true,
-        "block_id": hex::encode(persisted.block_id()),
+        "block_id": hex::encode(outcome.block.block_id()),
         "pow_hash": hex::encode(pow_hash),
-        "height": persisted.header.height,
-        "cumulative_work": persisted.chain_work.to_str_radix(10)
+        "height": outcome.block.header.height,
+        "cumulative_work": outcome.block.chain_work.to_str_radix(10),
+        "became_canonical": outcome.current_best == outcome.block.block_id(),
+        "previous_best": outcome.previous_best.map(hex::encode),
+        "current_best": hex::encode(outcome.current_best),
+        "reorg": reorg
     }))
 }
 
@@ -365,6 +379,8 @@ mod tests {
         solved.extra_nonce = 9;
         let persisted = store.load_chain_block(solved.block_id()).unwrap().unwrap();
         assert_eq!(persisted.header, solved);
+        assert_eq!(result["became_canonical"], true);
+        assert_eq!(result["current_best"], hex::encode(solved.block_id()));
         assert!(manager.is_solved().unwrap());
 
         let duplicate = submit_work(&request, &manager, &store).unwrap_err();
