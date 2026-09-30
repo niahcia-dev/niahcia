@@ -199,26 +199,57 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
         };
-        // Replay only if Reth no longer has the persisted canonical execution block.
-        if engine.block_by_hash(execution_hash).is_err() {
-            let encoded = match state.execution_payload(execution_hash) {
-                Ok(Some(payload)) => payload,
+        // Rebuild missing canonical execution ancestors in order. A head-only replay
+        // cannot succeed when Reth has also forgotten one of its parents.
+        for height in 0..=head.header.height {
+            let canonical = match state.canonical_block_at_height(height) {
+                Ok(Some(block)) => block,
                 Ok(None) => {
-                    error!(execution_payload_hash = %hex::encode(execution_hash),
-                        "persisted canonical execution is missing from Reth and has no replay payload");
+                    error!(height, "persisted canonical ancestry is incomplete");
                     return ExitCode::from(1);
                 }
                 Err(e) => {
-                    error!(error = %e, "failed to read persisted execution replay payload");
+                    error!(height, error = %e, "failed to load canonical ancestry for replay");
                     return ExitCode::from(1);
                 }
             };
-            if let Err(e) = engine.replay_execution_payload(&encoded, execution_hash) {
-                error!(error = %e, "failed to replay persisted canonical execution payload");
+            let mapped = match state.execution_hash(canonical.block_id()) {
+                Ok(Some(hash)) => hash,
+                Ok(None) => {
+                    error!(height, "persisted canonical block has no execution mapping");
+                    return ExitCode::from(1);
+                }
+                Err(e) => {
+                    error!(height, error = %e, "failed to load execution mapping");
+                    return ExitCode::from(1);
+                }
+            };
+            match engine.block_by_hash(mapped) {
+                Ok(_) => continue,
+                Err(e) if !e.contains("not found") => {
+                    error!(height, error = %e, "failed to query Reth execution block");
+                    return ExitCode::from(1);
+                }
+                Err(_) => {}
+            }
+            let encoded = match state.execution_payload(mapped) {
+                Ok(Some(payload)) => payload,
+                Ok(None) => {
+                    error!(height, execution_payload_hash = %hex::encode(mapped),
+                        "Reth is missing canonical execution and no replay payload was persisted");
+                    return ExitCode::from(1);
+                }
+                Err(e) => {
+                    error!(height, error = %e, "failed to load execution replay payload");
+                    return ExitCode::from(1);
+                }
+            };
+            if let Err(e) = engine.replay_execution_payload(&encoded, mapped) {
+                error!(height, error = %e, "Reth rejected canonical execution replay");
                 return ExitCode::from(1);
             }
-            info!(execution_payload_hash = %hex::encode(execution_hash),
-                "replayed missing canonical execution payload into Reth");
+            info!(height, execution_payload_hash = %hex::encode(mapped),
+                "replayed missing canonical execution payload");
         }
         match engine.latest_block() {
             Ok(reth_head) => {
