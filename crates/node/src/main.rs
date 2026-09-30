@@ -439,7 +439,7 @@ fn main() -> ExitCode {
 
     let rpc_handle = match mining_rpc::spawn(
         config.mining_rpc_bind,
-        work_manager,
+        work_manager.clone(),
         Arc::clone(&state),
         Arc::clone(&engine),
         fee_recipient,
