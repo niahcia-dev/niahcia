@@ -184,6 +184,31 @@ fn main() -> ExitCode {
         }
     }
 
+    if let Some(head) = &persisted_head {
+        let execution_hash = match state.execution_hash(head.block_id()) {
+            Ok(Some(hash)) => hash,
+            Ok(None) => {
+                error!(
+                    block_id = %hex::encode(head.block_id()),
+                    "persisted NIAHCIA canonical head has no Reth execution mapping"
+                );
+                return ExitCode::from(1);
+            }
+            Err(e) => {
+                error!(error = %e, "failed to recover canonical Reth execution mapping");
+                return ExitCode::from(1);
+            }
+        };
+        if let Err(e) = engine.set_canonical_head_v3(execution_hash) {
+            error!(error = %e, "failed to restore Reth forkchoice from persisted NIAHCIA head");
+            return ExitCode::from(1);
+        }
+        info!(
+            execution_payload_hash = %hex::encode(execution_hash),
+            "restored Reth canonical head from persisted NIAHCIA state"
+        );
+    }
+
     let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(value) => value.as_secs(),
         Err(e) => {
