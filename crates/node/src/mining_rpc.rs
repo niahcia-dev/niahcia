@@ -314,8 +314,7 @@ fn submit_work(
     let (header, seed, execution_hash) =
         work.submission_candidate(generation, template_id, nonce, extra_nonce)?;
     let pow_hash = validate_block_candidate(&header, seed, state)?;
-    let outcome = state.insert_chain_block_with_outcome(header)?;
-    state.store_execution_hash(outcome.block.block_id(), execution_hash)?;
+    let outcome = state.insert_mined_block_with_execution_outcome(header, execution_hash)?;
     if outcome.current_best == outcome.block.block_id() {
         if let Some((engine, fee_recipient)) = engine {
             engine.set_canonical_head_v3(execution_hash)?;
