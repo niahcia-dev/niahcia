@@ -535,7 +535,11 @@ mod tests {
             nonce: 0,
             extra_nonce: 0,
         };
-        let manager = WorkManager::new(header.clone(), 0, [0x42; 32], [0x99; 32]);
+        let execution_hash = [0x99; 32];
+        store
+            .store_execution_payload(execution_hash, b"test-replay-payload")
+            .unwrap();
+        let manager = WorkManager::new(header.clone(), 0, [0x42; 32], execution_hash);
         let template_id = header.mining_template_id();
 
         let request = json!({
