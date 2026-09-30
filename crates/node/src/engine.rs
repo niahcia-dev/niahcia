@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct LatestBlock {
@@ -167,19 +168,7 @@ impl EngineClient {
         }
 
         let execution_payload_hash = parse_hash32(field_str(payload, "blockHash")?)?;
-        let versioned_hashes = envelope
-            .pointer("/blobsBundle/commitments")
-            .and_then(Value::as_array)
-            .map(|commitments| {
-                Value::Array(
-                    commitments
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .map(|_| Value::Null)
-                        .collect(),
-                )
-            })
-            .unwrap_or_else(|| Value::Array(Vec::new()));
+        let versioned_hashes = Value::Array(Vec::new());
         let execution_requests = if engine_version == 4 {
             Some(
                 envelope
@@ -190,6 +179,13 @@ impl EngineClient {
         } else {
             None
         };
+        debug!(
+            engine_version,
+            execution_payload_hash = %hex32(execution_payload_hash),
+            envelope = %envelope,
+            "captured Reth execution payload envelope"
+        );
+
         let transactions_root = transaction_merkle_root(payload)?;
 
         Ok(BuiltExecutionPayload {
@@ -215,6 +211,16 @@ impl EngineClient {
     }
 
     pub fn validate_payload_v3(&self, built: &BuiltExecutionPayload) -> Result<(), String> {
+        debug!(
+            engine_version = built.engine_version,
+            execution_payload_hash = %hex32(built.execution_payload_hash),
+            execution_payload = %built.execution_payload,
+            versioned_hashes = %built.versioned_hashes,
+            parent_beacon_block_root = %hex32(built.parent_beacon_block_root),
+            execution_requests = ?built.execution_requests,
+            "submitting Reth execution payload for validation"
+        );
+
         let result = match built.engine_version {
             4 => self.engine_request(
                 "engine_newPayloadV4",
