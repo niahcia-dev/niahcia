@@ -349,7 +349,7 @@ fn submit_work(
     }))
 }
 
-fn install_next_work(
+pub(crate) fn install_next_work(
     work: &WorkManager,
     state: &StateStore,
     engine: &EngineClient,
