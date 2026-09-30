@@ -29,7 +29,7 @@ pub fn spawn(
             thread::spawn(
                 move || match TcpStream::connect_timeout(&peer, IO_TIMEOUT) {
                     Ok(stream) => {
-                        if let Err(error) = exchange_hello(stream, &state) {
+                        if let Err(error) = serve_peer(stream, &state) {
                             tracing::warn!(%peer, %error, "outbound P2P handshake failed");
                         } else {
                             tracing::info!(%peer, "outbound P2P handshake complete");
@@ -47,7 +47,7 @@ pub fn spawn(
                 Ok((stream, peer)) => {
                     let state = Arc::clone(&state);
                     thread::spawn(move || {
-                        if let Err(error) = exchange_hello(stream, &state) {
+                        if let Err(error) = serve_peer(stream, &state) {
                             tracing::warn!(%peer, %error, "inbound P2P handshake failed");
                         } else {
                             tracing::info!(%peer, "inbound P2P handshake complete");
@@ -94,6 +94,66 @@ fn local_hello(state: &StateStore) -> Result<HelloV1, String> {
             cumulative_work: Vec::new(),
         }),
     }
+}
+
+fn serve_peer(mut stream: TcpStream, state: &StateStore) -> Result<(), String> {
+    exchange_hello(stream.try_clone().map_err(io_error)?, state)?;
+
+    loop {
+        match read_message(&mut stream) {
+            Ok(MessageV1::GetBlocks(request)) => {
+                let blocks = canonical_transfer_range(state, request.start_height, request.count)?;
+                write_message(&mut stream, &MessageV1::Blocks(blocks))?;
+            }
+            Ok(MessageV1::Hello(_)) => return Err("peer sent duplicate Hello".into()),
+            Ok(MessageV1::Blocks(_)) => {
+                return Err("unsolicited Blocks message before sync ingestion is enabled".into())
+            }
+            Err(error) if is_disconnect_error(&error) => return Ok(()),
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn canonical_transfer_range(
+    state: &StateStore,
+    start_height: u64,
+    count: u16,
+) -> Result<Vec<BlockTransferV1>, String> {
+    if count == 0 || count > MAX_BLOCKS_PER_MESSAGE {
+        return Err("GetBlocks count is outside protocol bounds".into());
+    }
+
+    let chain = state.canonical_chain()?;
+    let start = usize::try_from(start_height)
+        .map_err(|_| "GetBlocks start height does not fit this platform".to_string())?;
+    if start >= chain.len() {
+        return Ok(Vec::new());
+    }
+    let end = start.saturating_add(count as usize).min(chain.len());
+    let mut transfers = Vec::with_capacity(end - start);
+    for block in &chain[start..end] {
+        let block_id = block.block_id();
+        let execution_hash = state
+            .execution_hash(block_id)?
+            .ok_or_else(|| format!("canonical block {} has no execution mapping", block.header.height))?;
+        let replay_payload = state
+            .execution_payload(execution_hash)?
+            .ok_or_else(|| format!("canonical block {} has no execution replay payload", block.header.height))?;
+        transfers.push(BlockTransferV1 {
+            header: block.header.clone(),
+            execution_hash,
+            replay_payload,
+        });
+    }
+    Ok(transfers)
+}
+
+fn is_disconnect_error(error: &str) -> bool {
+    error.contains("UnexpectedEof")
+        || error.contains("Connection reset")
+        || error.contains("connection reset")
+        || error.contains("Broken pipe")
 }
 
 const MSG_HELLO: u16 = 1;
