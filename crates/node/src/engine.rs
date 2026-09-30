@@ -155,27 +155,28 @@ impl EngineClient {
             .and_then(Value::as_str)
             .ok_or_else(|| format!("forkchoice response missing payloadId: {update}"))?;
 
-        let (envelope, engine_version) =
-            match self.engine_request("engine_getPayloadV5", json!([payload_id])) {
-                Ok(envelope) => (envelope, 5_u8),
-                Err(v5_error) if v5_error.contains("Unsupported fork") => {
-                    match self.engine_request("engine_getPayloadV4", json!([payload_id])) {
-                        Ok(envelope) => (envelope, 4_u8),
-                        Err(v4_error) if v4_error.contains("Unsupported fork") => (
-                            self.engine_request("engine_getPayloadV3", json!([payload_id]))
-                                .map_err(|v3_error| format!(
-                                    "engine_getPayloadV5 unsupported ({v5_error}); engine_getPayloadV4 unsupported ({v4_error}); engine_getPayloadV3 also failed: {v3_error}"
-                                ))?,
-                            3_u8,
-                        ),
-                        Err(error) => return Err(error),
-                    }
+        let (envelope, engine_version) = match self
+            .engine_request("engine_getPayloadV5", json!([payload_id]))
+        {
+            Ok(envelope) => (envelope, 5_u8),
+            Err(v5_error) if v5_error.contains("Unsupported fork") => {
+                match self.engine_request("engine_getPayloadV4", json!([payload_id])) {
+                    Ok(envelope) => (envelope, 4_u8),
+                    Err(v4_error) if v4_error.contains("Unsupported fork") => (
+                        self.engine_request("engine_getPayloadV3", json!([payload_id]))
+                            .map_err(|v3_error| format!(
+                                "engine_getPayloadV5 unsupported ({v5_error}); engine_getPayloadV4 unsupported ({v4_error}); engine_getPayloadV3 also failed: {v3_error}"
+                            ))?,
+                        3_u8,
+                    ),
+                    Err(error) => return Err(error),
                 }
-                Err(error) => return Err(error),
-            };
-        let payload = envelope
-            .get("executionPayload")
-            .ok_or_else(|| format!("engine_getPayloadV{engine_version} missing executionPayload: {envelope}"))?;
+            }
+            Err(error) => return Err(error),
+        };
+        let payload = envelope.get("executionPayload").ok_or_else(|| {
+            format!("engine_getPayloadV{engine_version} missing executionPayload: {envelope}")
+        })?;
 
         let parent_hash = parse_hash32(field_str(payload, "parentHash")?)?;
         if parent_hash != parent.hash {
@@ -185,12 +186,9 @@ impl EngineClient {
         let execution_payload_hash = parse_hash32(field_str(payload, "blockHash")?)?;
         let versioned_hashes = Value::Array(Vec::new());
         let execution_requests = if engine_version >= 4 {
-            Some(
-                envelope
-                    .get("executionRequests")
-                    .cloned()
-                    .ok_or_else(|| format!("engine_getPayloadV{engine_version} missing executionRequests: {envelope}"))?,
-            )
+            Some(envelope.get("executionRequests").cloned().ok_or_else(|| {
+                format!("engine_getPayloadV{engine_version} missing executionRequests: {envelope}")
+            })?)
         } else {
             None
         };
@@ -243,9 +241,9 @@ impl EngineClient {
                     built.execution_payload,
                     built.versioned_hashes,
                     hex32(built.parent_beacon_block_root),
-                    built.execution_requests
-                        .clone()
-                        .ok_or_else(|| "Engine API getPayloadV5 result missing executionRequests".to_string())?
+                    built.execution_requests.clone().ok_or_else(|| {
+                        "Engine API getPayloadV5 result missing executionRequests".to_string()
+                    })?
                 ]),
             )?,
             4 => self.engine_request(
@@ -254,9 +252,9 @@ impl EngineClient {
                     built.execution_payload,
                     built.versioned_hashes,
                     hex32(built.parent_beacon_block_root),
-                    built.execution_requests
-                        .clone()
-                        .ok_or_else(|| "Engine API V4 payload missing executionRequests".to_string())?
+                    built.execution_requests.clone().ok_or_else(|| {
+                        "Engine API V4 payload missing executionRequests".to_string()
+                    })?
                 ]),
             )?,
             3 => self.engine_request(
@@ -267,7 +265,11 @@ impl EngineClient {
                     hex32(built.parent_beacon_block_root)
                 ]),
             )?,
-            version => return Err(format!("unsupported cached Engine API getPayload version {version}")),
+            version => {
+                return Err(format!(
+                    "unsupported cached Engine API getPayload version {version}"
+                ))
+            }
         };
         let status = result
             .get("status")
