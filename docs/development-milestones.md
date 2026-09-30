@@ -94,7 +94,20 @@ Current verified devnet result:
 - both execution nodes reached canonical execution height 4
 - reproduced with `scripts/devnet-two-node-smoke.sh`
 
-This proves linear two-node synchronization and restart catch-up. Fork discovery/common-ancestor synchronization and live reorg convergence remain required before v0.3.0 is complete.
+This proves linear two-node synchronization and restart catch-up.
+
+Additional verified fork/reorg result:
+
+- Node A and Node B were first synchronized to the same canonical tip
+- both NIAHCIA nodes were stopped and restarted without peers
+- isolated Node B mined a competing block at height 4
+- isolated Node A mined its own height-4 block plus height 5, creating the higher-work branch
+- Node B was restarted against Node A with its competing persisted fork intact
+- Node B discovered the shared ancestor, validated A's branch locally, reorganized to the higher-work chain, and advanced to next work height 6
+- both independent execution backends converged to canonical execution height 6
+- reproduced with `scripts/devnet-two-node-smoke.sh`
+
+This verifies basic common-ancestor discovery and live two-node reorg convergence on the current devnet implementation.
 
 ## v0.4.0 — EVM Usable Network
 
