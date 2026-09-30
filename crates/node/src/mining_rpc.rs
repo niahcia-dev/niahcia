@@ -1,4 +1,6 @@
-use crate::work::BlockHeaderV1;
+use crate::pow::RandomXVerifier;
+use crate::state::StateStore;
+use crate::work::{BlockHeaderV1, Hash32};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -19,6 +21,7 @@ struct WorkState {
     header: BlockHeaderV1,
     randomx_seed_height: u64,
     randomx_seed: [u8; 32],
+    solved: bool,
 }
 
 impl WorkManager {
@@ -29,6 +32,7 @@ impl WorkManager {
                 header,
                 randomx_seed_height,
                 randomx_seed,
+                solved: false,
             })),
         }
     }
@@ -43,11 +47,49 @@ impl WorkManager {
         )
     }
 
+    fn submission_candidate(
+        &self,
+        generation: u64,
+        template_id: Hash32,
+        nonce: u64,
+        extra_nonce: u64,
+    ) -> Result<(BlockHeaderV1, Hash32), String> {
+        let state = self.inner.read().map_err(|_| "work state poisoned".to_string())?;
+        if state.solved {
+            return Err("current work template is already solved".into());
+        }
+        if generation != state.generation || template_id != state.header.mining_template_id() {
+            return Err("stale mining work".into());
+        }
+
+        let mut header = state.header.clone();
+        header.nonce = nonce;
+        header.extra_nonce = extra_nonce;
+        Ok((header, state.randomx_seed))
+    }
+
+    fn mark_solved(&self, generation: u64, template_id: Hash32) -> Result<(), String> {
+        let mut state = self.inner.write().map_err(|_| "work state poisoned".to_string())?;
+        if generation != state.generation || template_id != state.header.mining_template_id() {
+            return Err("mining work changed before acceptance".into());
+        }
+        state.solved = true;
+        Ok(())
+    }
+
+    fn is_solved(&self) -> Result<bool, String> {
+        self.inner
+            .read()
+            .map(|state| state.solved)
+            .map_err(|_| "work state poisoned".to_string())
+    }
+
     #[cfg(test)]
     pub fn replace(&self, header: BlockHeaderV1) {
         let mut state = self.inner.write().expect("work state poisoned");
         state.generation = state.generation.saturating_add(1);
         state.header = header;
+        state.solved = false;
     }
 
     #[cfg(test)]
@@ -60,6 +102,7 @@ impl WorkManager {
 pub fn spawn(
     bind: SocketAddr,
     work: WorkManager,
+    state: Arc<StateStore>,
     running: Arc<AtomicBool>,
 ) -> Result<thread::JoinHandle<()>, String> {
     let listener =
@@ -74,7 +117,7 @@ pub fn spawn(
         while running.load(Ordering::SeqCst) {
             match listener.accept() {
                 Ok((stream, peer)) => {
-                    if let Err(e) = handle_connection(stream, &work) {
+                    if let Err(e) = handle_connection(stream, &work, &state) {
                         warn!(%peer, error = %e, "mining RPC request failed");
                     }
                 }
@@ -90,7 +133,11 @@ pub fn spawn(
     }))
 }
 
-fn handle_connection(mut stream: TcpStream, work: &WorkManager) -> Result<(), String> {
+fn handle_connection(
+    mut stream: TcpStream,
+    work: &WorkManager,
+    state: &StateStore,
+) -> Result<(), String> {
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .map_err(|e| format!("failed to set RPC read timeout: {e}"))?;
@@ -121,30 +168,56 @@ fn handle_connection(mut stream: TcpStream, work: &WorkManager) -> Result<(), St
 
     let response = match method {
         "pow_getWork" => {
-            let (generation, header, randomx_seed_height, randomx_seed) = work.current();
-            json!({
+            if work.is_solved()? {
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {
+                        "code": -32001,
+                        "message": "current work template is solved; wait for template refresh"
+                    }
+                })
+            } else {
+                let (generation, header, randomx_seed_height, randomx_seed) = work.current();
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "development": true,
+                        "generation": generation,
+                        "template_id": hex::encode(header.mining_template_id()),
+                        "version": header.version,
+                        "parent_hash": hex::encode(header.parent_hash),
+                        "height": header.height,
+                        "timestamp": header.timestamp,
+                        "transactions_root": hex::encode(header.transactions_root),
+                        "execution_root": hex::encode(header.execution_root),
+                        "target": hex::encode(header.target),
+                        "randomx_seed_height": randomx_seed_height,
+                        "randomx_seed": hex::encode(randomx_seed),
+                        "nonce_start": 0_u64,
+                        "nonce_end": u64::MAX,
+                        "extra_nonce_start": 0_u64,
+                        "extra_nonce_end": u64::MAX
+                    }
+                })
+            }
+        }
+        "pow_submitWork" => match submit_work(&request, work, state) {
+            Ok(result) => json!({
                 "jsonrpc": "2.0",
                 "id": id,
-                "result": {
-                    "development": true,
-                    "generation": generation,
-                    "template_id": hex::encode(header.mining_template_id()),
-                    "version": header.version,
-                    "parent_hash": hex::encode(header.parent_hash),
-                    "height": header.height,
-                    "timestamp": header.timestamp,
-                    "transactions_root": hex::encode(header.transactions_root),
-                    "execution_root": hex::encode(header.execution_root),
-                    "target": hex::encode(header.target),
-                    "randomx_seed_height": randomx_seed_height,
-                    "randomx_seed": hex::encode(randomx_seed),
-                    "nonce_start": 0_u64,
-                    "nonce_end": u64::MAX,
-                    "extra_nonce_start": 0_u64,
-                    "extra_nonce_end": u64::MAX
+                "result": result
+            }),
+            Err(message) => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {
+                    "code": -32002,
+                    "message": message
                 }
-            })
-        }
+            }),
+        },
         _ => json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -167,6 +240,55 @@ fn handle_connection(mut stream: TcpStream, work: &WorkManager) -> Result<(), St
         .write_all(headers.as_bytes())
         .and_then(|_| stream.write_all(&payload))
         .map_err(|e| format!("failed to write RPC response: {e}"))
+}
+
+fn submit_work(request: &Value, work: &WorkManager, state: &StateStore) -> Result<Value, String> {
+    let params = request
+        .get("params")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "pow_submitWork params must be an object".to_string())?;
+
+    let generation = params
+        .get("generation")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| "pow_submitWork generation must be a u64".to_string())?;
+    let template_id = parse_hash32_hex(
+        params
+            .get("template_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "pow_submitWork template_id must be hex".to_string())?,
+    )?;
+    let nonce = params
+        .get("nonce")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| "pow_submitWork nonce must be a u64".to_string())?;
+    let extra_nonce = params
+        .get("extra_nonce")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| "pow_submitWork extra_nonce must be a u64".to_string())?;
+
+    let (header, seed) =
+        work.submission_candidate(generation, template_id, nonce, extra_nonce)?;
+    let verifier = RandomXVerifier::new(seed)?;
+    let pow_hash = verifier.verify_header(&header)?;
+    let persisted = state.insert_chain_block(header)?;
+    work.mark_solved(generation, template_id)?;
+
+    Ok(json!({
+        "accepted": true,
+        "block_id": hex::encode(persisted.block_id()),
+        "pow_hash": hex::encode(pow_hash),
+        "height": persisted.header.height,
+        "cumulative_work": persisted.chain_work.to_str_radix(10)
+    }))
+}
+
+fn parse_hash32_hex(value: &str) -> Result<Hash32, String> {
+    let raw = value.strip_prefix("0x").unwrap_or(value);
+    let bytes = hex::decode(raw).map_err(|e| format!("invalid 32-byte hex value: {e}"))?;
+    bytes
+        .try_into()
+        .map_err(|v: Vec<u8>| format!("expected 32-byte hex value; found {} bytes", v.len()))
 }
 
 #[cfg(test)]
