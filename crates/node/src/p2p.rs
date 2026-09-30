@@ -1,11 +1,92 @@
 use crate::work::{BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
+use crate::state::StateStore;
 use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 pub const DEVNET_MAGIC: [u8; 4] = *b"NIAH";
 pub const PROTOCOL_VERSION: u16 = 1;
 pub const FRAME_HEADER_LEN: usize = 12;
 pub const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 pub const MAX_BLOCKS_PER_MESSAGE: u16 = 128;
+const IO_TIMEOUT: Duration = Duration::from_secs(5);
+
+pub fn spawn(
+    bind: SocketAddr,
+    peers: Vec<SocketAddr>,
+    state: Arc<StateStore>,
+    running: Arc<AtomicBool>,
+) -> Result<JoinHandle<()>, String> {
+    let listener = TcpListener::bind(bind).map_err(io_error)?;
+    listener.set_nonblocking(true).map_err(io_error)?;
+
+    Ok(thread::spawn(move || {
+        for peer in peers {
+            let state = Arc::clone(&state);
+            thread::spawn(move || match TcpStream::connect_timeout(&peer, IO_TIMEOUT) {
+                Ok(stream) => {
+                    if let Err(error) = exchange_hello(stream, &state) {
+                        tracing::warn!(%peer, %error, "outbound P2P handshake failed");
+                    } else {
+                        tracing::info!(%peer, "outbound P2P handshake complete");
+                    }
+                }
+                Err(error) => tracing::warn!(%peer, %error, "failed to connect static P2P peer"),
+            });
+        }
+
+        while running.load(Ordering::SeqCst) {
+            match listener.accept() {
+                Ok((stream, peer)) => {
+                    let state = Arc::clone(&state);
+                    thread::spawn(move || {
+                        if let Err(error) = exchange_hello(stream, &state) {
+                            tracing::warn!(%peer, %error, "inbound P2P handshake failed");
+                        } else {
+                            tracing::info!(%peer, "inbound P2P handshake complete");
+                        }
+                    });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(50));
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "P2P accept failed");
+                    thread::sleep(Duration::from_millis(100));
+                }
+            }
+        }
+    }))
+}
+
+fn exchange_hello(mut stream: TcpStream, state: &StateStore) -> Result<HelloV1, String> {
+    stream.set_read_timeout(Some(IO_TIMEOUT)).map_err(io_error)?;
+    stream.set_write_timeout(Some(IO_TIMEOUT)).map_err(io_error)?;
+    let local = local_hello(state)?;
+    write_message(&mut stream, &MessageV1::Hello(local))?;
+    match read_message(&mut stream)? {
+        MessageV1::Hello(remote) => Ok(remote),
+        _ => Err("peer did not send Hello as its first message".into()),
+    }
+}
+
+fn local_hello(state: &StateStore) -> Result<HelloV1, String> {
+    match state.best_chain_head()? {
+        Some(head) => Ok(HelloV1 {
+            best_height: Some(head.header.height),
+            best_block_id: Some(head.block_id()),
+            cumulative_work: head.chain_work.to_bytes_be(),
+        }),
+        None => Ok(HelloV1 {
+            best_height: None,
+            best_block_id: None,
+            cumulative_work: Vec::new(),
+        }),
+    }
+}
 
 const MSG_HELLO: u16 = 1;
 const MSG_GET_BLOCKS: u16 = 2;
