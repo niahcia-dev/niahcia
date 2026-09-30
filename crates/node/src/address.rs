@@ -148,8 +148,7 @@ mod tests {
             AddressNetwork::Devnet,
         ] {
             for kind in [AddressKind::Account, AddressKind::Contract] {
-                let address =
-                    NiahciaAddressV1::new(network, kind, [0x42; ADDRESS_PAYLOAD_LEN]);
+                let address = NiahciaAddressV1::new(network, kind, [0x42; ADDRESS_PAYLOAD_LEN]);
                 let encoded = address.encode().unwrap();
                 assert_eq!(NiahciaAddressV1::decode(&encoded).unwrap(), address);
                 assert!(encoded.starts_with(network.hrp()));
