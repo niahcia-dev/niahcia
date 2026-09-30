@@ -99,6 +99,7 @@ Implementation details are in:
 - [PoW ↔ Reth interface](docs/pow-reth-interface.md)
 - [Repository family](docs/repository-family.md)
 - [Roadmap](ROADMAP.md)
+- [Ubuntu 26.04 devnet source build](docs/ubuntu-26-devnet-build.md)
 
 ## Build from source
 
