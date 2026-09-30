@@ -199,20 +199,17 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
         };
-        // Rebuild missing canonical execution ancestors in order. A head-only replay
-        // cannot succeed when Reth has also forgotten one of its parents.
-        for height in 0..=head.header.height {
-            let canonical = match state.canonical_block_at_height(height) {
-                Ok(Some(block)) => block,
-                Ok(None) => {
-                    error!(height, "persisted canonical ancestry is incomplete");
-                    return ExitCode::from(1);
-                }
-                Err(e) => {
-                    error!(height, error = %e, "failed to load canonical ancestry for replay");
-                    return ExitCode::from(1);
-                }
-            };
+        // Rebuild missing canonical execution ancestors in oldest-first order.
+        // Walk the persisted best chain once so restart recovery remains O(H).
+        let canonical_chain = match state.canonical_chain() {
+            Ok(chain) => chain,
+            Err(e) => {
+                error!(error = %e, "failed to load canonical ancestry for replay");
+                return ExitCode::from(1);
+            }
+        };
+        for canonical in canonical_chain {
+            let height = canonical.header.height;
             let mapped = match state.execution_hash(canonical.block_id()) {
                 Ok(Some(hash)) => hash,
                 Ok(None) => {
