@@ -487,11 +487,12 @@ impl StateStore {
             let mut blocks = write
                 .open_table(CHAIN_BLOCKS)
                 .map_err(|e| format!("failed to open chain block table: {e}"))?;
-            if let Some(existing) = blocks
+            let existing = blocks
                 .get(block_id.as_slice())
                 .map_err(|e| format!("failed to check existing chain block: {e}"))?
-            {
-                let existing = PersistedChainBlock::decode(existing.value())?;
+                .map(|value| PersistedChainBlock::decode(value.value()))
+                .transpose()?;
+            if let Some(existing) = existing {
                 if existing != record {
                     return Err("block ID collision with different persisted record".into());
                 }
@@ -533,7 +534,8 @@ impl StateStore {
             let meta = write
                 .open_table(CHAIN_META)
                 .map_err(|e| format!("failed to open chain metadata table: {e}"))?;
-            meta.get(BEST_HEAD_KEY)
+            let current = meta
+                .get(BEST_HEAD_KEY)
                 .map_err(|e| format!("failed to read current best head: {e}"))?
                 .map(|best_id| {
                     best_id
@@ -541,7 +543,8 @@ impl StateStore {
                         .try_into()
                         .map_err(|_| "invalid persisted best-head ID length".to_string())
                 })
-                .transpose()?
+                .transpose()?;
+            current
         };
 
         let should_promote = match current_best_id {
