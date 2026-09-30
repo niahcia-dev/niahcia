@@ -14,6 +14,8 @@ pub struct NodeConfig {
     pub fee_recipient: String,
     pub reth_jwt_path: PathBuf,
     pub mining_rpc_bind: SocketAddr,
+    pub p2p_bind: SocketAddr,
+    pub p2p_peers: Vec<SocketAddr>,
     pub log_level: String,
 }
 
@@ -27,6 +29,8 @@ impl Default for NodeConfig {
             fee_recipient: "0x0000000000000000000000000000000000000000".to_string(),
             reth_jwt_path: PathBuf::from("./jwt.hex"),
             mining_rpc_bind: "127.0.0.1:9332".parse().expect("valid default socket"),
+            p2p_bind: "127.0.0.1:9442".parse().expect("valid default P2P socket"),
+            p2p_peers: Vec::new(),
             log_level: "info".to_string(),
         }
     }
@@ -66,6 +70,19 @@ impl NodeConfig {
             cfg.mining_rpc_bind = v
                 .parse()
                 .map_err(|e| format!("invalid NIAHCIA_MINING_RPC_BIND: {e}"))?;
+        }
+        if let Ok(v) = env::var("NIAHCIA_P2P_BIND") {
+            cfg.p2p_bind = v
+                .parse()
+                .map_err(|e| format!("invalid NIAHCIA_P2P_BIND: {e}"))?;
+        }
+        if let Ok(v) = env::var("NIAHCIA_P2P_PEERS") {
+            cfg.p2p_peers = v
+                .split(',')
+                .map(str::trim)
+                .filter(|peer| !peer.is_empty())
+                .map(|peer| peer.parse().map_err(|e| format!("invalid NIAHCIA_P2P_PEERS entry '{peer}': {e}")))
+                .collect::<Result<Vec<_>, _>>()?;
         }
         if let Ok(v) = env::var("NIAHCIA_LOG_LEVEL") {
             cfg.log_level = v;
