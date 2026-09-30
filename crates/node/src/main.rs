@@ -289,19 +289,18 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
-    let rpc_handle =
-        match mining_rpc::spawn(
-            config.mining_rpc_bind,
-            work_manager,
-            Arc::clone(&state),
-            Arc::clone(&running),
-        ) {
-            Ok(handle) => handle,
-            Err(e) => {
-                error!(error = %e, "failed to start mining RPC");
-                return ExitCode::from(1);
-            }
-        };
+    let rpc_handle = match mining_rpc::spawn(
+        config.mining_rpc_bind,
+        work_manager,
+        Arc::clone(&state),
+        Arc::clone(&running),
+    ) {
+        Ok(handle) => handle,
+        Err(e) => {
+            error!(error = %e, "failed to start mining RPC");
+            return ExitCode::from(1);
+        }
+    };
 
     info!("node bootstrap running; press Ctrl-C to stop");
 
