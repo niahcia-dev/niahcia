@@ -200,11 +200,19 @@ impl StateStore {
             let mut table = write
                 .open_table(CHAIN_EXECUTION)
                 .map_err(|e| format!("failed to open chain execution table: {e}"))?;
-            if let Some(existing) = table
+            let existing: Option<Hash32> = table
                 .get(block_id.as_slice())
                 .map_err(|e| format!("failed to read execution mapping: {e}"))?
-            {
-                if existing.value() != execution_hash.as_slice() {
+                .map(|value| {
+                    value
+                        .value()
+                        .try_into()
+                        .map_err(|_| "invalid persisted execution hash length".to_string())
+                })
+                .transpose()?;
+
+            if let Some(existing) = existing {
+                if existing != execution_hash {
                     return Err("NIAHCIA block already maps to a different execution hash".into());
                 }
             } else {
