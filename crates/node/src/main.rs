@@ -199,7 +199,9 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
         };
-        if let Err(e) = engine.set_canonical_head_v3(execution_hash) {
+        if let Err(e) =
+            engine.set_canonical_head_v3_with_sync_retry(execution_hash, 30, Duration::from_secs(1))
+        {
             error!(error = %e, "failed to restore Reth forkchoice from persisted NIAHCIA head");
             return ExitCode::from(1);
         }
