@@ -299,24 +299,46 @@ impl EngineClient {
     }
 
     pub fn set_canonical_head_v3(&self, head: Hash32) -> Result<(), String> {
+        self.set_canonical_head_v3_with_sync_retry(head, 0, Duration::ZERO)
+    }
+
+    pub fn set_canonical_head_v3_with_sync_retry(
+        &self,
+        head: Hash32,
+        sync_retries: u32,
+        retry_delay: Duration,
+    ) -> Result<(), String> {
         let head_hex = hex32(head);
         let forkchoice = json!({
             "headBlockHash": head_hex,
             "safeBlockHash": head_hex,
             "finalizedBlockHash": head_hex
         });
-        let result =
-            self.engine_request("engine_forkchoiceUpdatedV3", json!([forkchoice, null]))?;
-        let status = result
-            .pointer("/payloadStatus/status")
-            .and_then(Value::as_str)
-            .ok_or_else(|| format!("forkchoice response missing payloadStatus.status: {result}"))?;
-        if status != "VALID" {
-            return Err(format!(
-                "Reth rejected canonical head with status {status}: {result}"
-            ));
+
+        for attempt in 0..=sync_retries {
+            let result = self.engine_request(
+                "engine_forkchoiceUpdatedV3",
+                json!([forkchoice.clone(), null]),
+            )?;
+            let status = result
+                .pointer("/payloadStatus/status")
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    format!("forkchoice response missing payloadStatus.status: {result}")
+                })?;
+
+            match status {
+                "VALID" => return Ok(()),
+                "SYNCING" if attempt < sync_retries => std::thread::sleep(retry_delay),
+                _ => {
+                    return Err(format!(
+                        "Reth rejected canonical head with status {status}: {result}"
+                    ));
+                }
+            }
         }
-        Ok(())
+
+        unreachable!("forkchoice retry loop always returns")
     }
 
     fn engine_request(&self, method: &str, params: Value) -> Result<Value, String> {
