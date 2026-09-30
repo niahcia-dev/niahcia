@@ -44,8 +44,12 @@ pub fn write_message(mut writer: impl Write, message: &MessageV1) -> Result<(), 
         return Err("P2P frame payload exceeds protocol maximum".into());
     }
     writer.write_all(&DEVNET_MAGIC).map_err(io_error)?;
-    writer.write_all(&PROTOCOL_VERSION.to_be_bytes()).map_err(io_error)?;
-    writer.write_all(&message_type.to_be_bytes()).map_err(io_error)?;
+    writer
+        .write_all(&PROTOCOL_VERSION.to_be_bytes())
+        .map_err(io_error)?;
+    writer
+        .write_all(&message_type.to_be_bytes())
+        .map_err(io_error)?;
     writer
         .write_all(&(payload.len() as u32).to_be_bytes())
         .map_err(io_error)?;
@@ -60,7 +64,9 @@ pub fn read_message(mut reader: impl Read) -> Result<MessageV1, String> {
     }
     let version = u16::from_be_bytes(header[4..6].try_into().unwrap());
     if version != PROTOCOL_VERSION {
-        return Err(format!("unsupported NIAHCIA P2P protocol version {version}"));
+        return Err(format!(
+            "unsupported NIAHCIA P2P protocol version {version}"
+        ));
     }
     let message_type = u16::from_be_bytes(header[6..8].try_into().unwrap());
     let payload_len = u32::from_be_bytes(header[8..12].try_into().unwrap()) as usize;
@@ -86,7 +92,11 @@ fn encode_message(message: &MessageV1) -> Result<(u16, Vec<u8>), String> {
                     out.extend_from_slice(&height.to_be_bytes());
                     out.extend_from_slice(&block_id);
                 }
-                _ => return Err("Hello best height and block ID must both be present or absent".into()),
+                _ => {
+                    return Err(
+                        "Hello best height and block ID must both be present or absent".into(),
+                    )
+                }
             }
             out.extend_from_slice(&(hello.cumulative_work.len() as u16).to_be_bytes());
             out.extend_from_slice(&hello.cumulative_work);
@@ -145,7 +155,10 @@ fn decode_message(message_type: u16, payload: &[u8]) -> Result<MessageV1, String
             if count == 0 || count > MAX_BLOCKS_PER_MESSAGE {
                 return Err("GetBlocks count is outside protocol bounds".into());
             }
-            MessageV1::GetBlocks(GetBlocksV1 { start_height, count })
+            MessageV1::GetBlocks(GetBlocksV1 {
+                start_height,
+                count,
+            })
         }
         MSG_BLOCKS => {
             let count = cursor.u16()? as usize;
@@ -154,7 +167,8 @@ fn decode_message(message_type: u16, payload: &[u8]) -> Result<MessageV1, String
             }
             let mut blocks = Vec::with_capacity(count);
             for _ in 0..count {
-                let header = BlockHeaderV1::from_canonical_bytes(cursor.bytes(BLOCK_HEADER_V1_LEN)?)?;
+                let header =
+                    BlockHeaderV1::from_canonical_bytes(cursor.bytes(BLOCK_HEADER_V1_LEN)?)?;
                 let execution_hash = cursor.hash32()?;
                 let replay_len = cursor.u32()? as usize;
                 let replay_payload = cursor.bytes(replay_len)?.to_vec();
@@ -293,15 +307,21 @@ mod tests {
 
         let mut wrong_magic = encoded.clone();
         wrong_magic[0] ^= 0xff;
-        assert!(read_message(wrong_magic.as_slice()).unwrap_err().contains("magic"));
+        assert!(read_message(wrong_magic.as_slice())
+            .unwrap_err()
+            .contains("magic"));
 
         let mut wrong_version = encoded.clone();
         wrong_version[4..6].copy_from_slice(&2_u16.to_be_bytes());
-        assert!(read_message(wrong_version.as_slice()).unwrap_err().contains("version"));
+        assert!(read_message(wrong_version.as_slice())
+            .unwrap_err()
+            .contains("version"));
 
         let mut oversized = encoded[..FRAME_HEADER_LEN].to_vec();
         oversized[8..12].copy_from_slice(&((MAX_FRAME_PAYLOAD + 1) as u32).to_be_bytes());
-        assert!(read_message(oversized.as_slice()).unwrap_err().contains("maximum"));
+        assert!(read_message(oversized.as_slice())
+            .unwrap_err()
+            .contains("maximum"));
     }
 
     #[test]
@@ -331,7 +351,9 @@ mod tests {
         let payload_len = u32::from_be_bytes(trailing[8..12].try_into().unwrap());
         trailing[8..12].copy_from_slice(&(payload_len + 1).to_be_bytes());
         trailing.push(0);
-        assert!(read_message(trailing.as_slice()).unwrap_err().contains("trailing"));
+        assert!(read_message(trailing.as_slice())
+            .unwrap_err()
+            .contains("trailing"));
 
         assert!(write_message(
             Vec::new(),
