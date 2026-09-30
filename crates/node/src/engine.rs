@@ -634,7 +634,9 @@ mod tests {
             std::process::id(),
             "prefixed"
         ));
-        fs::write(&path, format!(concat!("0x{}", "\\n"), "11".repeat(32))).unwrap();
+        let mut fixture = format!("0x{}", "11".repeat(32)).into_bytes();
+        fixture.push(b'\n');
+        fs::write(&path, fixture).unwrap();
 
         let secret = load_jwt_secret(&path).unwrap();
         assert_eq!(secret, vec![0x11; 32]);
@@ -649,7 +651,9 @@ mod tests {
             std::process::id(),
             "short"
         ));
-        fs::write(&path, concat!("abcd", "\\n")).unwrap();
+        let mut fixture = b"abcd".to_vec();
+        fixture.push(b'\n');
+        fs::write(&path, fixture).unwrap();
 
         let error = load_jwt_secret(&path).unwrap_err();
         assert!(error.contains("at least 32 bytes"));
