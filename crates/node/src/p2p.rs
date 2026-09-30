@@ -145,8 +145,7 @@ fn sync_peer(
     let Some(remote_height) = remote.best_height else {
         return Ok(());
     };
-    let local_height = state.best_chain_head()?.map(|head| head.header.height);
-    let mut start_height = local_height.map_or(0, |height| height.saturating_add(1));
+    let mut start_height = find_sync_start(&mut stream, state, remote_height)?;
 
     while start_height <= remote_height {
         write_message(
@@ -171,6 +170,47 @@ fn sync_peer(
             .ok_or_else(|| "P2P sync height overflow".to_string())?;
     }
     Ok(())
+}
+
+fn find_sync_start(
+    stream: &mut TcpStream,
+    state: &StateStore,
+    remote_height: u64,
+) -> Result<u64, String> {
+    let Some(local_head) = state.best_chain_head()? else {
+        return Ok(0);
+    };
+
+    let mut height = local_head.header.height.min(remote_height);
+    loop {
+        write_message(
+            stream,
+            &MessageV1::GetBlocks(GetBlocksV1 {
+                start_height: height,
+                count: 1,
+            }),
+        )?;
+        let blocks = match read_message(stream)? {
+            MessageV1::Blocks(blocks) => blocks,
+            _ => return Err("peer did not answer common-ancestor probe with Blocks".into()),
+        };
+        let Some(remote_block) = blocks.first() else {
+            return Err("peer returned no block for common-ancestor probe".into());
+        };
+        let local_block = state
+            .canonical_block_at_height(height)?
+            .ok_or_else(|| format!("local canonical chain is missing height {height}"))?;
+
+        if local_block.block_id() == remote_block.header.block_id() {
+            return height
+                .checked_add(1)
+                .ok_or_else(|| "P2P sync height overflow".to_string());
+        }
+        if height == 0 {
+            return Err("peer does not share the local canonical genesis".into());
+        }
+        height -= 1;
+    }
 }
 
 fn ingest_blocks(
