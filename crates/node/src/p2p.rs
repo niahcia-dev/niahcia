@@ -170,10 +170,7 @@ fn ingest_blocks(
         let seed_block_id = if transfer.header.height == 0 {
             [0_u8; 32]
         } else {
-            state
-                .canonical_block_at_height(seed_height)?
-                .ok_or_else(|| format!("missing RandomX seed block {seed_height}"))?
-                .block_id()
+            ancestor_block_id_at_height(state, transfer.header.parent_hash, seed_height)?
         };
         let seed = randomx_seed(seed_block_id);
         validate_block_candidate(&transfer.header, seed, state)?;
@@ -186,6 +183,27 @@ fn ingest_blocks(
         }
     }
     Ok(())
+}
+
+fn ancestor_block_id_at_height(
+    state: &StateStore,
+    mut block_id: Hash32,
+    target_height: u64,
+) -> Result<Hash32, String> {
+    loop {
+        let block = state
+            .load_chain_block(block_id)?
+            .ok_or_else(|| "candidate ancestry references missing block".to_string())?;
+        if block.header.height == target_height {
+            return Ok(block.block_id());
+        }
+        if block.header.height < target_height || block.header.height == 0 {
+            return Err(format!(
+                "candidate ancestry does not contain RandomX seed height {target_height}"
+            ));
+        }
+        block_id = block.header.parent_hash;
+    }
 }
 
 fn canonical_transfer_range(
