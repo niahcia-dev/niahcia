@@ -19,6 +19,7 @@ pub struct BuiltExecutionPayload {
     pub execution_payload_hash: Hash32,
     execution_payload: Value,
     parent_beacon_block_root: Hash32,
+    execution_requests: Value,
 }
 
 #[derive(Debug)]
@@ -58,8 +59,8 @@ impl EngineClient {
         let offered = vec![
             "engine_exchangeCapabilities",
             "engine_forkchoiceUpdatedV3",
-            "engine_getPayloadV3",
-            "engine_newPayloadV3",
+            "engine_getPayloadV4",
+            "engine_newPayloadV4",
         ];
 
         let result = self.engine_request("engine_exchangeCapabilities", json!([offered]))?;
@@ -140,10 +141,10 @@ impl EngineClient {
             .and_then(Value::as_str)
             .ok_or_else(|| format!("forkchoice response missing payloadId: {update}"))?;
 
-        let envelope = self.engine_request("engine_getPayloadV3", json!([payload_id]))?;
+        let envelope = self.engine_request("engine_getPayloadV4", json!([payload_id]))?;
         let payload = envelope
             .get("executionPayload")
-            .ok_or_else(|| format!("engine_getPayloadV3 missing executionPayload: {envelope}"))?;
+            .ok_or_else(|| format!("engine_getPayloadV4 missing executionPayload: {envelope}"))?;
 
         let parent_hash = parse_hash32(field_str(payload, "parentHash")?)?;
         if parent_hash != parent.hash {
@@ -151,6 +152,10 @@ impl EngineClient {
         }
 
         let execution_payload_hash = parse_hash32(field_str(payload, "blockHash")?)?;
+        let execution_requests = envelope
+            .get("executionRequests")
+            .cloned()
+            .ok_or_else(|| format!("engine_getPayloadV4 missing executionRequests: {envelope}"))?;
         let transactions_root = transaction_merkle_root(payload)?;
 
         Ok(BuiltExecutionPayload {
@@ -169,22 +174,24 @@ impl EngineClient {
             execution_payload_hash,
             execution_payload: payload.clone(),
             parent_beacon_block_root: [0_u8; 32],
+            execution_requests,
         })
     }
 
     pub fn validate_payload_v3(&self, built: &BuiltExecutionPayload) -> Result<(), String> {
         let result = self.engine_request(
-            "engine_newPayloadV3",
+            "engine_newPayloadV4",
             json!([
                 built.execution_payload,
                 [],
-                hex32(built.parent_beacon_block_root)
+                hex32(built.parent_beacon_block_root),
+                built.execution_requests
             ]),
         )?;
         let status = result
             .get("status")
             .and_then(Value::as_str)
-            .ok_or_else(|| format!("engine_newPayloadV3 response missing status: {result}"))?;
+            .ok_or_else(|| format!("engine_newPayloadV4 response missing status: {result}"))?;
 
         if status != "VALID" {
             return Err(format!(
