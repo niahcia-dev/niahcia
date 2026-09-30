@@ -157,6 +157,48 @@ mod tests {
     }
 
     #[test]
+    fn canonical_zero_payload_vectors_are_stable() {
+        let vectors = [
+            (
+                AddressNetwork::Mainnet,
+                AddressKind::Account,
+                "niah1qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg6tnyn",
+            ),
+            (
+                AddressNetwork::Mainnet,
+                AddressKind::Contract,
+                "niah1qyqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqquk68t8",
+            ),
+            (
+                AddressNetwork::Testnet,
+                AddressKind::Account,
+                "tniah1qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqugtn3d",
+            ),
+            (
+                AddressNetwork::Testnet,
+                AddressKind::Contract,
+                "tniah1qyqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqgy687e",
+            ),
+            (
+                AddressNetwork::Devnet,
+                AddressKind::Account,
+                "dniah1qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqw26l4w",
+            ),
+            (
+                AddressNetwork::Devnet,
+                AddressKind::Contract,
+                "dniah1qyqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6xtt66",
+            ),
+        ];
+
+        for (network, kind, expected) in vectors {
+            let address = NiahciaAddressV1::new(network, kind, [0u8; ADDRESS_PAYLOAD_LEN]);
+            assert_eq!(address.encode().unwrap(), expected);
+            assert_eq!(NiahciaAddressV1::decode(expected).unwrap(), address);
+        }
+    }
+
+    #[test]
     fn networks_cannot_be_confused() {
         let payload = [7u8; ADDRESS_PAYLOAD_LEN];
         let main = NiahciaAddressV1::new(AddressNetwork::Mainnet, AddressKind::Account, payload)
