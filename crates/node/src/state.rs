@@ -986,6 +986,68 @@ mod tests {
     }
 
     #[test]
+    fn mined_execution_mapping_follows_competing_chain_promotion() {
+        let path = temp_state_path("mined-execution-reorg");
+        let store = StateStore::open(&path).unwrap();
+
+        let genesis_execution = [0x61; 32];
+        store
+            .store_execution_payload(genesis_execution, b"genesis-replay")
+            .unwrap();
+        let genesis = header([0_u8; 32], 0, [0xff; 32], 1);
+        let genesis_id = genesis.block_id();
+        store
+            .insert_mined_block_with_execution_outcome(genesis, genesis_execution)
+            .unwrap();
+
+        let easy_execution = [0x62; 32];
+        store
+            .store_execution_payload(easy_execution, b"easy-replay")
+            .unwrap();
+        let easy = header(genesis_id, 1, [0xff; 32], 2);
+        let easy_id = easy.block_id();
+        store
+            .insert_mined_block_with_execution_outcome(easy, easy_execution)
+            .unwrap();
+
+        let hard_execution = [0x63; 32];
+        store
+            .store_execution_payload(hard_execution, b"hard-replay")
+            .unwrap();
+        let hard = header(genesis_id, 1, [0x7f; 32], 3);
+        let hard_id = hard.block_id();
+        let outcome = store
+            .insert_mined_block_with_execution_outcome(hard, hard_execution)
+            .unwrap();
+
+        assert_eq!(outcome.previous_best, Some(easy_id));
+        assert_eq!(outcome.current_best, hard_id);
+        let reorg = outcome.reorg.unwrap();
+        assert_eq!(reorg.common_ancestor, genesis_id);
+        assert_eq!(reorg.detached, vec![easy_id]);
+        assert_eq!(reorg.attached, vec![hard_id]);
+
+        assert_eq!(
+            store.execution_hash(genesis_id).unwrap(),
+            Some(genesis_execution)
+        );
+        assert_eq!(store.execution_hash(easy_id).unwrap(), Some(easy_execution));
+        assert_eq!(store.execution_hash(hard_id).unwrap(), Some(hard_execution));
+        assert_eq!(
+            store.best_chain_head().unwrap().unwrap().block_id(),
+            hard_id
+        );
+        assert_eq!(
+            store
+                .execution_hash(store.best_chain_head().unwrap().unwrap().block_id())
+                .unwrap(),
+            Some(hard_execution)
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn canonical_reorg_reports_detached_and_attached_paths() {
         let path = temp_state_path("chain-reorg");
         let store = StateStore::open(&path).unwrap();
