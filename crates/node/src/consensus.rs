@@ -10,7 +10,9 @@ pub const MAX_FUTURE_DRIFT: u64 = 90;
 pub const ASERT_HALF_LIFE: i128 = 4_320;
 pub const ASERT_RADIX: i128 = 65_536;
 
-const RANDOMX_SEED_DOMAIN: &[u8] = b"NIAHCIA/RANDOMX-SEED/V1";\n\n/// Devnet V1 launches at the easiest representable target. This is intentionally
+const RANDOMX_SEED_DOMAIN: &[u8] = b"NIAHCIA/RANDOMX-SEED/V1";
+
+/// Devnet V1 launches at the easiest representable target. This is intentionally
 /// a resettable development-network parameter, not a testnet/mainnet freeze.
 pub const DEVNET_POW_LIMIT: Hash32 = [0xff; 32];
 pub const DEVNET_GENESIS_TARGET: Hash32 = DEVNET_POW_LIMIT;
