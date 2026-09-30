@@ -411,7 +411,7 @@ fn install_next_work(
     Ok(())
 }
 
-fn validate_block_candidate(
+pub(crate) fn validate_block_candidate(
     header: &BlockHeaderV1,
     seed: Hash32,
     state: &StateStore,
