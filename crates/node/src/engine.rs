@@ -326,7 +326,11 @@ impl EngineClient {
             .map_err(|e| format!("failed to encode replay payload: {e}"))
     }
 
-    pub fn replay_execution_payload(\n        &self,\n        encoded: &[u8],\n        expected_hash: Hash32,\n    ) -> Result<(), String> {
+    pub fn replay_execution_payload(
+        &self,
+        encoded: &[u8],
+        expected_hash: Hash32,
+    ) -> Result<(), String> {
         let replay: ReplayPayload = serde_json::from_slice(encoded)
             .map_err(|e| format!("invalid persisted replay payload: {e}"))?;
         if replay.execution_payload_hash != expected_hash {
@@ -334,7 +338,9 @@ impl EngineClient {
         }
         let actual_hash = parse_hash32(field_str(&replay.execution_payload, "blockHash")?)?;
         if actual_hash != expected_hash {
-            return Err(\n                "persisted replay payload blockHash does not match canonical mapping".into(),\n            );
+            return Err(
+                "persisted replay payload blockHash does not match canonical mapping".into(),
+            );
         }
         let result = match replay.engine_version {
             5 | 4 => self.engine_request(
@@ -343,7 +349,9 @@ impl EngineClient {
                     replay.execution_payload,
                     replay.versioned_hashes,
                     hex32(replay.parent_beacon_block_root),
-                    replay\n                        .execution_requests\n                        .ok_or_else(|| "replay missing executionRequests".to_string())?
+                    replay
+                        .execution_requests
+                        .ok_or_else(|| "replay missing executionRequests".to_string())?
                 ]),
             )?,
             3 => self.engine_request(
@@ -359,7 +367,9 @@ impl EngineClient {
         let status = result.get("status").and_then(Value::as_str)
             .ok_or_else(|| format!("replay response missing status: {result}"))?;
         if status != "VALID" {
-            return Err(format!(\n                "Reth rejected persisted execution replay with status {status}: {result}"\n            ));
+            return Err(format!(
+                "Reth rejected persisted execution replay with status {status}: {result}"
+            ));
         }
         let valid_hash = parse_hash32(
             result.get("latestValidHash").and_then(Value::as_str)
@@ -618,7 +628,8 @@ mod tests {
             std::process::id(),
             "prefixed"
         ));
-        fs::write(&path, format!("0x{}\n", "11".repeat(32))).unwrap();
+        fs::write(&path, format!("0x{}
+", "11".repeat(32))).unwrap();
 
         let secret = load_jwt_secret(&path).unwrap();
         assert_eq!(secret, vec![0x11; 32]);
@@ -633,7 +644,8 @@ mod tests {
             std::process::id(),
             "short"
         ));
-        fs::write(&path, "abcd\n").unwrap();
+        fs::write(&path, "abcd
+").unwrap();
 
         let error = load_jwt_secret(&path).unwrap_err();
         assert!(error.contains("at least 32 bytes"));
