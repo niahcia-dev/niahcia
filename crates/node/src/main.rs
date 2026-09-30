@@ -457,6 +457,8 @@ fn main() -> ExitCode {
         config.p2p_peers.clone(),
         Arc::clone(&state),
         Arc::clone(&engine),
+        work_manager.clone(),
+        fee_recipient,
         Arc::clone(&running),
     ) {
         Ok(handle) => handle,
