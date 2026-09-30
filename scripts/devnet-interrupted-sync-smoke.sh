@@ -95,15 +95,34 @@ mine_a() { mine_on "$A_MINING"; }
 mine_b() { mine_on "$B_MINING"; }
 
 wait_equal_work() {
-  for _ in $(seq 1 120); do
+  local timeout="${NIAHCIA_INTERRUPTED_SYNC_TIMEOUT:-600}"
+  local last_b="" stalled=0
+  for ((elapsed=0; elapsed<timeout; elapsed++)); do
     local a_work b_work a_height b_height a_parent b_parent
     a_work="$(rpc "$A_MINING" pow_getWork '{}')"; b_work="$(rpc "$B_MINING" pow_getWork '{}')"
     a_height="$(jq -r '.result.height' <<<"$a_work")"; b_height="$(jq -r '.result.height' <<<"$b_work")"
     a_parent="$(jq -r '.result.parent_hash' <<<"$a_work")"; b_parent="$(jq -r '.result.parent_hash' <<<"$b_work")"
     if [[ "$a_height" == "$b_height" && "$a_parent" == "$b_parent" ]]; then echo "$a_height"; return 0; fi
+    if [[ "$b_height" == "$last_b" ]]; then
+      stalled=$((stalled + 1))
+    else
+      if (( elapsed == 0 || b_height % 20 == 0 || stalled >= 10 )); then
+        echo "B recovery progress: next work height $b_height/$a_height" >&2
+      fi
+      last_b="$b_height"
+      stalled=0
+    fi
+    if ! kill -0 "$b_pid" 2>/dev/null; then
+      echo "Node B exited while recovering interrupted sync" >&2
+      cat "$tmp/niahcia-b.log" >&2
+      return 1
+    fi
     sleep 1
   done
-  echo "Node B did not reach Node A canonical NIAHCIA tip" >&2; cat "$tmp/niahcia-b.log" >&2; return 1
+  echo "Node B did not reach Node A canonical NIAHCIA tip within ${timeout}s" >&2
+  echo "Final recovery progress: B=$last_b" >&2
+  cat "$tmp/niahcia-b.log" >&2
+  return 1
 }
 
 command -v curl >/dev/null; command -v jq >/dev/null
