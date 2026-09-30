@@ -84,6 +84,18 @@ Acceptance target:
 - A miner can connect to either node.
 - Restarting one node does not destroy network continuity.
 
+Current verified devnet result:
+
+- independent Reth A / NIAHCIA A and Reth B / NIAHCIA B state directories
+- Node A mined heights 0, 1, and 2
+- Node B synchronized to the same NIAHCIA canonical tip over the native P2P protocol
+- Node B was stopped, Node A mined height 3, and Node B restarted
+- Node B caught up without copying NIAHCIA or Reth state
+- both execution nodes reached canonical execution height 4
+- reproduced with `scripts/devnet-two-node-smoke.sh`
+
+This proves linear two-node synchronization and restart catch-up. Fork discovery/common-ancestor synchronization and live reorg convergence remain required before v0.3.0 is complete.
+
 ## v0.4.0 — EVM Usable Network
 
 Goal: ordinary Ethereum-style transactions and Solidity contracts work on the CPU-PoW network.
