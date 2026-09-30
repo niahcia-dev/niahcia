@@ -222,7 +222,7 @@ fn handle_connection(
                 })
             }
         }
-        "pow_submitWork" => match submit_work(&request, work, state, engine) {
+        "pow_submitWork" => match submit_work(&request, work, state, Some(engine)) {
             Ok(result) => json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -265,7 +265,7 @@ fn submit_work(
     request: &Value,
     work: &WorkManager,
     state: &StateStore,
-    engine: &EngineClient,
+    engine: Option<&EngineClient>,
 ) -> Result<Value, String> {
     let params = request
         .get("params")
@@ -297,7 +297,9 @@ fn submit_work(
     let outcome = state.insert_chain_block_with_outcome(header)?;
     state.store_execution_hash(outcome.block.block_id(), execution_hash)?;
     if outcome.current_best == outcome.block.block_id() {
-        engine.set_canonical_head_v3(execution_hash)?;
+        if let Some(engine) = engine {
+            engine.set_canonical_head_v3(execution_hash)?;
+        }
     }
     work.mark_solved(generation, template_id)?;
 
@@ -448,7 +450,7 @@ mod tests {
             nonce: 0,
             extra_nonce: 0,
         };
-        let manager = WorkManager::new(header.clone(), 0, [0x42; 32]);
+        let manager = WorkManager::new(header.clone(), 0, [0x42; 32], [0x99; 32]);
         let template_id = header.mining_template_id();
 
         let request = json!({
@@ -460,7 +462,7 @@ mod tests {
             }
         });
 
-        let result = submit_work(&request, &manager, &store).unwrap();
+        let result = submit_work(&request, &manager, &store, None).unwrap();
         assert_eq!(result["accepted"], true);
 
         let mut solved = header;
@@ -472,7 +474,7 @@ mod tests {
         assert_eq!(result["current_best"], hex::encode(solved.block_id()));
         assert!(manager.is_solved().unwrap());
 
-        let duplicate = submit_work(&request, &manager, &store).unwrap_err();
+        let duplicate = submit_work(&request, &manager, &store, None).unwrap_err();
         assert_eq!(duplicate, "current work template is already solved");
 
         let _ = std::fs::remove_file(path);
@@ -497,7 +499,7 @@ mod tests {
             nonce: 0,
             extra_nonce: 0,
         };
-        let manager = WorkManager::new(header.clone(), 0, [0x42; 32]);
+        let manager = WorkManager::new(header.clone(), 0, [0x42; 32], [0x99; 32]);
         let request = json!({
             "params": {
                 "generation": 0,
@@ -507,7 +509,7 @@ mod tests {
             }
         });
 
-        assert!(submit_work(&request, &manager, &store)
+        assert!(submit_work(&request, &manager, &store, None)
             .unwrap_err()
             .contains("exceeds maximum future time"));
         assert!(store.best_chain_head().unwrap().is_none());
@@ -531,7 +533,7 @@ mod tests {
             nonce: 0,
             extra_nonce: 0,
         };
-        let manager = WorkManager::new(header, 0, [0x42; 32]);
+        let manager = WorkManager::new(header, 0, [0x42; 32], [0x99; 32]);
 
         let request = json!({
             "params": {
@@ -543,7 +545,7 @@ mod tests {
         });
 
         assert_eq!(
-            submit_work(&request, &manager, &store).unwrap_err(),
+            submit_work(&request, &manager, &store, None).unwrap_err(),
             "stale mining work"
         );
         assert!(store.best_chain_head().unwrap().is_none());
@@ -553,7 +555,7 @@ mod tests {
 
     #[test]
     fn replacing_work_marks_previous_generation_stale() {
-        let manager = WorkManager::new(header(1), 0, [0x33; 32]);
+        let manager = WorkManager::new(header(1), 0, [0x33; 32], [0x99; 32]);
         let (generation, current, _, _) = manager.current();
         let old_id = current.mining_template_id();
 
