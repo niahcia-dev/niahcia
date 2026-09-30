@@ -238,14 +238,14 @@ impl EngineClient {
 
         let result = match built.engine_version {
             5 => self.engine_request(
-                "engine_newPayloadV5",
+                "engine_newPayloadV4",
                 json!([
                     built.execution_payload,
                     built.versioned_hashes,
                     hex32(built.parent_beacon_block_root),
                     built.execution_requests
                         .clone()
-                        .ok_or_else(|| "Engine API V5 payload missing executionRequests".to_string())?
+                        .ok_or_else(|| "Engine API getPayloadV5 result missing executionRequests".to_string())?
                 ]),
             )?,
             4 => self.engine_request(
@@ -267,7 +267,7 @@ impl EngineClient {
                     hex32(built.parent_beacon_block_root)
                 ]),
             )?,
-            version => return Err(format!("unsupported cached Engine API payload version {version}")),
+            version => return Err(format!("unsupported cached Engine API getPayload version {version}")),
         };
         let status = result
             .get("status")
