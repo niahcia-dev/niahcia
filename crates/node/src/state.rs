@@ -257,6 +257,27 @@ impl StateStore {
         }))
     }
 
+    pub fn canonical_block_at_height(
+        &self,
+        height: u64,
+    ) -> Result<Option<PersistedChainBlock>, String> {
+        let Some(mut cursor) = self.best_chain_head()? else {
+            return Ok(None);
+        };
+
+        if height > cursor.header.height {
+            return Ok(None);
+        }
+
+        while cursor.header.height > height {
+            cursor = self
+                .load_chain_block(cursor.header.parent_hash)?
+                .ok_or_else(|| "best-chain ancestry references missing parent".to_string())?;
+        }
+
+        Ok(Some(cursor))
+    }
+
     pub fn is_on_best_chain(&self, block_id: Hash32) -> Result<bool, String> {
         let Some(mut cursor) = self.best_chain_head()? else {
             return Ok(false);
@@ -570,6 +591,23 @@ mod tests {
             assert_eq!(best.block_id(), hard_child_id);
             assert_eq!(best.header.height, 1);
             assert!(reopened.is_on_best_chain(hard_child_id).unwrap());
+            assert_eq!(
+                reopened
+                    .canonical_block_at_height(0)
+                    .unwrap()
+                    .unwrap()
+                    .block_id(),
+                genesis_id
+            );
+            assert_eq!(
+                reopened
+                    .canonical_block_at_height(1)
+                    .unwrap()
+                    .unwrap()
+                    .block_id(),
+                hard_child_id
+            );
+            assert!(reopened.canonical_block_at_height(2).unwrap().is_none());
             assert_eq!(
                 reopened
                     .load_chain_block(genesis_id)
