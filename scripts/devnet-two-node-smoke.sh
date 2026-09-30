@@ -60,14 +60,19 @@ start_node() {
   wait_rpc "$mining" pow_getWork '{}'
 }
 
+stop_a() { kill -INT "$a_pid"; wait "$a_pid"; a_pid=""; }
 stop_b() { kill -INT "$b_pid"; wait "$b_pid"; b_pid=""; }
 
-mine_a() {
+mine_on() {
+  local mining="$1"
   local work gen template height result
-  work="$(rpc "$A_MINING" pow_getWork '{}')"; gen="$(jq -r '.result.generation' <<<"$work")"; template="$(jq -r '.result.template_id' <<<"$work")"; height="$(jq -r '.result.height' <<<"$work")"
-  result="$(rpc "$A_MINING" pow_submitWork "$(jq -nc --argjson generation "$gen" --arg template_id "$template" '{generation:$generation,template_id:$template_id,nonce:0,extra_nonce:0}')")"
+  work="$(rpc "$mining" pow_getWork '{}')"; gen="$(jq -r '.result.generation' <<<"$work")"; template="$(jq -r '.result.template_id' <<<"$work")"; height="$(jq -r '.result.height' <<<"$work")"
+  result="$(rpc "$mining" pow_submitWork "$(jq -nc --argjson generation "$gen" --arg template_id "$template" '{generation:$generation,template_id:$template_id,nonce:0,extra_nonce:0}')")"
   jq -e '.result.accepted == true and .result.became_canonical == true' <<<"$result" >/dev/null; echo "$height"
 }
+
+mine_a() { mine_on "$A_MINING"; }
+mine_b() { mine_on "$B_MINING"; }
 
 wait_equal_work() {
   for _ in $(seq 1 120); do
@@ -107,3 +112,22 @@ a_reth="$(rpc "$A_RETH_HTTP" eth_blockNumber '[]' | jq -r '.result')"; b_reth="$
 
 echo "PASS: independent two-node P2P sync and restart catch-up succeeded"
 echo "NIAHCIA next work height: $final_height"; echo "Execution canonical height: $a_reth"
+
+echo "Creating competing persisted forks from the shared tip..."
+stop_b
+stop_a
+start_node a "$A_DATA" "$A_RETH_HTTP" "$A_RETH_ENGINE" "$A_MINING" "$A_P2P" ""
+start_node b "$B_DATA" "$B_RETH_HTTP" "$B_RETH_ENGINE" "$B_MINING" "$B_P2P" ""
+echo "Mined isolated B fork height $(mine_b)"
+echo "Mined isolated A fork height $(mine_a)"
+echo "Mined heavier A fork height $(mine_a)"
+stop_b
+
+echo "Restarting B against A to force common-ancestor reorg..."
+start_node b "$B_DATA" "$B_RETH_HTTP" "$B_RETH_ENGINE" "$B_MINING" "$B_P2P" "$A_P2P"
+reorg_height="$(wait_equal_work)"
+a_reth="$(rpc "$A_RETH_HTTP" eth_blockNumber '[]' | jq -r '.result')"; b_reth="$(rpc "$B_RETH_HTTP" eth_blockNumber '[]' | jq -r '.result')"
+[[ "$a_reth" == "$b_reth" ]] || { echo "Execution canonical height mismatch after fork reorg: A=$a_reth B=$b_reth" >&2; exit 1; }
+
+echo "PASS: divergent NIAHCIA fork converged to the higher-work canonical chain"
+echo "NIAHCIA next work height after reorg: $reorg_height"; echo "Execution canonical height after reorg: $a_reth"
