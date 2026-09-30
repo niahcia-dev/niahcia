@@ -370,7 +370,9 @@ impl StateStore {
                     .get(best_id.as_slice())
                     .map_err(|e| format!("failed to read current best block: {e}"))?
                     .ok_or_else(|| "best-head metadata references missing block".to_string())?;
-                record.chain_work > PersistedChainBlock::decode(best.value())?.chain_work
+                let best = PersistedChainBlock::decode(best.value())?;
+                record.chain_work > best.chain_work
+                    || (record.chain_work == best.chain_work && block_id < best_id)
             }
             None => true,
         };
@@ -512,6 +514,36 @@ mod tests {
             nonce: marker as u64,
             extra_nonce: 0,
         }
+    }
+
+    #[test]
+    fn equal_work_tie_break_is_block_id_order() {
+        let path = temp_state_path("equal-work-tie-break");
+        let store = StateStore::open(&path).unwrap();
+
+        let genesis = header([0_u8; 32], 0, [0xff; 32], 1);
+        let genesis_id = genesis.block_id();
+        store.insert_chain_block(genesis).unwrap();
+
+        let left = header(genesis_id, 1, [0xff; 32], 2);
+        let right = header(genesis_id, 1, [0xff; 32], 3);
+        let left_id = left.block_id();
+        let right_id = right.block_id();
+
+        let (first, first_id, second, second_id) = if left_id > right_id {
+            (left, left_id, right, right_id)
+        } else {
+            (right, right_id, left, left_id)
+        };
+
+        store.insert_chain_block(first).unwrap();
+        assert_eq!(store.best_chain_head().unwrap().unwrap().block_id(), first_id);
+
+        store.insert_chain_block(second).unwrap();
+        assert_eq!(store.best_chain_head().unwrap().unwrap().block_id(), second_id);
+        assert!(second_id < first_id);
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
