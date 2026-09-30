@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct LatestBlock {
@@ -19,6 +20,9 @@ pub struct BuiltExecutionPayload {
     pub execution_payload_hash: Hash32,
     execution_payload: Value,
     parent_beacon_block_root: Hash32,
+    execution_requests: Option<Value>,
+    versioned_hashes: Value,
+    engine_version: u8,
 }
 
 #[derive(Debug)]
@@ -60,6 +64,10 @@ impl EngineClient {
             "engine_forkchoiceUpdatedV3",
             "engine_getPayloadV3",
             "engine_newPayloadV3",
+            "engine_getPayloadV4",
+            "engine_newPayloadV4",
+            "engine_getPayloadV5",
+            "engine_newPayloadV5",
         ];
 
         let result = self.engine_request("engine_exchangeCapabilities", json!([offered]))?;
@@ -104,6 +112,7 @@ impl EngineClient {
         let parent_hex = hex32(parent.hash);
         let fee_hex = format!("0x{}", hex::encode(fee_recipient));
         let zero32 = format!("0x{}", "00".repeat(32));
+        let parent_beacon_block_root = parse_hash32(&zero32)?;
 
         let forkchoice = json!({
             "headBlockHash": parent_hex,
@@ -118,6 +127,12 @@ impl EngineClient {
             "withdrawals": [],
             "parentBeaconBlockRoot": zero32
         });
+
+        debug!(
+            forkchoice = %forkchoice,
+            attributes = %attributes,
+            "submitting forkchoice payload attributes"
+        );
 
         let update = self.engine_request(
             "engine_forkchoiceUpdatedV3",
@@ -140,10 +155,28 @@ impl EngineClient {
             .and_then(Value::as_str)
             .ok_or_else(|| format!("forkchoice response missing payloadId: {update}"))?;
 
-        let envelope = self.engine_request("engine_getPayloadV3", json!([payload_id]))?;
-        let payload = envelope
-            .get("executionPayload")
-            .ok_or_else(|| format!("engine_getPayloadV3 missing executionPayload: {envelope}"))?;
+        let (envelope, engine_version) = match self
+            .engine_request("engine_getPayloadV5", json!([payload_id]))
+        {
+            Ok(envelope) => (envelope, 5_u8),
+            Err(v5_error) if v5_error.contains("Unsupported fork") => {
+                match self.engine_request("engine_getPayloadV4", json!([payload_id])) {
+                    Ok(envelope) => (envelope, 4_u8),
+                    Err(v4_error) if v4_error.contains("Unsupported fork") => (
+                        self.engine_request("engine_getPayloadV3", json!([payload_id]))
+                            .map_err(|v3_error| format!(
+                                "engine_getPayloadV5 unsupported ({v5_error}); engine_getPayloadV4 unsupported ({v4_error}); engine_getPayloadV3 also failed: {v3_error}"
+                            ))?,
+                        3_u8,
+                    ),
+                    Err(error) => return Err(error),
+                }
+            }
+            Err(error) => return Err(error),
+        };
+        let payload = envelope.get("executionPayload").ok_or_else(|| {
+            format!("engine_getPayloadV{engine_version} missing executionPayload: {envelope}")
+        })?;
 
         let parent_hash = parse_hash32(field_str(payload, "parentHash")?)?;
         if parent_hash != parent.hash {
@@ -151,6 +184,21 @@ impl EngineClient {
         }
 
         let execution_payload_hash = parse_hash32(field_str(payload, "blockHash")?)?;
+        let versioned_hashes = Value::Array(Vec::new());
+        let execution_requests = if engine_version >= 4 {
+            Some(envelope.get("executionRequests").cloned().ok_or_else(|| {
+                format!("engine_getPayloadV{engine_version} missing executionRequests: {envelope}")
+            })?)
+        } else {
+            None
+        };
+        debug!(
+            engine_version,
+            execution_payload_hash = %hex32(execution_payload_hash),
+            envelope = %envelope,
+            "captured Reth execution payload envelope"
+        );
+
         let transactions_root = transaction_merkle_root(payload)?;
 
         Ok(BuiltExecutionPayload {
@@ -168,23 +216,65 @@ impl EngineClient {
             },
             execution_payload_hash,
             execution_payload: payload.clone(),
-            parent_beacon_block_root: [0_u8; 32],
+            parent_beacon_block_root,
+            execution_requests,
+            versioned_hashes,
+            engine_version,
         })
     }
 
     pub fn validate_payload_v3(&self, built: &BuiltExecutionPayload) -> Result<(), String> {
-        let result = self.engine_request(
-            "engine_newPayloadV3",
-            json!([
-                built.execution_payload,
-                [],
-                hex32(built.parent_beacon_block_root)
-            ]),
-        )?;
+        debug!(
+            engine_version = built.engine_version,
+            execution_payload_hash = %hex32(built.execution_payload_hash),
+            execution_payload = %built.execution_payload,
+            versioned_hashes = %built.versioned_hashes,
+            parent_beacon_block_root = %hex32(built.parent_beacon_block_root),
+            execution_requests = ?built.execution_requests,
+            "submitting Reth execution payload for validation"
+        );
+
+        let result = match built.engine_version {
+            5 => self.engine_request(
+                "engine_newPayloadV4",
+                json!([
+                    built.execution_payload,
+                    built.versioned_hashes,
+                    hex32(built.parent_beacon_block_root),
+                    built.execution_requests.clone().ok_or_else(|| {
+                        "Engine API getPayloadV5 result missing executionRequests".to_string()
+                    })?
+                ]),
+            )?,
+            4 => self.engine_request(
+                "engine_newPayloadV4",
+                json!([
+                    built.execution_payload,
+                    built.versioned_hashes,
+                    hex32(built.parent_beacon_block_root),
+                    built.execution_requests.clone().ok_or_else(|| {
+                        "Engine API V4 payload missing executionRequests".to_string()
+                    })?
+                ]),
+            )?,
+            3 => self.engine_request(
+                "engine_newPayloadV3",
+                json!([
+                    built.execution_payload,
+                    built.versioned_hashes,
+                    hex32(built.parent_beacon_block_root)
+                ]),
+            )?,
+            version => {
+                return Err(format!(
+                    "unsupported cached Engine API getPayload version {version}"
+                ))
+            }
+        };
         let status = result
             .get("status")
             .and_then(Value::as_str)
-            .ok_or_else(|| format!("engine_newPayloadV3 response missing status: {result}"))?;
+            .ok_or_else(|| format!("engine_newPayload response missing status: {result}"))?;
 
         if status != "VALID" {
             return Err(format!(
