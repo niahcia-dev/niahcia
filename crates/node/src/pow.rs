@@ -9,8 +9,8 @@ pub struct RandomXVerifier {
 impl RandomXVerifier {
     pub fn new(seed: Hash32) -> Result<Self, String> {
         let flags = RandomXFlag::FLAG_DEFAULT;
-        let cache =
-            RandomXCache::new(flags, &seed).map_err(|e| format!("RandomX cache init failed: {e}"))?;
+        let cache = RandomXCache::new(flags, &seed)
+            .map_err(|e| format!("RandomX cache init failed: {e}"))?;
         let vm = RandomXVM::new(flags, Some(cache), None)
             .map_err(|e| format!("RandomX VM init failed: {e}"))?;
         Ok(Self { vm })
@@ -22,8 +22,9 @@ impl RandomXVerifier {
             .calculate_hash(&header.canonical_bytes())
             .map_err(|e| format!("RandomX hash failed: {e}"))?;
 
-        hash.try_into()
-            .map_err(|value: Vec<u8>| format!("RandomX hash must be 32 bytes; found {}", value.len()))
+        hash.try_into().map_err(|value: Vec<u8>| {
+            format!("RandomX hash must be 32 bytes; found {}", value.len())
+        })
     }
 
     pub fn verify_header(&self, header: &BlockHeaderV1) -> Result<Hash32, String> {
