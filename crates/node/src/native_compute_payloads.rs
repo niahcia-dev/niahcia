@@ -1,6 +1,5 @@
 use crate::compute_usage_receipt_v1::{
-    ComputeUsageReceiptV1, COMPUTE_USAGE_RECEIPT_OBJECT_TYPE,
-    COMPUTE_USAGE_RECEIPT_SCHEMA_VERSION,
+    ComputeUsageReceiptV1, COMPUTE_USAGE_RECEIPT_OBJECT_TYPE, COMPUTE_USAGE_RECEIPT_SCHEMA_VERSION,
 };
 use crate::native_state_v2::ComputeChannelSettlementPolicyV1;
 use crate::nce::{decode_envelope, encode_bytes, encode_envelope, encode_map, encode_unsigned};
