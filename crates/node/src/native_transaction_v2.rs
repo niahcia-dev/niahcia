@@ -230,8 +230,7 @@ impl NativeTransactionBodyV2 {
                 "native transaction V2 max_priority_fee_per_gas must be exactly 16 bytes".into(),
             );
         }
-        let max_priority_fee_per_gas =
-            u128::from_be_bytes(priority_fee_bytes.try_into().unwrap());
+        let max_priority_fee_per_gas = u128::from_be_bytes(priority_fee_bytes.try_into().unwrap());
 
         if reader.unsigned()? != 10 {
             return Err("invalid native transaction V2 data field".into());
@@ -594,10 +593,12 @@ mod tests {
     #[test]
     fn v1_decoder_rejects_v2_and_v2_decoder_rejects_v1() {
         let v2 = signed(transfer_body());
-        assert!(crate::native_transaction::SignedNativeTransactionV1::from_canonical_bytes(
-            &v2.canonical_bytes().unwrap()
-        )
-        .is_err());
+        assert!(
+            crate::native_transaction::SignedNativeTransactionV1::from_canonical_bytes(
+                &v2.canonical_bytes().unwrap()
+            )
+            .is_err()
+        );
 
         let signing_key = SigningKey::from_slice(&[0x01; 32]).unwrap();
         let public_key = signing_key
@@ -625,8 +626,10 @@ mod tests {
         let signature: Signature = signing_key.sign_prehash(&digest).unwrap();
         v1.signature = signature.to_bytes().to_vec();
 
-        assert!(SignedNativeTransactionV2::from_canonical_bytes(&v1.canonical_bytes().unwrap())
-            .is_err());
+        assert!(
+            SignedNativeTransactionV2::from_canonical_bytes(&v1.canonical_bytes().unwrap())
+                .is_err()
+        );
     }
 
     #[test]
