@@ -38,7 +38,7 @@ Exact policy constants remain candidate.
 
 ## Session establishment
 
-A session begins only after a worker has been selected from an eligible candidate set under the applicable scheduling policy.
+A session begins only after a worker has been selected from an eligible candidate set under the applicable scheduling policy. For ordinary paid compute, Worker Selection V1 permits the wallet/client to perform this selection locally from signed, expiring advertisements; chain consensus does not choose the worker.
 
 The selected worker MUST satisfy the Job/session requirements at establishment, including:
 
