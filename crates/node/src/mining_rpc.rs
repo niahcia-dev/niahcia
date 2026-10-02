@@ -1,4 +1,5 @@
 use crate::address::AddressNetwork;
+use crate::native_block_body::NativeBlockBodyV1;
 use crate::consensus::{
     devnet_next_target, randomx_seed, randomx_seed_height, validate_timestamp,
     DEVNET_GENESIS_TARGET, MEDIAN_TIME_WINDOW,
@@ -19,6 +20,9 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
+pub const MAX_TEMPLATE_TRANSACTIONS_V1: usize = 1024;
+pub const MAX_TEMPLATE_TRANSACTION_BYTES_V1: usize = 4 * 1024 * 1024;
+
 #[derive(Clone)]
 pub struct WorkManager {
     inner: Arc<RwLock<WorkState>>,
@@ -32,6 +36,7 @@ struct WorkState {
     randomx_seed: [u8; 32],
     execution: NativeBlockExecutionResultV1,
     native_state: NativeStateV1,
+    body: NativeBlockBodyV1,
     solved: bool,
 }
 
@@ -43,6 +48,24 @@ impl WorkManager {
         execution: NativeBlockExecutionResultV1,
         native_state: NativeStateV1,
     ) -> Self {
+        Self::new_with_body(
+            header,
+            randomx_seed_height,
+            randomx_seed,
+            execution,
+            native_state,
+            NativeBlockBodyV1::empty(),
+        )
+    }
+
+    pub fn new_with_body(
+        header: BlockHeaderV1,
+        randomx_seed_height: u64,
+        randomx_seed: [u8; 32],
+        execution: NativeBlockExecutionResultV1,
+        native_state: NativeStateV1,
+        body: NativeBlockBodyV1,
+    ) -> Self {
         Self {
             inner: Arc::new(RwLock::new(WorkState {
                 generation: 0,
@@ -51,6 +74,7 @@ impl WorkManager {
                 randomx_seed,
                 execution,
                 native_state,
+                body,
                 solved: false,
             })),
         }
@@ -78,6 +102,7 @@ impl WorkManager {
             Hash32,
             NativeBlockExecutionResultV1,
             NativeStateV1,
+            NativeBlockBodyV1,
         ),
         String,
     > {
@@ -100,6 +125,7 @@ impl WorkManager {
             state.randomx_seed,
             state.execution.clone(),
             state.native_state.clone(),
+            state.body.clone(),
         ))
     }
 
@@ -130,6 +156,25 @@ impl WorkManager {
         execution: NativeBlockExecutionResultV1,
         native_state: NativeStateV1,
     ) -> Result<u64, String> {
+        self.replace_with_body(
+            header,
+            randomx_seed_height,
+            randomx_seed,
+            execution,
+            native_state,
+            NativeBlockBodyV1::empty(),
+        )
+    }
+
+    pub fn replace_with_body(
+        &self,
+        header: BlockHeaderV1,
+        randomx_seed_height: u64,
+        randomx_seed: Hash32,
+        execution: NativeBlockExecutionResultV1,
+        native_state: NativeStateV1,
+        body: NativeBlockBodyV1,
+    ) -> Result<u64, String> {
         let mut state = self
             .inner
             .write()
@@ -143,6 +188,7 @@ impl WorkManager {
         state.randomx_seed = randomx_seed;
         state.execution = execution;
         state.native_state = native_state;
+        state.body = body;
         state.solved = false;
         Ok(state.generation)
     }
@@ -476,6 +522,136 @@ pub(crate) fn install_next_native_work(
     info!(
         generation = next_generation,
         height, "installed next native NIAHCIA mining template"
+    );
+
+    Ok(())
+}
+
+pub(crate) fn install_next_native_work_from_mempool(
+    work: &WorkManager,
+    state: &StateStore,
+    mempool: &SharedNativeMempoolV1,
+    fee_recipient: Address20,
+) -> Result<(), String> {
+    let parent = state
+        .best_chain_head()?
+        .ok_or_else(|| "accepted canonical block missing from state".to_string())?;
+    let height = parent
+        .header
+        .height
+        .checked_add(1)
+        .ok_or_else(|| "NIAHCIA height overflow".to_string())?;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("system clock error while refreshing mining work: {e}"))?
+        .as_secs();
+    let timestamp = now.max(parent.header.timestamp.saturating_add(1));
+
+    let genesis = state
+        .canonical_block_at_height(0)?
+        .ok_or_else(|| "canonical chain is missing devnet genesis".to_string())?;
+    let target = devnet_next_target(
+        genesis.header.timestamp,
+        parent.header.height,
+        parent.header.timestamp,
+    )?;
+
+    let parent_state = state
+        .native_state_snapshot(parent.block_id())?
+        .ok_or_else(|| "canonical parent is missing native state snapshot".to_string())?;
+
+    let entries = {
+        let pool = mempool
+            .read()
+            .map_err(|_| "native mempool lock poisoned".to_string())?;
+        pool.ordered_entries()
+            .map(|entry| {
+                (
+                    entry.transaction.clone(),
+                    entry.canonical_bytes.len(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let mut selected = Vec::new();
+    let mut selected_bytes = 0usize;
+
+    for (transaction, transaction_bytes) in entries {
+        if selected.len() >= MAX_TEMPLATE_TRANSACTIONS_V1 {
+            break;
+        }
+        if selected_bytes.saturating_add(transaction_bytes) > MAX_TEMPLATE_TRANSACTION_BYTES_V1 {
+            continue;
+        }
+
+        let mut candidate_transactions = selected.clone();
+        candidate_transactions.push(transaction);
+
+        let mut trial_state = parent_state.clone();
+        if execute_block_v1(
+            &mut trial_state,
+            &candidate_transactions,
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 0,
+                cpu_producer: fee_recipient,
+            },
+        )
+        .is_ok()
+        {
+            selected = candidate_transactions;
+            selected_bytes = selected_bytes.saturating_add(transaction_bytes);
+        }
+    }
+
+    let mut native_state = parent_state;
+    let execution = execute_block_v1(
+        &mut native_state,
+        &selected,
+        AddressNetwork::Devnet,
+        NativeExecutionContextV1 {
+            base_fee_per_gas: 0,
+            cpu_producer: fee_recipient,
+        },
+    )?;
+
+    let body_recipient = if execution.producer_priority_fee == 0 {
+        [0_u8; 20]
+    } else {
+        fee_recipient
+    };
+    let body = NativeBlockBodyV1::from_transactions(body_recipient, &selected)?;
+
+    let header = BlockHeaderV1 {
+        version: 1,
+        parent_hash: parent.block_id(),
+        height,
+        timestamp,
+        transactions_root: execution.transactions_root,
+        execution_root: execution.execution_root,
+        target,
+        nonce: 0,
+        extra_nonce: 0,
+    };
+
+    let seed_height = randomx_seed_height(height);
+    let seed_block = state
+        .canonical_block_at_height(seed_height)?
+        .ok_or_else(|| format!("canonical chain missing RandomX seed block {seed_height}"))?;
+    let seed = randomx_seed(seed_block.block_id());
+
+    let tx_count = selected.len();
+    let next_generation =
+        work.replace_with_body(header, seed_height, seed, execution, native_state, body)?;
+
+    info!(
+        generation = next_generation,
+        height,
+        tx_count,
+        selected_bytes,
+        "installed next native NIAHCIA mining template from mempool"
     );
 
     Ok(())
