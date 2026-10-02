@@ -240,4 +240,50 @@ mod tests {
         assert_eq!(address.network, AddressNetwork::Devnet);
         assert_eq!(address.payload.len(), ADDRESS_PAYLOAD_LEN);
     }
+
+    #[test]
+    fn account_derivation_vector_is_stable() {
+        use k256::ecdsa::SigningKey;
+
+        // Synthetic interoperability key only. Never use for funds.
+        let secret = [0x01u8; 32];
+        let signing_key = SigningKey::from_slice(&secret).unwrap();
+        let public_key = signing_key.verifying_key().to_encoded_point(false);
+        let public_key_bytes = public_key.as_bytes();
+
+        assert_eq!(
+            hex::encode(public_key_bytes),
+            "041b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f70beaf8f588b541507fed6a642c5ab42dfdf8120a7f639de5122d47a69a8e8d1"
+        );
+
+        let digest = Keccak256::digest(&public_key_bytes[1..]);
+        assert_eq!(
+            hex::encode(digest),
+            "b8a0722ae6cb48cde0b4ae1f1a642f0e3c3af545e7acbd38b07251b3990914f1"
+        );
+
+        let expected_payload = hex::decode("1a642f0e3c3af545e7acbd38b07251b3990914f1").unwrap();
+
+        for (network, expected_address) in [
+            (
+                AddressNetwork::Mainnet,
+                "niah1qyqp5ep0pc7r4a29u7kt6w9swfgm8xgfzncsse486g",
+            ),
+            (
+                AddressNetwork::Testnet,
+                "tniah1qyqp5ep0pc7r4a29u7kt6w9swfgm8xgfzncsyt480k",
+            ),
+            (
+                AddressNetwork::Devnet,
+                "dniah1qyqp5ep0pc7r4a29u7kt6w9swfgm8xgfzncskfytt4",
+            ),
+        ] {
+            let address =
+                NiahciaAddressV1::account_from_uncompressed_public_key(network, public_key_bytes)
+                    .unwrap();
+
+            assert_eq!(address.payload.as_slice(), expected_payload.as_slice());
+            assert_eq!(address.encode().unwrap(), expected_address);
+        }
+    }
 }
