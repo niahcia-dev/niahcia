@@ -156,18 +156,19 @@ requirements:
 - settlement occurs no later than `claim_deadline_height`;
 - receipt validates under Native Compute Settlement V1.
 
-Any account MAY submit a valid settlement transaction if it can pay the native transaction fee.
+The authenticated native transaction sender MUST equal the channel's committed `worker_payment_account`.
 
-The submitter is not thereby entitled to channel value.
+This intentionally prevents the funding wallet or another holder of an older valid cumulative receipt from front-running the worker with a lower acknowledged amount and terminally settling the channel for less than the worker's newest receipt.
 
 Execution:
 
-1. consume submitter native nonce;
-2. validate final receipt;
-3. credit `cumulative_spent` to committed `worker_payment_account`;
-4. credit remaining authorized value to `funding_account`;
-5. mark channel SETTLED;
-6. charge submitter's ordinary native transaction fee.
+1. authenticate sender as the committed `worker_payment_account`;
+2. consume worker-payment-account native nonce;
+3. validate final receipt;
+4. credit `cumulative_spent` to committed `worker_payment_account`;
+5. credit remaining authorized value to `funding_account`;
+6. mark channel SETTLED;
+7. charge the submitting worker account's ordinary native transaction fee.
 
 A second settlement is invalid.
 
@@ -253,18 +254,15 @@ Channel-level replay protection additionally requires:
 - receipt sequence/commitment validation;
 - settlement/refund state checks.
 
-## Why settlement can be submitted by anyone
+## Why settlement is worker-submitted in V1
 
-A valid wallet-signed cumulative receipt already determines:
+A wallet-signed cumulative receipt proves an acknowledged amount, but an older receipt may acknowledge less than a newer receipt.
 
-- channel;
-- worker;
-- payout account committed by channel;
-- maximum acknowledged cumulative spend.
+Because settlement is terminal, allowing an arbitrary account to submit any still-valid older receipt would permit a funding wallet or third party holding that receipt to settle the channel early for the lower amount.
 
-Allowing any fee-paying account to relay settlement improves robustness if the worker's ordinary wallet is temporarily unable to submit.
+V1 therefore requires the native Settle transaction sender to equal the channel's committed `worker_payment_account`.
 
-The submitter cannot redirect the payout.
+A future version may restore permissionless relaying by adding a separate worker settlement authorization/signature that identifies the final receipt without giving the relayer control of the payout.
 
 ## Invariants
 
