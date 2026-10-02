@@ -60,10 +60,7 @@ impl ComputeChannelOpenPayloadV1 {
             (8, encode_unsigned(self.refund_available_height)),
             (9, encode_bytes(&self.service_scope_commitment)),
             (10, encode_bytes(&self.model_scope_commitment)),
-            (
-                11,
-                encode_bytes(&self.execution_profile_scope_commitment),
-            ),
+            (11, encode_bytes(&self.execution_profile_scope_commitment)),
             (12, encode_unsigned(self.settlement_policy as u64)),
         ])
     }
@@ -113,8 +110,7 @@ impl ComputeChannelOpenPayloadV1 {
         let refund_available_height = reader.unsigned()?;
 
         expect_key(&mut reader, 9, "service_scope_commitment")?;
-        let service_scope_commitment =
-            read_fixed::<32>(&mut reader, "service_scope_commitment")?;
+        let service_scope_commitment = read_fixed::<32>(&mut reader, "service_scope_commitment")?;
 
         expect_key(&mut reader, 10, "model_scope_commitment")?;
         let model_scope_commitment = read_fixed::<32>(&mut reader, "model_scope_commitment")?;
