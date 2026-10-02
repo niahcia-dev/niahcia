@@ -78,3 +78,27 @@ Settlement policy may support:
 ## Prototype 0
 
 Prototype 0 uses test currency and simple compute/storage escrow. Production issuance and fee percentages are intentionally undecided.
+
+
+## Relationship to compute channels
+
+ComputeChannelV1 and PaymentAuthorizationV1 separate payment authority from Job pricing/allocation.
+
+Conceptually:
+
+```text
+funding account
+  -> ComputeChannelV1
+      -> PaymentAuthorizationV1
+          -> Job
+              -> PaymentPlan
+                  -> accepted usage receipt / settlement
+```
+
+`ComputeChannelV1` establishes an enforceable spending ceiling across many Jobs.
+
+`PaymentAuthorizationV1` delegates a narrower portion of that authority to a requester/session/Agent identity.
+
+`PaymentPlan` describes how one Job's permitted spend is allocated and settled among eligible participants.
+
+A PaymentPlan MUST NOT expand the amount or scope authorized by its parent PaymentAuthorization/ComputeChannel.
