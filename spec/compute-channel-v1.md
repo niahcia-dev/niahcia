@@ -34,8 +34,12 @@ ComputeChannelV1
 - channel_id
 - funding_account
 - channel_public_key
+- worker_id
+- operator_id
 - authorized_amount
 - service_scope
+- model_scope
+- execution_profile_scope
 - opened_height
 - expiry_height
 - settlement_policy
@@ -71,6 +75,30 @@ The wallet may keep the funding account relationship private from compute worker
 
 Compromise of the channel signing key MUST NOT authorize spending above the value and scope already committed to the channel.
 
+## Worker-bound channel
+
+A V1 ComputeChannel is bound to one selected `worker_id` and its `operator_id`.
+
+The channel may fund many Jobs for that worker during one compute session, but another worker requires a different channel.
+
+This means:
+
+```text
+wallet
+  -> select Worker A
+  -> open Channel A
+  -> many Jobs for Worker A
+  -> settle/expire Channel A
+
+worker failure or reselection
+  -> select Worker B
+  -> open Channel B
+```
+
+This deliberately avoids a multi-party shared channel in which several workers hold independent claims against the same value pool.
+
+The wallet-local Agent/chat state remains independent of the selected worker, so changing workers does not require migrating conversation memory or Agent ownership.
+
 ## Usage receipts
 
 Each accepted compute charge is represented off-chain by a signed cumulative or monotonic usage receipt.
@@ -91,6 +119,8 @@ ComputeUsageReceiptV1
 ```
 
 A later receipt for the same channel supersedes an earlier receipt only when its sequence is greater and its cumulative amount is greater than or equal to the prior valid amount.
+
+A receipt is valid only for the worker/operator bound to the channel.
 
 This keeps settlement bounded to the latest valid cumulative state rather than requiring every prompt to be published on-chain.
 
@@ -154,12 +184,15 @@ The chain may still reveal economic linkage when the channel is opened or settle
 8. One channel may fund many Jobs without placing every Job on-chain.
 9. Funding identity and Job requester identity are not required to be identical.
 10. Channel expiry must allow eventual recovery of unused value without a permanent third-party coordinator.
+11. Each V1 channel is bound to exactly one worker/operator.
+12. Worker reselection requires a distinct channel; channels are not multi-worker shared balances.
 
 ## First-milestone simplification
 
 The first implementation should support:
 
 - one wallet-funded channel;
+- exactly one bound worker/operator per channel;
 - one native currency: NIAH/aniah;
 - direct worker payments only;
 - no routing;
@@ -168,5 +201,7 @@ The first implementation should support:
 - fixed expiry;
 - simple cooperative/expiry settlement;
 - hard value ceiling.
+
+A V1 channel MUST NOT represent a shared spend pool claimable by multiple unrelated workers. Binding the channel to one worker/operator avoids multi-party settlement races and keeps cumulative receipts sufficient for safe settlement.
 
 That is sufficient to prove low-overhead AI micropayments without turning the compute milestone into a generalized payment-network project.
