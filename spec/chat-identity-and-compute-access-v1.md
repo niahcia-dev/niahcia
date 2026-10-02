@@ -53,6 +53,10 @@ The descriptor contains only information required for identity, discovery, autho
 
 Persistent private chat content MUST be encrypted by default, including prompts, responses, conversation titles, attachments, persistent memories, agent state, private tool results, and private conversation indexes and metadata where practical.
 
+Encryption and user key ownership are foundational storage properties, not features to retrofit after plaintext histories exist. Implementations MUST NOT introduce a persistent plaintext conversation-storage phase, including during prototypes or early deployments. Persistent representations of private conversation content MUST be designed around encrypted envelopes and explicit key ownership from their first implementation.
+
+This requirement applies to secondary persistence paths as well as the primary conversation store. Implementations MUST NOT intentionally persist private conversation plaintext in backups, database journals or WAL files, search indexes, caches, telemetry, analytics, crash reports, attachment stores, memory stores, agent checkpoints, synchronization replicas, or similar durable artifacts. Where temporary plaintext is required for authorized inference or local processing, it MUST remain ephemeral and subject to the inference privacy boundary below.
+
 Each conversation SHOULD use an independent random content-encryption key rather than one permanent wallet-wide chat key. Conversation keys MAY be wrapped for authorized devices or identities.
 
 The design SHOULD support key rotation, device authorization/revocation, selective sharing, export, migration, and recovery without exposing spending keys. Remote storage providers SHOULD receive ciphertext and the minimum metadata necessary for storage/synchronization. No consensus rule SHALL require a single conversation storage provider.
