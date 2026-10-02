@@ -1,5 +1,6 @@
 use crate::native_execution::{AccountId, AccountStateV1, NativeStateV1};
 use crate::work::{keccak256, Hash32};
+use k256::PublicKey;
 use std::collections::BTreeMap;
 
 const CHANNEL_STATE_DOMAIN: &[u8] = b"NIAHCIA/COMPUTE-CHANNEL-STATE/V1";
@@ -100,6 +101,8 @@ impl ComputeChannelStateV1 {
         if self.channel_public_key[0] != 0x04 {
             return Err("compute channel public key must be uncompressed SEC1".into());
         }
+        PublicKey::from_sec1_bytes(&self.channel_public_key)
+            .map_err(|_| "compute channel public key is not a valid secp256k1 point".to_string())?;
 
         Ok(())
     }
@@ -397,9 +400,9 @@ mod tests {
     use super::*;
 
     fn channel(marker: u8) -> ComputeChannelStateV1 {
-        let mut public_key = [0_u8; 65];
-        public_key[0] = 0x04;
-        public_key[1..].fill(marker);
+        let signing_key = k256::ecdsa::SigningKey::from_slice(&[marker.max(1); 32]).unwrap();
+        let encoded = signing_key.verifying_key().to_encoded_point(false);
+        let public_key: [u8; 65] = encoded.as_bytes().try_into().unwrap();
 
         ComputeChannelStateV1 {
             channel_id: [marker; 32],
