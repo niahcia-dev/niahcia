@@ -505,3 +505,10 @@ NativeTransaction V1 does **not** contain compute-channel actions.
 Implementations MUST NOT reinterpret `Transfer`, `ContractCall`, or `ContractCreate` as undocumented compute-channel operations.
 
 Dedicated compute-channel open/settle/refund transitions require an explicitly versioned NativeTransaction extension or successor plus canonical interoperability vectors.
+
+
+## Successor compute actions
+
+`spec/native-transaction-v2-compute-actions.md` defines the candidate schema-V2 extension for dedicated ComputeChannelOpen, ComputeChannelSettle, and ComputeChannelRefund actions.
+
+Those semantics do not apply to schema V1 and MUST NOT be backported by reinterpreting V1 action values.
