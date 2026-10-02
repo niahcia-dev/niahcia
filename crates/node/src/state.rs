@@ -1421,9 +1421,9 @@ mod tests {
             },
         );
 
-        let mut public_key = [0_u8; 65];
-        public_key[0] = 0x04;
-        public_key[1..].fill(0x42);
+        let signing_key = k256::ecdsa::SigningKey::from_slice(&[0x42; 32]).unwrap();
+        let encoded = signing_key.verifying_key().to_encoded_point(false);
+        let public_key: [u8; 65] = encoded.as_bytes().try_into().unwrap();
 
         let mut state = NativeStateV2::from_v1(accounts);
         state
