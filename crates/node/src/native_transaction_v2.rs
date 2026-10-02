@@ -633,6 +633,99 @@ mod tests {
     }
 
     #[test]
+    fn native_transaction_v2_vector_matches_locked_json() {
+        let vectors: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../test-vectors/native-transaction-v2.json"
+        ))
+        .unwrap();
+
+        let transfer = &vectors["transfer"];
+        let body = transfer_body();
+        assert_eq!(
+            hex::encode(body.canonical_bytes().unwrap()),
+            transfer["body_canonical_hex"].as_str().unwrap()
+        );
+
+        let signing_key_bytes = hex::decode(transfer["test_private_key"].as_str().unwrap()).unwrap();
+        let signing_key = SigningKey::from_slice(&signing_key_bytes).unwrap();
+        let public_key = signing_key
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec();
+        assert_eq!(
+            hex::encode(&public_key),
+            transfer["public_key"].as_str().unwrap()
+        );
+
+        let mut transaction = SignedNativeTransactionV2 {
+            body,
+            public_key,
+            signature: vec![0; 64],
+        };
+
+        assert_eq!(
+            hex::encode(transaction.signing_digest().unwrap()),
+            transfer["signing_digest"].as_str().unwrap()
+        );
+
+        let signature: Signature = signing_key
+            .sign_prehash(&transaction.signing_digest().unwrap())
+            .unwrap();
+        transaction.signature = signature.to_bytes().to_vec();
+
+        assert_eq!(
+            hex::encode(&transaction.signature),
+            transfer["signature"].as_str().unwrap()
+        );
+        assert_eq!(
+            hex::encode(transaction.canonical_bytes().unwrap()),
+            transfer["signed_canonical_hex"].as_str().unwrap()
+        );
+        assert_eq!(
+            hex::encode(transaction.tx_id().unwrap()),
+            transfer["tx_id"].as_str().unwrap()
+        );
+
+        let sender = transaction
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap();
+        assert_eq!(
+            hex::encode(sender.payload),
+            transfer["sender_payload"].as_str().unwrap()
+        );
+        assert_eq!(
+            sender.to_string(),
+            transfer["sender_address"].as_str().unwrap()
+        );
+
+        let open = &vectors["compute_channel_open_body"];
+        let open_body = NativeTransactionBodyV2 {
+            network_id: DEVNET_NETWORK_ID,
+            chain_id: DEVNET_CHAIN_ID,
+            nonce: 8,
+            action: NativeActionV2::ComputeChannelOpen,
+            target_payload: Vec::new(),
+            value: 1_000,
+            gas_limit: 0,
+            max_fee_per_gas: 0,
+            max_priority_fee_per_gas: 0,
+            data: hex::decode(open["data"].as_str().unwrap()).unwrap(),
+        };
+        assert_eq!(
+            hex::encode(open_body.canonical_bytes().unwrap()),
+            open["body_canonical_hex"].as_str().unwrap()
+        );
+
+        let decoded = NativeTransactionBodyV2::from_canonical_bytes(
+            &hex::decode(open["body_canonical_hex"].as_str().unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(decoded, open_body);
+        assert_eq!(decoded.action as u64, 0x10);
+    }
+
+    #[test]
     fn v2_wrong_network_and_signature_tampering_are_rejected() {
         let tx = signed(transfer_body());
         assert!(tx.verify_signature(AddressNetwork::Mainnet).is_err());
