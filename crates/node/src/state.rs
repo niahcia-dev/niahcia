@@ -1073,7 +1073,10 @@ mod tests {
             store.store_native_block_body(block_id, &body).unwrap();
             store.store_native_block_body(block_id, &body).unwrap();
 
-            assert_eq!(store.native_block_body(block_id).unwrap(), Some(body.clone()));
+            assert_eq!(
+                store.native_block_body(block_id).unwrap(),
+                Some(body.clone())
+            );
         }
 
         {
