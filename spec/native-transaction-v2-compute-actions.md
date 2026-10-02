@@ -153,6 +153,12 @@ Execution:
 3. mark channel REFUNDED;
 4. charge ordinary native transaction fee.
 
+## Canonical action payloads
+
+`spec/native-compute-action-payloads-v1.md` defines the exact NCE/1 `data` payloads for Open, Settle, and Refund.
+
+ComputeChannelOpen does not serialize mutable channel state. Consensus derives channel_id from the canonical open transaction ID, funding_account from the authenticated sender, opened_height from block execution height, settled_amount=0, and state=OPEN.
+
 ## Settlement payload objects
 
 The exact settlement/refund payload encodings MUST be explicit NCE/1 objects or another canonical versioned encoding.
