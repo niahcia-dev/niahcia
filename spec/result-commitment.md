@@ -75,3 +75,12 @@ Receipt formats are versioned separately.
 ## Prototype 0
 
 Prototype 0 compares independently generated canonical token-sequence commitments under the REDUNDANT verification policy.
+
+
+## Metering evidence
+
+When payment is metered, the ResultCommitment or its referenced runtime receipt MUST commit to the canonical usage evidence required by ComputePricingV1.
+
+For TOKEN_METERED inference this should include reproducible input/output token counts or the canonical token sequence from which those counts are derived.
+
+The worker's signed ResultCommitment authenticates its claim; the wallet/verifier must still recompute or validate the applicable metering evidence before signing a payment receipt.
