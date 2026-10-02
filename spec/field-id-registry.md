@@ -463,13 +463,17 @@ Exclusion is a preimage rule, not a renumbering rule.
 2   channel_id
 3   funding_account
 4   channel_public_key
-5   authorized_amount
-6   service_scope
-7   opened_height
-8   expiry_height
-9   settlement_policy
-10  sequence
-11  status
+5   worker_id
+6   operator_id
+7   authorized_amount
+8   service_scope
+9   model_scope
+10  execution_profile_scope
+11  opened_height
+12  expiry_height
+13  settlement_policy
+14  sequence
+15  status
 ```
 
 ## PaymentAuthorization — object type 0x000F
