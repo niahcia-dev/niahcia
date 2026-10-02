@@ -160,7 +160,7 @@ Relevant completed checkpoints include native transaction signing, native Transf
 
 P2P Version 2 currently transports canonical BlockHeaderV1 values only and independently reconstructs the canonical empty native transaction set from locally trusted parent state. This is a deliberate development limitation, not the final transaction-block protocol. Before non-empty or fee-bearing transaction blocks are networked, the protocol must add canonical transaction/body transport and make the CPU producer fee recipient derivable or verifiable by every validating peer.
 
-The next implementation milestone is native transaction admission and propagation: build the first NativeMempoolV1 around SignedNativeTransactionV1, add RPC submission, then define and implement P2P transaction/block-body transport so mining can include non-empty native transaction sets.
+NativeMempoolV1 and native RPC transaction submission are now implemented. The next implementation milestone is transaction propagation and non-empty block transport: add P2P transaction relay, canonical NativeBlockBodyV1 persistence, non-empty mining-template construction, and P2P V3 full-body validation so miners can include ordinary native transactions safely.
 
 Do not implement ContractCall/ContractCreate runtime semantics until their native runtime behavior is explicitly specified. Do not invent a base-fee adjustment algorithm; Native Execution V1 currently consumes an explicit base fee and the evolution rule remains separate protocol work.
 
@@ -182,16 +182,58 @@ The previous handoff's `#266` blocker is stale: the referenced issue is not curr
 
 Current priority is native transaction propagation and non-empty block transport, in small validated milestones:
 
-1. Build `NativeMempoolV1` around canonical `SignedNativeTransactionV1` objects, using strict NCE/1 decoding and existing signature/network/action validation.
-2. Add native RPC transaction submission without introducing a second transaction encoding.
-3. Define deterministic mempool admission/replacement/nonce/size policy separately from consensus execution rules.
-4. Extend P2P beyond the current Version 2 header-only empty-block milestone with canonical transaction or block-body transport and independent reconstruction/validation.
-5. Resolve producer-fee recipient commitment/derivation before fee-bearing transactions are included in networked blocks.
-6. Preserve the 164-byte BlockHeaderV1, CPU-PoW cumulative-work fork choice, deterministic equal-work tie-break, ancestry/reorg behavior, and locked interoperability vectors.
-7. Keep NCE/1, transaction, execution, address, monetary, network, tests/vectors, `docs/spec-status.md`, this handoff, and the `niahcia-protocol` mirror synchronized.
-8. Keep wallet-native encrypted chat as protocol-only until explicitly starting its implementation milestone.
+1. Preserve the existing green NativeMempoolV1 + `niah_sendRawTransaction` / mempool RPC path; do not rebuild it.
+2. Add P2P V3 transaction inventory/request/body relay using exact canonical SignedNativeTransaction bytes.
+3. Add NativeBlockBodyV1 persistence so non-empty blocks can be re-served/replayed byte-for-byte after restart.
+4. Build non-empty mining templates from mempool transactions using a deliberately simple local policy; transaction ordering policy is not consensus.
+5. Bind one canonical producer-fee-recipient to each template body. Zero aggregate priority fee requires the zero recipient; fee-bearing execution commits the selected recipient through deterministic resulting state/execution commitments.
+6. Relay/validate full P2P V3 blocks from parent state + producer recipient + exact ordered transactions. Never trust peer-supplied post-state.
+7. On canonical attach, remove included transactions from mempool; on detach, optionally reconsider still-valid transactions against the winning branch.
+8. Preserve the 164-byte BlockHeaderV1, CPU-PoW cumulative-work fork choice, deterministic equal-work tie-break, ancestry/reorg behavior, and existing V1 execution/state vectors.
+9. Only after this path is green should implementation begin on NativeTransaction V2 / NativeStateV2 compute-channel open, settle, and refund.
+10. Keep wallet/AI transport, JobV2, ResultCommitmentV2, worker discovery, pricing, and compute-channel objects protocol-only until the base-chain transaction path can actually carry non-empty blocks reliably.
 
 Deliberate consensus review still needed for RandomX stock miner/pool interoperability, public-testnet RandomX epoch/seed parameters, remaining monetary constants, genesis/network parameters, and chain-ID finalization.
+
+## AI architecture redesign — current locked direction
+
+The first decentralized AI milestone has been simplified substantially:
+
+- ordinary AI inference does **not** require decentralized storage;
+- wallet/client-local encrypted chat history and Agent memory are the V1 default;
+- the wallet is the V1 Agent home/control plane;
+- workers are replaceable execution providers, not persistent Agent hosts;
+- ordinary worker selection is wallet-local from signed expiring advertisements, not a blockchain consensus lottery;
+- one ComputeSession uses one selected worker for a bounded sticky period;
+- one ComputeChannel is bound to one worker/operator and aggregates many Jobs;
+- ordinary SMALL/STANDARD Jobs, Job acceptance, token streaming, ResultCommitmentV2, pricing, PaymentAuthorization, and ComputeUsageReceipt exchange remain off-chain;
+- the base chain normally sees only channel open/funding and final settlement/refund;
+- worker/operator chain registration and service bonds are deferred from the first ordinary paid-compute milestone;
+- NativeTransaction schema V2 candidate actions are ComputeChannelOpen/Settle/Refund; V1 actions are not reinterpreted;
+- NativeStateV2 is an explicit future successor that commits accounts + compute channels without changing NativeStateV1 vectors;
+- P2P V3 + NativeBlockBodyV1 must be implemented before any compute-channel consensus work.
+
+Relevant new specs include:
+
+- `spec/job.md` (Job schema V2);
+- `spec/result-commitment.md` (ResultCommitment schema V2);
+- `spec/worker-advertisement-v1.md`;
+- `spec/worker-discovery-v1.md`;
+- `spec/worker-selection-v1.md`;
+- `spec/compute-session-v1.md`;
+- `spec/ai-transport-v1.md`;
+- `spec/compute-pricing-v1.md`;
+- `spec/compute-payment-risk-v1.md`;
+- `spec/compute-channel-v1.md`;
+- `spec/payment-authorization-v1.md`;
+- `spec/compute-usage-receipt-v1.md`;
+- `spec/job-lifecycle-boundary-v1.md`;
+- `spec/native-compute-settlement-v1.md`;
+- `spec/native-compute-action-payloads-v1.md`;
+- `spec/native-transaction-v2-compute-actions.md`;
+- `spec/native-state-v2-compute-channels.md`;
+- `spec/native-block-body-v1.md`;
+- `spec/p2p-native-block-transfer-v3.md`.
 
 ## Documentation model
 
