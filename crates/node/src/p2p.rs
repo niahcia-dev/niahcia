@@ -452,26 +452,19 @@ fn canonical_transfer_range_v3(
         .collect()
 }
 
-fn reconsider_detached_transactions_v3(
-    state: &StateStore,
-    mempool: &SharedNativeMempoolV1,
-    reorg: &ChainReorg,
-) -> Result<(), String> {
+fn detached_transactions_to_reconsider_v3(
+    attached_bodies: &[NativeBlockBodyV1],
+    detached_bodies: &[NativeBlockBodyV1],
+) -> Result<Vec<Vec<u8>>, String> {
     let mut winning_tx_ids = HashSet::new();
-    for block_id in &reorg.attached {
-        let Some(body) = state.native_block_body(*block_id)? else {
-            continue;
-        };
+    for body in attached_bodies {
         for transaction in body.decoded_transactions()? {
             winning_tx_ids.insert(transaction.tx_id()?);
         }
     }
 
     let mut detached = Vec::new();
-    for block_id in &reorg.detached {
-        let Some(body) = state.native_block_body(*block_id)? else {
-            continue;
-        };
+    for body in detached_bodies {
         for canonical in &body.transactions {
             let transaction =
                 crate::native_transaction::SignedNativeTransactionV1::from_canonical_bytes(
@@ -482,6 +475,31 @@ fn reconsider_detached_transactions_v3(
             }
         }
     }
+
+    Ok(detached)
+}
+
+fn reconsider_detached_transactions_v3(
+    state: &StateStore,
+    mempool: &SharedNativeMempoolV1,
+    reorg: &ChainReorg,
+) -> Result<(), String> {
+    let mut attached_bodies = Vec::new();
+    for block_id in &reorg.attached {
+        if let Some(body) = state.native_block_body(*block_id)? {
+            attached_bodies.push(body);
+        }
+    }
+
+    let mut detached_bodies = Vec::new();
+    for block_id in &reorg.detached {
+        if let Some(body) = state.native_block_body(*block_id)? {
+            detached_bodies.push(body);
+        }
+    }
+
+    let detached =
+        detached_transactions_to_reconsider_v3(&attached_bodies, &detached_bodies)?;
 
     let mut pool = mempool
         .write()
@@ -569,4 +587,70 @@ pub struct HelloV1 {
 pub struct GetBlocksV1 {
     pub start_height: u64,
     pub count: u16,
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::detached_transactions_to_reconsider_v3;
+    use crate::native_block_body::NativeBlockBodyV1;
+    use crate::native_transaction::{
+        NativeActionV1, NativeTransactionBodyV1, SignedNativeTransactionV1, DEVNET_CHAIN_ID,
+        DEVNET_NETWORK_ID, NATIVE_TRANSFER_GAS_V1,
+    };
+    use k256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey};
+
+    fn signed_transfer(signing_byte: u8) -> SignedNativeTransactionV1 {
+        let signing_key = SigningKey::from_slice(&[signing_byte; 32]).unwrap();
+        let public_key = signing_key
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec();
+
+        let mut transaction = SignedNativeTransactionV1 {
+            body: NativeTransactionBodyV1 {
+                network_id: DEVNET_NETWORK_ID,
+                chain_id: DEVNET_CHAIN_ID,
+                nonce: 0,
+                action: NativeActionV1::Transfer,
+                target_payload: vec![0x22; 20],
+                value: 0,
+                gas_limit: NATIVE_TRANSFER_GAS_V1,
+                max_fee_per_gas: 0,
+                max_priority_fee_per_gas: 0,
+                data: Vec::new(),
+            },
+            public_key,
+            signature: vec![0; 64],
+        };
+
+        let digest = transaction.signing_digest().unwrap();
+        let signature: Signature = signing_key.sign_prehash(&digest).unwrap();
+        transaction.signature = signature.to_bytes().to_vec();
+        transaction
+    }
+
+    #[test]
+    fn detached_reconsideration_excludes_winning_branch_transaction() {
+        let shared = signed_transfer(1);
+        let detached_only = signed_transfer(2);
+
+        let attached =
+            NativeBlockBodyV1::from_transactions([0_u8; 20], std::slice::from_ref(&shared))
+                .unwrap();
+        let detached = NativeBlockBodyV1::from_transactions(
+            [0_u8; 20],
+            &[shared.clone(), detached_only.clone()],
+        )
+        .unwrap();
+
+        let reconsider =
+            detached_transactions_to_reconsider_v3(&[attached], &[detached]).unwrap();
+
+        assert_eq!(
+            reconsider,
+            vec![detached_only.canonical_bytes().unwrap()]
+        );
+    }
 }
