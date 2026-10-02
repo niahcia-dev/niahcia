@@ -162,3 +162,12 @@ Ordinary V1 Jobs MAY be delivered directly over AI Transport V1 rather than publ
 The transport carries the canonical Job plus the encrypted input/context required by the selected worker.
 
 Job transport does not alter Job identity, pricing, payment authorization, verification, or settlement semantics.
+
+
+## Chain/off-chain boundary
+
+Job Lifecycle Boundary V1 defines the default publication rule.
+
+Ordinary SMALL/STANDARD Jobs are off-chain execution objects. Job creation, acceptance, execution, streaming, response, and ordinary ResultCommitment exchange do not require native-chain transactions.
+
+The base chain is used for enforceable native state transitions such as ComputeChannel funding/settlement, disputes, and any stronger VerificationPolicy that explicitly requires chain anchoring.
