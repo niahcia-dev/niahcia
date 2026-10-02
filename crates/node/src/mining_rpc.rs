@@ -6,6 +6,7 @@ use crate::consensus::{
 use crate::native_execution::{
     execute_block_v1, NativeBlockExecutionResultV1, NativeExecutionContextV1, NativeStateV1,
 };
+use crate::native_rpc::{mempool_size, submit_raw_transaction_hex, SharedNativeMempoolV1};
 use crate::pow::RandomXVerifier;
 use crate::state::StateStore;
 use crate::work::{Address20, BlockHeaderV1, Hash32};
@@ -157,6 +158,7 @@ pub fn spawn(
     bind: SocketAddr,
     work: WorkManager,
     state: Arc<StateStore>,
+    mempool: SharedNativeMempoolV1,
     fee_recipient: Address20,
     running: Arc<AtomicBool>,
 ) -> Result<thread::JoinHandle<()>, String> {
@@ -172,7 +174,7 @@ pub fn spawn(
         while running.load(Ordering::SeqCst) {
             match listener.accept() {
                 Ok((stream, peer)) => {
-                    if let Err(e) = handle_connection(stream, &work, &state, fee_recipient) {
+                    if let Err(e) = handle_connection(stream, &work, &state, &mempool, fee_recipient) {
                         warn!(%peer, error = %e, "mining RPC request failed");
                     }
                 }
@@ -192,6 +194,7 @@ fn handle_connection(
     mut stream: TcpStream,
     work: &WorkManager,
     state: &StateStore,
+    mempool: &SharedNativeMempoolV1,
     fee_recipient: Address20,
 ) -> Result<(), String> {
     stream
@@ -259,6 +262,44 @@ fn handle_connection(
                 })
             }
         }
+        "niah_sendRawTransaction" => {
+            let result = request
+                .get("params")
+                .and_then(Value::as_object)
+                .and_then(|params| params.get("transaction"))
+                .and_then(Value::as_str)
+                .ok_or_else(|| {
+                    "niah_sendRawTransaction params.transaction must be canonical transaction hex"
+                        .to_string()
+                })
+                .and_then(|raw| submit_raw_transaction_hex(raw, mempool));
+
+            match result {
+                Ok(tx_id) => json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "tx_id": tx_id,
+                        "mempool_count": mempool_size(mempool)?
+                    }
+                }),
+                Err(message) => json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {
+                        "code": -32010,
+                        "message": message
+                    }
+                }),
+            }
+        }
+        "niah_getMempoolInfo" => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "transaction_count": mempool_size(mempool)?
+            }
+        }),
         "pow_submitWork" => match submit_work(&request, work, state, Some(fee_recipient)) {
             Ok(result) => json!({
                 "jsonrpc": "2.0",
