@@ -30,12 +30,9 @@ impl NativeStateV1 {
         self.accounts.len()
     }
 
-    pub(crate) fn accounts_iter(
-        &self,
-    ) -> impl Iterator<Item = (&AccountId, &AccountStateV1)> {
+    pub(crate) fn accounts_iter(&self) -> impl Iterator<Item = (&AccountId, &AccountStateV1)> {
         self.accounts.iter()
     }
-
 
     pub fn set_account(&mut self, account: AccountId, state: AccountStateV1) {
         if state == AccountStateV1::default() {
