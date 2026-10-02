@@ -494,3 +494,14 @@ Unused gas capacity is not charged.
 Contract calls and contract creation do not inherit this fixed transfer cost.
 Their metering is defined separately by the applicable native contract
 execution protocol.
+
+
+## Compute settlement boundary
+
+Native Compute Settlement V1 defines the candidate future chain state needed for compute-channel settlement.
+
+NativeTransaction V1 does **not** contain compute-channel actions.
+
+Implementations MUST NOT reinterpret `Transfer`, `ContractCall`, or `ContractCreate` as undocumented compute-channel operations.
+
+Dedicated compute-channel open/settle/refund transitions require an explicitly versioned NativeTransaction extension or successor plus canonical interoperability vectors.
