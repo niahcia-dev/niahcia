@@ -1,6 +1,7 @@
 pub mod address;
 mod config;
 pub mod consensus;
+pub mod compute_usage_receipt_v1;
 mod mining_rpc;
 pub mod monetary;
 pub mod monetary_state;
