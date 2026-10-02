@@ -84,3 +84,16 @@ When payment is metered, the ResultCommitment or its referenced runtime receipt 
 For TOKEN_METERED inference this should include reproducible input/output token counts or the canonical token sequence from which those counts are derived.
 
 The worker's signed ResultCommitment authenticates its claim; the wallet/verifier must still recompute or validate the applicable metering evidence before signing a payment receipt.
+
+
+## Publication boundary
+
+A ResultCommitment is a canonical signed protocol object whether or not it is published on-chain.
+
+STANDARD results remain off-chain by default.
+
+VERIFIED results may also remain off-chain when the VerificationPolicy and settlement path do not require public anchoring.
+
+HIGH_ASSURANCE policies may explicitly require commitment/evidence publication or challenge windows.
+
+Routine on-chain publication of every ResultCommitment is not part of V1.
