@@ -1,3 +1,7 @@
+use crate::compute_usage_receipt_v1::{
+    ComputeUsageReceiptV1, COMPUTE_USAGE_RECEIPT_OBJECT_TYPE,
+    COMPUTE_USAGE_RECEIPT_SCHEMA_VERSION,
+};
 use crate::native_state_v2::ComputeChannelSettlementPolicyV1;
 use crate::nce::{decode_envelope, encode_bytes, encode_envelope, encode_map, encode_unsigned};
 use crate::work::{keccak256, Hash32};
@@ -6,9 +10,7 @@ use k256::PublicKey;
 pub const COMPUTE_CHANNEL_OPEN_PAYLOAD_OBJECT_TYPE: u64 = 0x0014;
 pub const COMPUTE_CHANNEL_SETTLE_PAYLOAD_OBJECT_TYPE: u64 = 0x0015;
 pub const COMPUTE_CHANNEL_REFUND_PAYLOAD_OBJECT_TYPE: u64 = 0x0016;
-pub const COMPUTE_USAGE_RECEIPT_OBJECT_TYPE: u64 = 0x0013;
 pub const COMPUTE_ACTION_PAYLOAD_SCHEMA_VERSION: u64 = 1;
-pub const COMPUTE_USAGE_RECEIPT_SCHEMA_VERSION: u64 = 1;
 
 const COMPUTE_CHANNEL_ID_DOMAIN: &[u8] = b"NIAHCIA/COMPUTE-CHANNEL-ID/V1";
 
@@ -161,8 +163,8 @@ pub struct ComputeChannelSettlePayloadV1 {
 
 impl ComputeChannelSettlePayloadV1 {
     pub fn validate(&self) -> Result<(), String> {
-        let receipt_channel_id = validate_usage_receipt_structure(&self.final_usage_receipt)?;
-        if receipt_channel_id != self.channel_id {
+        let receipt = ComputeUsageReceiptV1::from_canonical_bytes(&self.final_usage_receipt)?;
+        if receipt.channel_id != self.channel_id {
             return Err("compute channel settle payload receipt channel_id mismatch".into());
         }
         Ok(())
@@ -269,74 +271,6 @@ pub fn derive_compute_channel_id_v1(open_transaction_id_v2: Hash32) -> Hash32 {
     preimage.push(0);
     preimage.extend_from_slice(&open_transaction_id_v2);
     keccak256(&preimage)
-}
-
-fn validate_usage_receipt_structure(bytes: &[u8]) -> Result<Hash32, String> {
-    let mut reader = decode_envelope(
-        bytes,
-        COMPUTE_USAGE_RECEIPT_OBJECT_TYPE,
-        COMPUTE_USAGE_RECEIPT_SCHEMA_VERSION,
-    )?;
-
-    if reader.map_len()? != 16 {
-        return Err("compute usage receipt must contain exactly sixteen fields".into());
-    }
-
-    expect_key(&mut reader, 1, "schema_version")?;
-    if reader.unsigned()? != COMPUTE_USAGE_RECEIPT_SCHEMA_VERSION {
-        return Err("compute usage receipt payload schema_version mismatch".into());
-    }
-
-    expect_key(&mut reader, 2, "receipt_id")?;
-    let _ = read_fixed::<32>(&mut reader, "receipt_id")?;
-
-    expect_key(&mut reader, 3, "channel_id")?;
-    let channel_id = read_fixed::<32>(&mut reader, "channel_id")?;
-
-    expect_key(&mut reader, 4, "authorization_id")?;
-    let _ = read_fixed::<32>(&mut reader, "authorization_id")?;
-
-    expect_key(&mut reader, 5, "worker_id")?;
-    let _ = read_fixed::<32>(&mut reader, "worker_id")?;
-
-    expect_key(&mut reader, 6, "operator_id")?;
-    let _ = read_fixed::<32>(&mut reader, "operator_id")?;
-
-    expect_key(&mut reader, 7, "sequence")?;
-    let _ = reader.unsigned()?;
-
-    expect_key(&mut reader, 8, "previous_receipt_id")?;
-    let _ = read_fixed::<32>(&mut reader, "previous_receipt_id")?;
-
-    expect_key(&mut reader, 9, "cumulative_spent")?;
-    let _ = read_fixed::<16>(&mut reader, "cumulative_spent")?;
-
-    expect_key(&mut reader, 10, "job_id")?;
-    let _ = read_fixed::<32>(&mut reader, "job_id")?;
-
-    expect_key(&mut reader, 11, "result_commitment_id")?;
-    let _ = read_fixed::<32>(&mut reader, "result_commitment_id")?;
-
-    expect_key(&mut reader, 12, "price_offer_id")?;
-    let _ = read_fixed::<32>(&mut reader, "price_offer_id")?;
-
-    expect_key(&mut reader, 13, "job_charge")?;
-    let _ = read_fixed::<16>(&mut reader, "job_charge")?;
-
-    expect_key(&mut reader, 14, "metering_evidence_hash")?;
-    let _ = read_fixed::<32>(&mut reader, "metering_evidence_hash")?;
-
-    expect_key(&mut reader, 15, "expires_at")?;
-    let _ = reader.unsigned()?;
-
-    expect_key(&mut reader, 16, "channel_signature")?;
-    let _ = read_fixed::<64>(&mut reader, "channel_signature")?;
-
-    if !reader.finished() {
-        return Err("trailing bytes after compute usage receipt".into());
-    }
-
-    Ok(channel_id)
 }
 
 fn expect_key(
@@ -540,7 +474,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            validate_usage_receipt_structure(&receipt_bytes).unwrap(),
+            ComputeUsageReceiptV1::from_canonical_bytes(&receipt_bytes)
+                .unwrap()
+                .channel_id,
             channel_id
         );
 
