@@ -270,3 +270,12 @@ The first native AI-payment test should prove:
 8. 0.63 NIAH returns to the funding account;
 9. second settlement attempt is rejected;
 10. ordinary transfers and CPU-PoW chain progress remain independent of compute availability.
+
+
+## Native State V2 integration
+
+`spec/native-state-v2-compute-channels.md` defines the consensus state-root, snapshot, persistence, activation, and reorg rules for ComputeChannelStateV1.
+
+Compute-channel state MUST be part of the canonical native state snapshot/root. It MUST NOT be maintained as an uncommitted auxiliary side table.
+
+NativeStateV1 remains accounts-only and unchanged; compute actions require explicit NativeStateV2 activation.
