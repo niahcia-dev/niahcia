@@ -1,13 +1,7 @@
 use crate::address::AddressNetwork;
-use crate::native_compute_payloads::{
-    derive_compute_channel_id_v1, ComputeChannelOpenPayloadV1,
-};
-use crate::native_state_v2::{
-    ComputeChannelStateV1, ComputeChannelStatusV1, NativeStateV2,
-};
-use crate::native_transaction_v2::{
-    NativeActionV2, SignedNativeTransactionV2,
-};
+use crate::native_compute_payloads::{derive_compute_channel_id_v1, ComputeChannelOpenPayloadV1};
+use crate::native_state_v2::{ComputeChannelStateV1, ComputeChannelStatusV1, NativeStateV2};
+use crate::native_transaction_v2::{NativeActionV2, SignedNativeTransactionV2};
 use crate::work::Hash32;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,7 +51,9 @@ pub fn plan_compute_channel_open_v1(
     }
 
     if account.balance < payload.authorized_amount {
-        return Err("insufficient native account balance for ComputeChannelOpen authorization".into());
+        return Err(
+            "insufficient native account balance for ComputeChannelOpen authorization".into(),
+        );
     }
 
     let transaction_id = transaction.tx_id()?;
@@ -103,9 +99,7 @@ mod tests {
     use super::*;
     use crate::native_execution::{AccountStateV1, NativeStateV1};
     use crate::native_state_v2::ComputeChannelSettlementPolicyV1;
-    use crate::native_transaction::{
-        DEVNET_CHAIN_ID, DEVNET_NETWORK_ID,
-    };
+    use crate::native_transaction::{DEVNET_CHAIN_ID, DEVNET_NETWORK_ID};
     use crate::native_transaction_v2::NativeTransactionBodyV2;
     use k256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey};
 
@@ -215,14 +209,10 @@ mod tests {
         transaction.signature = signature.to_bytes().to_vec();
         let state = state_for(&transaction, 5_000, 0);
 
-        assert!(plan_compute_channel_open_v1(
-            &state,
-            &transaction,
-            AddressNetwork::Devnet,
-            50
-        )
-        .unwrap_err()
-        .contains("not ComputeChannelOpen"));
+        let error =
+            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
+                .unwrap_err();
+        assert!(error.contains("not ComputeChannelOpen"));
     }
 
     #[test]
@@ -231,23 +221,14 @@ mod tests {
         let transaction = signed_open(&signing_key, 0, 1_000, 100);
         let state = state_for(&transaction, 5_000, 0);
 
-        assert!(plan_compute_channel_open_v1(
-            &state,
-            &transaction,
-            AddressNetwork::Mainnet,
-            50
-        )
-        .is_err());
+        let result =
+            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Mainnet, 50);
+        assert!(result.is_err());
 
         let mut tampered = transaction;
         tampered.signature[0] ^= 1;
-        assert!(plan_compute_channel_open_v1(
-            &state,
-            &tampered,
-            AddressNetwork::Devnet,
-            50
-        )
-        .is_err());
+        let result = plan_compute_channel_open_v1(&state, &tampered, AddressNetwork::Devnet, 50);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -256,14 +237,10 @@ mod tests {
         let transaction = signed_open(&signing_key, 0, 999, 100);
         let state = state_for(&transaction, 5_000, 0);
 
-        assert!(plan_compute_channel_open_v1(
-            &state,
-            &transaction,
-            AddressNetwork::Devnet,
-            50
-        )
-        .unwrap_err()
-        .contains("value mismatch"));
+        let error =
+            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
+                .unwrap_err();
+        assert!(error.contains("value mismatch"));
     }
 
     #[test]
@@ -272,14 +249,10 @@ mod tests {
         let transaction = signed_open(&signing_key, 0, 1_000, 50);
         let state = state_for(&transaction, 5_000, 0);
 
-        assert!(plan_compute_channel_open_v1(
-            &state,
-            &transaction,
-            AddressNetwork::Devnet,
-            50
-        )
-        .unwrap_err()
-        .contains("expiry"));
+        let error =
+            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
+                .unwrap_err();
+        assert!(error.contains("expiry"));
     }
 
     #[test]
@@ -288,14 +261,10 @@ mod tests {
         let transaction = signed_open(&signing_key, 4, 1_000, 100);
         let state = state_for(&transaction, 5_000, 3);
 
-        assert!(plan_compute_channel_open_v1(
-            &state,
-            &transaction,
-            AddressNetwork::Devnet,
-            50
-        )
-        .unwrap_err()
-        .contains("nonce mismatch"));
+        let error =
+            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
+                .unwrap_err();
+        assert!(error.contains("nonce mismatch"));
     }
 
     #[test]
@@ -304,14 +273,10 @@ mod tests {
         let transaction = signed_open(&signing_key, 0, 1_000, 100);
         let state = state_for(&transaction, 999, 0);
 
-        assert!(plan_compute_channel_open_v1(
-            &state,
-            &transaction,
-            AddressNetwork::Devnet,
-            50
-        )
-        .unwrap_err()
-        .contains("insufficient"));
+        let error =
+            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
+                .unwrap_err();
+        assert!(error.contains("insufficient"));
     }
 
     #[test]
@@ -324,14 +289,10 @@ mod tests {
             plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50).unwrap();
         state.set_channel(first.channel_state).unwrap();
 
-        assert!(plan_compute_channel_open_v1(
-            &state,
-            &transaction,
-            AddressNetwork::Devnet,
-            50
-        )
-        .unwrap_err()
-        .contains("already exists"));
+        let error =
+            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
+                .unwrap_err();
+        assert!(error.contains("already exists"));
     }
 
     #[test]
@@ -344,12 +305,8 @@ mod tests {
         transaction.signature = signature.to_bytes().to_vec();
         let state = state_for(&transaction, 5_000, 0);
 
-        assert!(plan_compute_channel_open_v1(
-            &state,
-            &transaction,
-            AddressNetwork::Devnet,
-            50
-        )
-        .is_err());
+        let result =
+            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50);
+        assert!(result.is_err());
     }
 }
