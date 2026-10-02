@@ -725,3 +725,11 @@ These positions are permanent within schema version 1 and do not consume global 
 ```text
 1   channel_id
 ```
+
+
+## NativeBlockBody — object type 0x0017
+
+```text
+1   producer_fee_recipient
+2   transactions
+```
