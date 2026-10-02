@@ -174,7 +174,9 @@ pub fn spawn(
         while running.load(Ordering::SeqCst) {
             match listener.accept() {
                 Ok((stream, peer)) => {
-                    if let Err(e) = handle_connection(stream, &work, &state, &mempool, fee_recipient) {
+                    if let Err(e) =
+                        handle_connection(stream, &work, &state, &mempool, fee_recipient)
+                    {
                         warn!(%peer, error = %e, "mining RPC request failed");
                     }
                 }
