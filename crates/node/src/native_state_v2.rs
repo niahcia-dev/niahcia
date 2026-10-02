@@ -21,7 +21,9 @@ impl TryFrom<u8> for ComputeChannelSettlementPolicyV1 {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0x00 => Ok(Self::CumulativeReceipt),
-            other => Err(format!("unknown compute channel settlement policy: {other}")),
+            other => Err(format!(
+                "unknown compute channel settlement policy: {other}"
+            )),
         }
     }
 }
@@ -304,10 +306,9 @@ impl NativeStateV2 {
         let mut previous_account: Option<AccountId> = None;
 
         for _ in 0..account_count {
-            let account: AccountId =
-                take(bytes, &mut offset, 20, "native state V2 account")?
-                    .try_into()
-                    .unwrap();
+            let account: AccountId = take(bytes, &mut offset, 20, "native state V2 account")?
+                .try_into()
+                .unwrap();
             let balance = u128::from_be_bytes(
                 take(bytes, &mut offset, 16, "native state V2 account balance")?
                     .try_into()
@@ -463,7 +464,10 @@ mod tests {
 
         assert_eq!(decoded, state);
         assert_eq!(decoded.state_root().unwrap(), state.state_root().unwrap());
-        assert_eq!(decoded.channels_root().unwrap(), state.channels_root().unwrap());
+        assert_eq!(
+            decoded.channels_root().unwrap(),
+            state.channels_root().unwrap()
+        );
     }
 
     #[test]
@@ -476,7 +480,10 @@ mod tests {
         second.set_channel(channel(0x11)).unwrap();
         second.set_channel(channel(0x22)).unwrap();
 
-        assert_eq!(first.canonical_bytes().unwrap(), second.canonical_bytes().unwrap());
+        assert_eq!(
+            first.canonical_bytes().unwrap(),
+            second.canonical_bytes().unwrap()
+        );
         assert_eq!(first.state_root().unwrap(), second.state_root().unwrap());
     }
 
