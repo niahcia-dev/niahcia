@@ -115,6 +115,8 @@ This document assigns permanent numeric field identifiers used by NCE/1 canonica
 
 ## ComputeWorker — object type 0x0006
 
+### Schema V1 — legacy candidate fields
+
 ```text
 1   schema_version
 2   worker_id
@@ -136,6 +138,18 @@ This document assigns permanent numeric field identifiers used by NCE/1 canonica
 18  advertisement_signature
 19  status
 ```
+
+### Schema V2 — stable identity additions
+
+V2 reuses stable V1 fields only with unchanged meanings and appends:
+
+```text
+20  worker_signing_key
+21  created_height
+22  metadata_commitment
+```
+
+V1 dynamic-state field IDs remain reserved even when omitted from normal V2 identity encoding.
 
 ## ServiceNode — object type 0x0007
 
@@ -324,6 +338,31 @@ Examples:
 
 Exclusion is a preimage rule, not a renumbering rule.
 
+
+## WorkerAdvertisement — object type 0x0200
+
+```text
+1   schema_version
+2   advertisement_id
+3   worker_id
+4   operator_id
+5   advertisement_sequence
+6   execution_profiles
+7   models
+8   workload_types
+9   hardware_capabilities
+10  capacity
+11  queue_state
+12  model_states
+13  price_offer_ids
+14  verification_capabilities
+15  endpoint_descriptor
+16  valid_from
+17  expires_at
+18  service_status
+19  bond_reference
+20  advertisement_signature
+```
 
 ## StorageCommitment — object type 0x0205
 
