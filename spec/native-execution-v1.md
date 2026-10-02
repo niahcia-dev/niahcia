@@ -255,3 +255,14 @@ Expected values:
     base_fee_burned = 6000
     producer_priority_fee = 8000
 
+
+
+## Native State V2 boundary
+
+Native Execution V1 currently commits the accounts-only NativeStateV1 root.
+
+Compute-channel consensus state is not silently added to NativeStateV1.
+
+`spec/native-state-v2-compute-channels.md` defines the candidate explicit successor state format and activation boundary required before NativeTransaction V2 compute actions may execute.
+
+Existing Native Execution V1 vectors remain unchanged.
