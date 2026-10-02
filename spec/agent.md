@@ -69,3 +69,16 @@ REVOKED
 ## Prototype 0
 
 Prototype 0 needs only stable identity, creator/controller, `current_version`, status, and metadata. The schema nevertheless reserves the full governance model.
+
+
+## V1 wallet-hosted Agent model
+
+For the first NIAHCIA AI milestone, an Agent MAY be hosted entirely by the user's wallet/client.
+
+In this mode the wallet retains the Agent's private configuration, local encrypted memory, conversation state, capability policy, and spending limits. Remote compute workers execute bounded inference Jobs and return results, but do not become the Agent's persistent host.
+
+A wallet-hosted Agent therefore requires no permanent Agent server, storage node, or worker affinity.
+
+This is compatible with the stable Agent/AgentVersion model: the protocol identity and versioned behavior may remain explicit while private operational state remains local.
+
+Future versions may support independently hosted, always-online, or decentralized autonomous Agents without changing the validity of the wallet-hosted V1 mode.
