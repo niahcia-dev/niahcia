@@ -1020,13 +1020,7 @@ mod tests {
         }
 
         let manager = test_work_manager(&parent);
-        install_next_native_work_from_mempool(
-            &manager,
-            &store,
-            &mempool,
-            [0x77; 20],
-        )
-        .unwrap();
+        install_next_native_work_from_mempool(&manager, &store, &mempool, [0x77; 20]).unwrap();
 
         let (generation, header, _, _) = manager.current();
         let (_, _, _, _, body) = manager
@@ -1116,7 +1110,10 @@ mod tests {
         solved.extra_nonce = 9;
         let block_id = solved.block_id();
 
-        assert_eq!(store.native_block_body(block_id).unwrap(), Some(body.clone()));
+        assert_eq!(
+            store.native_block_body(block_id).unwrap(),
+            Some(body.clone())
+        );
 
         drop(store);
         let reopened = StateStore::open(&path).unwrap();
