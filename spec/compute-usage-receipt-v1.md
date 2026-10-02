@@ -138,3 +138,12 @@ A future version may add pre-authorized staged claims or escrowed Job reservatio
 8. Result receipt and payment receipt are distinct objects.
 9. Invalid or insufficiently verified results do not automatically earn successful-job payment.
 10. First-milestone receipts are Job-level, not per-token streaming signatures.
+
+
+## Payment-risk interaction
+
+For `SMALL` Jobs, one final Job-level acknowledgement remains the default.
+
+For `RESERVED` Jobs, a prior JobReservationV1 may hold authorized channel value while execution is in progress. The final usage receipt still acknowledges only the independently verified actual charge; unused reserved value is released.
+
+For future `STAGED` Jobs, each acknowledged stage contributes monotonically toward cumulative channel spend. Per-token signatures remain unnecessary.
