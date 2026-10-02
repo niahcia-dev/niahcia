@@ -515,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn V2_transfer_body_round_trips_without_changing_v1_shape() {
+    fn v2_transfer_body_round_trips_without_changing_v1_shape() {
         let body = transfer_body();
         let bytes = body.canonical_bytes().unwrap();
         let decoded = NativeTransactionBodyV2::from_canonical_bytes(&bytes).unwrap();
@@ -544,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn V2_signed_transaction_round_trips_and_verifies() {
+    fn v2_signed_transaction_round_trips_and_verifies() {
         let tx = signed(transfer_body());
         tx.verify_signature(AddressNetwork::Devnet).unwrap();
 
@@ -555,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn V2_domains_are_distinct_from_v1() {
+    fn v2_domains_are_distinct_from_v1() {
         let v2 = signed(transfer_body());
         let v2_digest = v2.signing_digest().unwrap();
 
@@ -592,7 +592,7 @@ mod tests {
     }
 
     #[test]
-    fn V1_decoder_rejects_v2_and_v2_decoder_rejects_v1() {
+    fn v1_decoder_rejects_v2_and_v2_decoder_rejects_v1() {
         let v2 = signed(transfer_body());
         assert!(crate::native_transaction::SignedNativeTransactionV1::from_canonical_bytes(
             &v2.canonical_bytes().unwrap()
@@ -630,7 +630,7 @@ mod tests {
     }
 
     #[test]
-    fn V2_wrong_network_and_signature_tampering_are_rejected() {
+    fn v2_wrong_network_and_signature_tampering_are_rejected() {
         let tx = signed(transfer_body());
         assert!(tx.verify_signature(AddressNetwork::Mainnet).is_err());
 
