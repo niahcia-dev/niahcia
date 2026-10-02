@@ -28,6 +28,9 @@ NCE/1 top-level envelopes include a permanent numeric `object_type`.
 0x0011  SignedNativeTransaction
 0x0012  ComputeSession
 0x0013  ComputeUsageReceipt
+0x0014  ComputeChannelOpenPayload
+0x0015  ComputeChannelSettlePayload
+0x0016  ComputeChannelRefundPayload
 
 0x0100  ModelManifest
 0x0101  MemoryManifest
