@@ -197,3 +197,12 @@ The first implementation should prove:
 8. continue from wallet-local context;
 9. settle the original channel;
 10. confirm no conversation/storage migration was required.
+
+
+## Transport interaction
+
+A ComputeSession SHOULD establish one authenticated AI Transport V1 session with the selected primary worker.
+
+Transport session keys are ephemeral and distinct from wallet spending keys, requester identity keys, and worker payment keys.
+
+Reconnect/resume may preserve the logical ComputeSession while deriving fresh traffic keys, subject to the session's normal expiry/eligibility bounds.
