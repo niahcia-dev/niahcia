@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`MemoryDescriptor` identifies persistent or ephemeral agent state without requiring the state itself to live on-chain.
+`MemoryDescriptor` identifies persistent or ephemeral Agent state without requiring the state itself to live on-chain or on a decentralized storage network.
 
 ## Canonical fields
 
@@ -40,7 +40,9 @@ ARCHIVE
 
 `root_hash` commits to the canonical logical memory state.
 
-The underlying blobs/chunks live on service nodes or compatible content-addressed storage.
+The underlying memory data MAY remain entirely wallet/client-local. V1 private session and user memory defaults to local encrypted storage controlled by the wallet/client.
+
+When remote durability is explicitly requested, the same committed memory state MAY be persisted through compatible remote or decentralized storage. A memory commitment does not itself require service-node participation.
 
 ## Updates
 
@@ -58,9 +60,9 @@ An update is valid only if the expected `old_root` still matches the current des
 
 This prevents concurrent workers from silently overwriting one another.
 
-## Replication
+## Optional replication
 
-`replication_policy` may specify:
+Replication is not required for ordinary V1 chat or Agent operation. When decentralized or remote persistence is selected, `replication_policy` may specify:
 
 - minimum replicas
 - desired replicas
@@ -80,8 +82,10 @@ Content addressing does not imply confidentiality.
 1. Memory blobs are not authoritative without matching the committed root.
 2. State updates are append/audit friendly.
 3. Global/shared memory writes require stricter authority than ordinary session memory.
-4. Storage providers cannot redefine memory state by serving different bytes with invalid hashes.
+4. Storage providers, when used, cannot redefine memory state by serving different bytes with invalid hashes.
+5. A compute worker MUST NOT require custody of the user's durable memory merely to execute an inference job.
+6. Wallet-local memory remains valid protocol behavior without any StorageAgreement or service-node registration.
 
 ## Prototype 0
 
-Prototype 0 initially needs SESSION memory semantics; other scopes remain valid protocol concepts.
+Prototype 0 initially uses wallet/client-local encrypted SESSION memory. Decentralized storage is explicitly deferred and is not a dependency of the first end-to-end AI compute milestone. Other scopes remain valid protocol concepts.
