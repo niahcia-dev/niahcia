@@ -179,6 +179,14 @@ impl<'a> NceReader<'a> {
         self.take(len)
     }
 
+    pub fn array_len(&mut self) -> Result<usize, String> {
+        let (major, len) = self.head()?;
+        if major != 4 {
+            return Err("expected NCE/1 array".into());
+        }
+        usize::try_from(len).map_err(|_| "NCE/1 array length exceeds platform limits".to_string())
+    }
+
     pub fn map_len(&mut self) -> Result<usize, String> {
         let (major, len) = self.head()?;
         if major != 5 {
