@@ -54,6 +54,16 @@ MULTI_AGENT
 CUSTOM
 ```
 
+## Requester identity privacy
+
+`requester` identifies the cryptographic identity authorized to create and control this Job. It MUST NOT be assumed to be the user's durable public wallet/payment address.
+
+For privacy-preserving operation, a requester MAY be a temporary or rotatable wallet-controlled session/job identity.
+
+Payment authorization is a separate concern. A Job may prove that valid bounded payment authority exists without making the worker-facing requester identity globally identical to the funding account.
+
+Implementations MUST NOT infer that two Jobs belong to the same wallet merely because both are validly funded.
+
 ## Parent/child jobs
 
 Agent-to-agent calls and compound workloads use:
@@ -108,6 +118,8 @@ Streaming output is an AI P2P data-plane operation. Blockchain settlement is asy
 5. Job deadlines use deterministic chain terms where on-chain enforcement is required.
 6. Scheduling/worker selection must not require a permanent trusted coordinator.
 7. The Job schema does not assume a fixed verifier count or a network-wide 2-of-3 verification rule.
+8. Requester identity and funding identity are separable; valid payment authorization MUST NOT require exposing the wallet's durable public account as the Job requester.
+9. Ordinary Jobs do not require persistent Agent hosting or decentralized storage.
 
 ## Prototype status
 
