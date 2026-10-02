@@ -1,6 +1,8 @@
 use crate::address::AddressNetwork;
 use crate::consensus::{randomx_seed, randomx_seed_height};
-use crate::mining_rpc::{install_next_native_work, validate_block_candidate, WorkManager};
+use crate::mining_rpc::{
+    install_next_native_work_from_mempool, validate_block_candidate, WorkManager,
+};
 use crate::native_block_body::NativeBlockBodyV1;
 use crate::native_execution::{execute_block_v1, NativeExecutionContextV1, NativeStateV1};
 use crate::native_rpc::SharedNativeMempoolV1;
@@ -135,19 +137,20 @@ fn requested_transactions_v3(
 fn admit_transactions_v3(
     mempool: &SharedNativeMempoolV1,
     transactions: &TxV1,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let mut pool = mempool
         .write()
         .map_err(|_| "native mempool lock poisoned".to_string())?;
 
+    let mut admitted = false;
     for result in admit_relay_transactions(&mut pool, transactions) {
-        if let Err(error) = result {
-            if !error.contains("duplicate native transaction") {
-                return Err(error);
-            }
+        match result {
+            Ok(_) => admitted = true,
+            Err(error) if error.contains("duplicate native transaction") => {}
+            Err(error) => return Err(error),
         }
     }
-    Ok(())
+    Ok(admitted)
 }
 
 fn sync_mempool_v3(stream: &mut TcpStream, mempool: &SharedNativeMempoolV1) -> Result<(), String> {
@@ -179,7 +182,7 @@ fn sync_mempool_v3(stream: &mut TcpStream, mempool: &SharedNativeMempoolV1) -> R
         MessageV3::Tx(transactions) => transactions,
         _ => return Err("P2P V3 peer did not answer GetTx with Tx".into()),
     };
-    admit_transactions_v3(mempool, &remote_transactions)
+    admit_transactions_v3(mempool, &remote_transactions).map(|_| ())
 }
 
 fn serve_peer_v3(
@@ -216,7 +219,16 @@ fn serve_peer_v3(
                 write_message_v3(&mut stream, &MessageV3::Tx(response))?;
             }
             Ok(MessageV3::Tx(transactions)) => {
-                admit_transactions_v3(mempool, &transactions)?;
+                if admit_transactions_v3(mempool, &transactions)?
+                    && state.best_chain_head()?.is_some()
+                {
+                    install_next_native_work_from_mempool(
+                        work,
+                        state,
+                        mempool,
+                        fee_recipient,
+                    )?;
+                }
             }
             Ok(MessageV3::Hello(_)) => return Err("P2P V3 peer sent duplicate Hello".into()),
             Err(error) if is_disconnect_error(&error) => return Ok(()),
@@ -386,7 +398,7 @@ fn ingest_blocks_v3(
                 None => vec![outcome.block.block_id()],
             };
             remove_canonical_transactions_v3(state, mempool, &canonical_ids)?;
-            install_next_native_work(work, state, fee_recipient)?;
+            install_next_native_work_from_mempool(work, state, mempool, fee_recipient)?;
         }
     }
     Ok(())
