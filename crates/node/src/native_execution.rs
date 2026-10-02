@@ -26,6 +26,16 @@ impl NativeStateV1 {
     pub fn account(&self, account: AccountId) -> AccountStateV1 {
         self.accounts.get(&account).copied().unwrap_or_default()
     }
+    pub(crate) fn account_count(&self) -> usize {
+        self.accounts.len()
+    }
+
+    pub(crate) fn accounts_iter(
+        &self,
+    ) -> impl Iterator<Item = (&AccountId, &AccountStateV1)> {
+        self.accounts.iter()
+    }
+
 
     pub fn set_account(&mut self, account: AccountId, state: AccountStateV1) {
         if state == AccountStateV1::default() {
