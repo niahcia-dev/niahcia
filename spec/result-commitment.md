@@ -1,99 +1,231 @@
 # ResultCommitment
 
+## Status
+
+**Schema V1: legacy candidate layout retained.**  
+**Schema V2: CURRENT CANDIDATE for ordinary off-chain compute results.**
+
 ## Purpose
 
-`ResultCommitment` is the signed binding between a Job, an executor, the exact execution context, and the produced output/artifacts.
+`ResultCommitment` is the worker-signed binding between one Job, the exact execution context, and the produced result/evidence.
 
-## Canonical fields
+A ResultCommitment is valid as a canonical signed off-chain object. Routine publication on-chain or storage-node persistence is not required.
 
-```text
-ResultCommitment
-- schema_version
-- commitment_id
-- job_id
-- worker_id
-- operator_id
-- model_id
-- execution_profile_id
-- input_hash
-- output_hash
-- token_or_artifact_hash
-- runtime_receipt_hash
-- output_manifest_hash
-- output_location
-- started_at
-- completed_at
-- submitted_block
-- nonce_or_salt_commitment
-- signature
-```
+## Versioning rule
 
-## Canonical output
+Schema V1 field IDs and meanings remain reserved.
 
-For token-generating inference, verification SHOULD commit to canonical token IDs or another explicitly versioned binary output representation rather than rendered JSON/text formatting.
+Schema V2 reuses only unchanged V1 fields and appends new IDs for the redesigned off-chain architecture.
 
-The canonical representation is defined by the ExecutionProfile output format.
-
-## Commit/reveal
-
-Where a VerificationPolicy requires independent redundant execution, workers first publish a blinded commitment such as:
+## Schema V1
 
 ```text
-H(canonical_result || salt)
+1   schema_version
+2   commitment_id
+3   job_id
+4   worker_id
+5   operator_id
+6   model_id
+7   execution_profile_id
+8   input_hash
+9   output_hash
+10  token_or_artifact_hash
+11  runtime_receipt_hash
+12  output_manifest_hash
+13  output_location
+14  started_at
+15  completed_at
+16  submitted_block
+17  nonce_or_salt_commitment
+18  signature
 ```
 
-and reveal only after the commit phase closes.
+V1 remains interpretable but is superseded for the first AI implementation.
 
-This prevents later workers from simply copying an earlier revealed result.
+## Schema V2
 
-## Output storage
+V2 reuses unchanged fields:
 
-Large outputs remain off-chain.
+```text
+1   schema_version
+2   commitment_id
+3   job_id
+4   worker_id
+5   operator_id
+6   model_id
+7   execution_profile_id
+9   output_hash
+10  token_or_artifact_hash
+11  runtime_receipt_hash
+14  started_at
+15  completed_at
+17  nonce_or_salt_commitment
+18  signature
+```
 
-`output_manifest_hash` and `output_location` identify retrievable content, while hashes provide integrity.
+and appends:
+
+```text
+19  model_version
+20  input_commitment
+21  canonical_output_commitment
+22  metering_evidence_hash
+23  verification_evidence_root
+24  compute_session_id
+25  completion_sequence
+```
+
+V1 fields 8, 12, 13, and 16 retain their V1 meanings but are omitted from normal V2 encoding.
+
+Exact required/optional rules and signing vectors remain candidate.
+
+## Job binding
+
+A ResultCommitmentV2 MUST bind exactly one immutable JobV2 through `job_id`.
+
+The worker MUST NOT substitute a different:
+
+- requester request;
+- model/version;
+- ExecutionProfile;
+- input commitment;
+- ComputeSession.
+
+## Input commitment
+
+`input_commitment` MUST equal the JobV2 input commitment for the execution being claimed.
+
+The worker does not need to publish plaintext input.
+
+## Output commitments
+
+`output_hash` commits to the returned output bytes under the applicable output format.
+
+`canonical_output_commitment` commits to the canonical result representation defined by the ExecutionProfile.
+
+For token inference, `token_or_artifact_hash` SHOULD commit to canonical token IDs or another explicitly versioned representation suitable for comparison and metering.
+
+Rendered text formatting is not automatically the canonical verification representation.
+
+## Model and profile
+
+`model_id`, `model_version`, and `execution_profile_id` make the claimed execution environment explicit.
+
+A result produced under a different model/version/profile does not satisfy the Job merely because the human-readable answer appears similar.
+
+## Metering
+
+`metering_evidence_hash` commits the usage evidence required by ComputePricingV1.
+
+For TOKEN_METERED inference this SHOULD cover the canonical input/output token accounting needed for wallet-side recomputation.
+
+The worker signature authenticates the claim; it does not force the wallet to accept an incorrect charge.
+
+## Verification evidence
+
+`verification_evidence_root` is optional for STANDARD execution when no additional evidence is required.
+
+VERIFIED/HIGH_ASSURANCE policies may bind verifier commitments, proof/attestation roots, challenge evidence, or other policy-defined material.
+
+VerificationPolicy determines what evidence is sufficient.
+
+## ComputeSession binding
+
+`compute_session_id` binds the result to the active worker session under which the Job was accepted.
+
+This prevents a result from one session/context being replayed ambiguously into another.
+
+## Completion sequence
+
+`completion_sequence` provides an authenticated ordering point for final results within a ComputeSession.
+
+It is distinct from stream chunk sequence numbers.
+
+Duplicate identical delivery may be tolerated; conflicting ResultCommitments for the same Job/session completion claim require protocol handling and may constitute objective evidence.
+
+## Output delivery
+
+ResultCommitmentV2 does not require an `output_location`.
+
+For ordinary chat:
+
+```text
+worker
+  -> AI Transport V1
+  -> encrypted streamed/final result
+  -> wallet
+```
+
+Large artifacts may optionally reference separate manifests/storage through another versioned object, but storage is not built into the ordinary V2 result requirement.
 
 ## Runtime receipt
 
 `runtime_receipt_hash` may commit to execution metadata such as:
 
-- runtime/build
-- model/profile
-- resource measurements
-- proof/attestation data
-- intermediate checkpoints
+- runtime/build identity;
+- resource measurements;
+- tokenizer/profile evidence;
+- proof/attestation data;
+- checkpoint metadata where applicable.
 
-Receipt formats are versioned separately.
-
-## Invariants
-
-1. The commitment MUST bind to one `job_id`.
-2. Model and ExecutionProfile identity MUST be explicit.
-3. Signatures MUST cover the canonical commitment payload.
-4. Output location is not trusted without hash verification.
-5. A revealed result MUST match its prior blinded commitment when commit/reveal applies.
-
-## Prototype 0
-
-Prototype 0 compares independently generated canonical token-sequence commitments under the REDUNDANT verification policy.
-
-
-## Metering evidence
-
-When payment is metered, the ResultCommitment or its referenced runtime receipt MUST commit to the canonical usage evidence required by ComputePricingV1.
-
-For TOKEN_METERED inference this should include reproducible input/output token counts or the canonical token sequence from which those counts are derived.
-
-The worker's signed ResultCommitment authenticates its claim; the wallet/verifier must still recompute or validate the applicable metering evidence before signing a payment receipt.
-
+The receipt format is versioned separately.
 
 ## Publication boundary
 
-A ResultCommitment is a canonical signed protocol object whether or not it is published on-chain.
+STANDARD ResultCommitmentV2 objects remain off-chain by default.
 
-STANDARD results remain off-chain by default.
+VERIFIED results may remain off-chain when the VerificationPolicy permits.
 
-VERIFIED results may also remain off-chain when the VerificationPolicy and settlement path do not require public anchoring.
+HIGH_ASSURANCE policies may explicitly require chain-visible commitment/evidence.
 
-HIGH_ASSURANCE policies may explicitly require commitment/evidence publication or challenge windows.
+`submitted_block` is therefore not part of normal V2 encoding.
 
-Routine on-chain publication of every ResultCommitment is not part of V1.
+## Payment boundary
+
+ResultCommitmentV2 is evidence used by the wallet before signing ComputeUsageReceiptV1.
+
+It is not itself payment authority.
+
+The wallet verifies:
+
+```text
+Job
++ ResultCommitment
++ pricing offer
++ metering evidence
++ VerificationPolicy
+```
+
+before acknowledging the charge.
+
+## Privacy
+
+ResultCommitmentV2 contains commitments and execution identity, not plaintext prompts, complete conversation history, wallet-local memory, or the user's master payment identity.
+
+## Invariants
+
+1. One ResultCommitment binds one Job.
+2. Worker/operator/model/version/profile identity is explicit.
+3. Input commitment must match the Job.
+4. Signatures cover the canonical commitment payload.
+5. V2 does not require storage-node output persistence.
+6. V2 does not require routine on-chain publication.
+7. Metering evidence is independently validated before payment.
+8. Result evidence does not itself authorize spending.
+9. VerificationPolicy controls assurance evidence requirements.
+10. V1 field meanings remain reserved and are never silently repurposed.
+
+## First milestone
+
+For SMALL/STANDARD TEXT_INFERENCE:
+
+```text
+JobV2
+  -> worker execution
+  -> streamed output
+  -> ResultCommitmentV2
+  -> wallet verifies output/token/metering commitments
+  -> ComputeUsageReceiptV1
+```
+
+All result exchange remains off-chain.
