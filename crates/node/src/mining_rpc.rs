@@ -325,12 +325,7 @@ fn handle_connection(
             match result {
                 Ok(tx_id) => {
                     if state.best_chain_head()?.is_some() {
-                        install_next_native_work_from_mempool(
-                            work,
-                            state,
-                            mempool,
-                            fee_recipient,
-                        )?;
+                        install_next_native_work_from_mempool(work, state, mempool, fee_recipient)?;
                     }
                     json!({
                         "jsonrpc": "2.0",
@@ -340,7 +335,7 @@ fn handle_connection(
                             "mempool_count": mempool_size(mempool)?
                         }
                     })
-                },
+                }
                 Err(message) => json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -360,21 +355,21 @@ fn handle_connection(
         }),
         "pow_submitWork" => {
             match submit_work_with_mempool(&request, work, state, mempool, fee_recipient) {
-            Ok(result) => json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": result
-            }),
-            Err(message) => json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "error": {
-                    "code": -32002,
-                    "message": message
-                }
-            }),
+                Ok(result) => json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": result
+                }),
+                Err(message) => json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {
+                        "code": -32002,
+                        "message": message
+                    }
+                }),
             }
-        },
+        }
         _ => json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -415,13 +410,7 @@ fn submit_work_with_mempool(
     mempool: &SharedNativeMempoolV1,
     fee_recipient: Address20,
 ) -> Result<Value, String> {
-    submit_work_internal(
-        request,
-        work,
-        state,
-        Some(mempool),
-        Some(fee_recipient),
-    )
+    submit_work_internal(request, work, state, Some(mempool), Some(fee_recipient))
 }
 
 fn submit_work_internal(
