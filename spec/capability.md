@@ -92,3 +92,12 @@ Delegated capabilities MUST be equal to or narrower than their parent authority.
 ## Prototype 0
 
 Prototype 0 may use no tools or read-only capabilities, but the full capability model is part of Protocol v1.
+
+
+## Specialized compute-payment authorization
+
+Capability remains the general permission primitive. AI compute spending may additionally use `PaymentAuthorizationV1` for channel-aware hard monetary limits.
+
+A Capability may authorize a subject to invoke compute, while PaymentAuthorizationV1 constrains the amount and scope that subject may spend.
+
+Possessing one does not imply possession of the other, and neither exposes the wallet root private key.
