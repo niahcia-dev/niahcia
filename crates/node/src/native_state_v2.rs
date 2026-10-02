@@ -492,10 +492,9 @@ mod tests {
 
     #[test]
     fn native_state_v2_vectors_match_locked_json() {
-        let vectors: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../test-vectors/native-state-v2.json"
-        ))
-        .unwrap();
+        let vectors: serde_json::Value =
+            serde_json::from_str(include_str!("../../../test-vectors/native-state-v2.json"))
+                .unwrap();
 
         let migration = &vectors["migration_empty_channels"];
 
