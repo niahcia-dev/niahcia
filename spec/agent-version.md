@@ -73,3 +73,14 @@ Pure discovery metadata such as display name, icon, or description MAY be update
 ## Prototype 0
 
 Prototype 0 may use one model, one system definition, one execution profile, and one verification policy, but the full structure is retained.
+
+
+## Private local execution state
+
+AgentVersion defines execution-critical behavior, but it does not require private runtime state to be globally hosted.
+
+A wallet-hosted Agent MAY combine an immutable AgentVersion with wallet-local encrypted memory, conversation state, private preferences, and bounded capabilities.
+
+Those private local values are not automatically part of the public AgentVersion unless a field is explicitly committed by the applicable versioned specification.
+
+Remote workers receive only the context and capabilities required for the current Job.
