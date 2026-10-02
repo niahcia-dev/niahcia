@@ -786,14 +786,24 @@ fn parse_hash32_hex(value: &str) -> Result<Hash32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{submit_work, WorkManager};
+    use super::{
+        install_next_native_work_from_mempool, submit_work, WorkManager,
+    };
     use crate::address::AddressNetwork;
     use crate::native_execution::{
         execute_block_v1, NativeBlockExecutionResultV1, NativeExecutionContextV1, NativeStateV1,
     };
+    use crate::native_mempool::NativeMempoolV1;
+    use crate::native_rpc::SharedNativeMempoolV1;
+    use crate::native_transaction::{
+        NativeActionV1, NativeTransactionBodyV1, SignedNativeTransactionV1, DEVNET_CHAIN_ID,
+        DEVNET_NETWORK_ID, NATIVE_TRANSFER_GAS_V1,
+    };
     use crate::state::StateStore;
     use crate::work::BlockHeaderV1;
+    use k256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey};
     use serde_json::json;
+    use std::sync::{Arc, RwLock};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_state_path(name: &str) -> std::path::PathBuf {
@@ -821,6 +831,108 @@ mod tests {
         }
     }
 
+    fn signed_template_transfer(
+        signing_byte: u8,
+        nonce: u64,
+        recipient: [u8; 20],
+        value: u128,
+        max_priority_fee_per_gas: u128,
+    ) -> SignedNativeTransactionV1 {
+        let signing_key = SigningKey::from_slice(&[signing_byte; 32]).unwrap();
+        let public_key = signing_key
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec();
+
+        let mut transaction = SignedNativeTransactionV1 {
+            body: NativeTransactionBodyV1 {
+                network_id: DEVNET_NETWORK_ID,
+                chain_id: DEVNET_CHAIN_ID,
+                nonce,
+                action: NativeActionV1::Transfer,
+                target_payload: recipient.to_vec(),
+                value,
+                gas_limit: NATIVE_TRANSFER_GAS_V1,
+                max_fee_per_gas: max_priority_fee_per_gas,
+                max_priority_fee_per_gas,
+                data: Vec::new(),
+            },
+            public_key,
+            signature: vec![0; 64],
+        };
+
+        let digest = transaction.signing_digest().unwrap();
+        let signature: Signature = signing_key.sign_prehash(&digest).unwrap();
+        transaction.signature = signature.to_bytes().to_vec();
+        transaction
+    }
+
+    fn canonical_parent_with_state(
+        store: &StateStore,
+        mut state: NativeStateV1,
+    ) -> (BlockHeaderV1, NativeStateV1) {
+        let execution = execute_block_v1(
+            &mut state.clone(),
+            &[],
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 0,
+                cpu_producer: [0_u8; 20],
+            },
+        )
+        .unwrap();
+
+        let block = BlockHeaderV1 {
+            version: 1,
+            parent_hash: [0_u8; 32],
+            height: 0,
+            timestamp: 1_800_000_000,
+            transactions_root: execution.transactions_root,
+            execution_root: execution.execution_root,
+            target: crate::consensus::DEVNET_GENESIS_TARGET,
+            nonce: 0,
+            extra_nonce: 0,
+        };
+
+        store.insert_chain_block(block.clone()).unwrap();
+        store
+            .store_native_state_snapshot(block.block_id(), &state)
+            .unwrap();
+        (block, state)
+    }
+
+    fn test_work_manager(parent: &BlockHeaderV1) -> WorkManager {
+        let mut state = NativeStateV1::default();
+        let execution = execute_block_v1(
+            &mut state,
+            &[],
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 0,
+                cpu_producer: [0_u8; 20],
+            },
+        )
+        .unwrap();
+        WorkManager::new(
+            BlockHeaderV1 {
+                version: 1,
+                parent_hash: parent.block_id(),
+                height: 1,
+                timestamp: parent.timestamp + 1,
+                transactions_root: execution.transactions_root,
+                execution_root: execution.execution_root,
+                target: [0xff; 32],
+                nonce: 0,
+                extra_nonce: 0,
+            },
+            0,
+            [0_u8; 32],
+            execution,
+            state,
+        )
+    }
+
     fn native_fixture() -> (NativeBlockExecutionResultV1, NativeStateV1) {
         let mut state = NativeStateV1::default();
         let execution = execute_block_v1(
@@ -834,6 +946,102 @@ mod tests {
         )
         .unwrap();
         (execution, state)
+    }
+
+    #[test]
+    fn mempool_template_includes_valid_transaction_and_exact_body() {
+        let path = temp_state_path("mempool-template-valid");
+        let store = StateStore::open(&path).unwrap();
+
+        let transaction = signed_template_transfer(1, 0, [0x22; 20], 100, 0);
+        let sender = transaction
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload;
+
+        let mut parent_state = NativeStateV1::default();
+        parent_state.credit(sender, 1_000).unwrap();
+        let (parent, _) = canonical_parent_with_state(&store, parent_state);
+
+        let mempool: SharedNativeMempoolV1 =
+            Arc::new(RwLock::new(NativeMempoolV1::new(AddressNetwork::Devnet)));
+        mempool
+            .write()
+            .unwrap()
+            .admit_transaction(transaction.clone())
+            .unwrap();
+
+        let manager = test_work_manager(&parent);
+        install_next_native_work_from_mempool(
+            &manager,
+            &store,
+            &mempool,
+            [0x77; 20],
+        )
+        .unwrap();
+
+        let (generation, header, _, _) = manager.current();
+        let (_, _, execution, resulting_state, body) = manager
+            .submission_candidate(generation, header.mining_template_id(), 0, 0)
+            .unwrap();
+
+        assert_eq!(body.decoded_transactions().unwrap(), vec![transaction]);
+        assert_eq!(body.producer_fee_recipient, [0_u8; 20]);
+        assert_eq!(execution.producer_priority_fee, 0);
+        assert_eq!(header.transactions_root, execution.transactions_root);
+        assert_eq!(header.execution_root, execution.execution_root);
+        assert_eq!(resulting_state.account([0x22; 20]).balance, 100);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn mempool_template_skips_state_invalid_transaction() {
+        let path = temp_state_path("mempool-template-skip-invalid");
+        let store = StateStore::open(&path).unwrap();
+
+        let valid = signed_template_transfer(1, 0, [0x22; 20], 100, 0);
+        let invalid = signed_template_transfer(2, 7, [0x33; 20], 100, 0);
+
+        let valid_sender = valid
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload;
+        let invalid_sender = invalid
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload;
+
+        let mut parent_state = NativeStateV1::default();
+        parent_state.credit(valid_sender, 1_000).unwrap();
+        parent_state.credit(invalid_sender, 1_000).unwrap();
+        let (parent, _) = canonical_parent_with_state(&store, parent_state);
+
+        let mempool: SharedNativeMempoolV1 =
+            Arc::new(RwLock::new(NativeMempoolV1::new(AddressNetwork::Devnet)));
+        {
+            let mut pool = mempool.write().unwrap();
+            pool.admit_transaction(valid.clone()).unwrap();
+            pool.admit_transaction(invalid).unwrap();
+        }
+
+        let manager = test_work_manager(&parent);
+        install_next_native_work_from_mempool(
+            &manager,
+            &store,
+            &mempool,
+            [0x77; 20],
+        )
+        .unwrap();
+
+        let (generation, header, _, _) = manager.current();
+        let (_, _, _, _, body) = manager
+            .submission_candidate(generation, header.mining_template_id(), 0, 0)
+            .unwrap();
+
+        assert_eq!(body.decoded_transactions().unwrap(), vec![valid]);
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
