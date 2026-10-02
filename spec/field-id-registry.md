@@ -694,3 +694,34 @@ These positions are permanent within schema version 1 and do not consume global 
 15  expires_at
 16  channel_signature
 ```
+
+
+## ComputeChannelOpenPayload — object type 0x0014
+
+```text
+1   worker_id
+2   operator_id
+3   channel_public_key
+4   worker_payment_account
+5   authorized_amount
+6   expiry_height
+7   claim_deadline_height
+8   refund_available_height
+9   service_scope_commitment
+10  model_scope_commitment
+11  execution_profile_scope_commitment
+12  settlement_policy
+```
+
+## ComputeChannelSettlePayload — object type 0x0015
+
+```text
+1   channel_id
+2   final_usage_receipt
+```
+
+## ComputeChannelRefundPayload — object type 0x0016
+
+```text
+1   channel_id
+```
