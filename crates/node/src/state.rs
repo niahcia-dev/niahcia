@@ -1,6 +1,7 @@
 use crate::consensus::block_work;
 use crate::native_block_body::NativeBlockBodyV1;
 use crate::native_execution::{NativeBlockExecutionResultV1, NativeStateV1};
+use crate::native_transaction::native_transactions_root_v1;
 use crate::work::{BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
 use num_bigint::BigUint;
 use redb::{Database, ReadableTable, TableDefinition};
@@ -508,6 +509,33 @@ impl StateStore {
         execution: &NativeBlockExecutionResultV1,
         state: &NativeStateV1,
     ) -> Result<ChainInsertOutcome, String> {
+        self.insert_native_block_internal(header, None, execution, state)
+    }
+
+    pub fn insert_native_block_with_body_and_execution_outcome(
+        &self,
+        header: BlockHeaderV1,
+        body: &NativeBlockBodyV1,
+        execution: &NativeBlockExecutionResultV1,
+        state: &NativeStateV1,
+    ) -> Result<ChainInsertOutcome, String> {
+        let transactions = body.decoded_transactions()?;
+        let body_transactions_root = native_transactions_root_v1(&transactions)?;
+        if body_transactions_root != header.transactions_root {
+            return Err("native block body transactions root does not match header".into());
+        }
+        body.validate_fee_recipient_canonicality(execution.producer_priority_fee)?;
+
+        self.insert_native_block_internal(header, Some(body), execution, state)
+    }
+
+    fn insert_native_block_internal(
+        &self,
+        header: BlockHeaderV1,
+        body: Option<&NativeBlockBodyV1>,
+        execution: &NativeBlockExecutionResultV1,
+        state: &NativeStateV1,
+    ) -> Result<ChainInsertOutcome, String> {
         if header.transactions_root != execution.transactions_root {
             return Err("native block transactions root does not match execution result".into());
         }
@@ -543,6 +571,7 @@ impl StateStore {
         let encoded_block = record.encode_value()?;
 
         let encoded_execution = execution.canonical_bytes()?;
+        let encoded_body = body.map(NativeBlockBodyV1::canonical_bytes).transpose()?;
 
         let snapshot = state.canonical_bytes()?;
         let mut encoded_state = Vec::with_capacity(32 + snapshot.len());
@@ -596,6 +625,29 @@ impl StateStore {
                 executions
                     .insert(block_id.as_slice(), encoded_execution.as_slice())
                     .map_err(|e| format!("failed to persist native block execution: {e}"))?;
+            }
+        }
+
+        if let Some(encoded_body) = encoded_body.as_ref() {
+            let mut bodies = write
+                .open_table(NATIVE_BLOCK_BODIES)
+                .map_err(|e| format!("failed to open native block body table: {e}"))?;
+
+            let existing = bodies
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to inspect native block body: {e}"))?
+                .map(|value| value.value().to_vec());
+
+            if let Some(existing) = existing {
+                if existing.as_slice() != encoded_body.as_slice() {
+                    return Err(
+                        "NIAHCIA block already has a different native block body".into(),
+                    );
+                }
+            } else {
+                bodies
+                    .insert(block_id.as_slice(), encoded_body.as_slice())
+                    .map_err(|e| format!("failed to persist native block body: {e}"))?;
             }
         }
 
