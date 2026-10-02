@@ -197,6 +197,24 @@ Current priority has moved past transaction propagation/non-empty block transpor
 
 NativeStateV2 inactive foundation is now implemented and green. Current implementation includes:
 
+Inactive compute-settlement codec/signing foundation is now implemented and green. This layer remains **inactive at runtime** and includes:
+
+- NativeTransaction schema V2 body/signed canonical codecs;
+- explicit V2 action values for Transfer/ContractCall/ContractCreate plus ComputeChannelOpen/Settle/Refund;
+- V2-only signing domain `SIGN/NATIVE_TRANSACTION/V2` and transaction-ID domain `NIAHCIA/TX-ID/V2`;
+- strict V1/V2 cross-decoder rejection and network/domain separation;
+- locked `test-vectors/native-transaction-v2.json` mirrored to `niahcia-protocol`;
+- canonical ComputeChannelOpenPayloadV1 / SettlePayloadV1 / RefundPayloadV1 codecs;
+- domain-separated ComputeChannel ID derivation from the V2 Open transaction ID;
+- locked `test-vectors/native-compute-action-payloads-v1.json` mirrored to `niahcia-protocol`;
+- canonical ComputeUsageReceiptV1 codec with network-bound `SIGN/COMPUTE_USAGE_RECEIPT` digest;
+- canonical low-S secp256k1 channel-signature verification;
+- Settle payload parsing now uses the single canonical ComputeUsageReceiptV1 decoder;
+- locked deterministic `test-vectors/compute-usage-receipt-v1.json` mirrored to `niahcia-protocol`;
+- current full Rust CI green with **243 tests passing**, plus formatting, Cargo check, and Clippy.
+
+No NativeTransaction V2 action is accepted by the active mempool/execution path yet. No StateV2 activation height is set. No compute action intrinsic gas constant has been assigned.
+
 - deterministic NativeStateV2 account + compute-channel state root;
 - canonical version-2 snapshot encoding/strict decoding;
 - V1 account-root reuse without changing NativeStateV1 bytes or vectors;
@@ -219,10 +237,11 @@ Proceed in small validated milestones:
 
 1. Preserve the now-green P2P V3 + NativeBlockBodyV1 + NativeMempoolV1 path unchanged.
 2. Preserve the now-green inactive NativeStateV2 codec, persistence, migration vectors, and version discriminator unchanged.
-3. Implement NativeTransaction schema V2 **codec/signing/transaction-ID only** behind an inactive boundary. Retain all V1 field meanings and preserve V1 vectors.
-4. Add locked V2 transaction vectors for signing digest, transaction ID, canonical bytes, strict decoding, and network/domain separation before any V2 execution is enabled.
-5. After the V2 transaction codec/vectors are green, implement canonical ComputeChannelOpen/Settle/Refund payload codecs; still do not execute them yet.
-6. Only then implement ComputeChannelOpen execution first, followed by Settle and Refund, each with atomic execution/persistence and negative-path tests.
+3. Preserve the now-green inactive NativeTransaction V2 codec/signing/transaction-ID layer and its locked vectors.
+4. Preserve the now-green Open/Settle/Refund payload codecs, ComputeUsageReceiptV1 signature layer, and locked vectors.
+5. Implement **ComputeChannelOpen state-transition semantics first** behind an inactive helper boundary. Reuse NativeStateV2 and existing native account nonce/balance rules; do not activate V2 transactions in mempool/P2P/mining yet.
+6. Add atomicity/negative-path tests for Open: wrong action, wrong network/signature, wrong tx value, insufficient balance, nonce mismatch, duplicate channel ID, invalid height window, and exact state-root mutation.
+7. Only after Open transition semantics are green, implement Settle and then Refund.
 7. Keep gas constants deliberately unset until the action payload sizes/signature-verification costs are reviewed; do not invent consensus gas values locally.
 8. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
 9. Do not add worker/operator on-chain registration or bonds to the first ordinary paid-compute milestone.
