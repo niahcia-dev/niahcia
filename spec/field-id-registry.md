@@ -586,3 +586,25 @@ These positions are permanent within schema version 1 and do not consume global 
 15  sequence
 16  status
 ```
+
+
+## ComputeUsageReceipt — object type 0x0013
+
+```text
+1   schema_version
+2   receipt_id
+3   channel_id
+4   authorization_id
+5   worker_id
+6   operator_id
+7   sequence
+8   previous_receipt_id
+9   cumulative_spent
+10  job_id
+11  result_commitment_id
+12  price_offer_id
+13  job_charge
+14  metering_evidence_hash
+15  expires_at
+16  channel_signature
+```
