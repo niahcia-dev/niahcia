@@ -15,10 +15,12 @@ pub mod service;
 pub mod state;
 pub mod work;
 
+use address::AddressNetwork;
 use config::NodeConfig;
 use consensus::{randomx_seed, randomx_seed_height, DEVNET_GENESIS_TARGET};
 use engine::EngineClient;
 use mining_rpc::WorkManager;
+use native_execution::{execute_block_v1, NativeExecutionContextV1, NativeStateV1};
 use state::StateStore;
 use std::env;
 use std::path::PathBuf;
@@ -152,77 +154,124 @@ fn main() -> ExitCode {
                 "loaded persisted NIAHCIA chain head"
             );
 
-            let execution_hash = match state.execution_hash(head.block_id()) {
-                Ok(Some(hash)) => hash,
+            let mut native_state = match state.native_state_snapshot(head.block_id()) {
+                Ok(Some(state)) => state,
                 Ok(None) => {
-                    error!("persisted NIAHCIA head is missing its execution mapping");
+                    error!("persisted NIAHCIA head is missing its native state snapshot");
                     return ExitCode::FAILURE;
                 }
                 Err(error) => {
-                    error!(%error, "failed to load persisted execution mapping");
+                    error!(%error, "failed to load persisted native state snapshot");
                     return ExitCode::FAILURE;
                 }
             };
 
-            let placeholder = BlockHeaderV1 {
+            let height = match head.header.height.checked_add(1) {
+                Some(height) => height,
+                None => {
+                    error!("NIAHCIA height overflow");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            let now = unix_timestamp();
+            let timestamp = now.max(head.header.timestamp.saturating_add(1));
+
+            let genesis = match state.canonical_block_at_height(0) {
+                Ok(Some(genesis)) => genesis,
+                Ok(None) => {
+                    error!("canonical chain is missing devnet genesis");
+                    return ExitCode::FAILURE;
+                }
+                Err(error) => {
+                    error!(%error, "failed to load canonical genesis");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            let target = match consensus::devnet_next_target(
+                genesis.header.timestamp,
+                head.header.height,
+                head.header.timestamp,
+            ) {
+                Ok(target) => target,
+                Err(error) => {
+                    error!(%error, "failed to calculate next mining target");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            let execution = match execute_block_v1(
+                &mut native_state,
+                &[],
+                AddressNetwork::Devnet,
+                NativeExecutionContextV1 {
+                    base_fee_per_gas: 0,
+                    cpu_producer: fee_recipient,
+                },
+            ) {
+                Ok(execution) => execution,
+                Err(error) => {
+                    error!(%error, "failed to build native mining execution");
+                    return ExitCode::FAILURE;
+                }
+            };
+
+            let header = BlockHeaderV1 {
                 version: 1,
                 parent_hash: head.block_id(),
-                height: head.header.height.saturating_add(1),
-                timestamp: head.header.timestamp.saturating_add(1),
-                transactions_root: [0u8; 32],
-                execution_root: [0u8; 32],
-                target: head.header.target,
+                height,
+                timestamp,
+                transactions_root: execution.transactions_root,
+                execution_root: execution.execution_root,
+                target,
                 nonce: 0,
                 extra_nonce: 0,
             };
-            let manager = WorkManager::new(placeholder, 0, [0u8; 32], execution_hash);
 
-            if let Err(error) = mining_rpc::install_next_work(
-                &manager,
-                &state,
-                &engine,
-                fee_recipient,
-                execution_hash,
-            ) {
-                error!(%error, "failed to restore Reth-backed mining work");
-                return ExitCode::FAILURE;
-            }
+            let seed_height = randomx_seed_height(height);
+            let seed_block = match state.canonical_block_at_height(seed_height) {
+                Ok(Some(block)) => block,
+                Ok(None) => {
+                    error!(seed_height, "canonical chain missing RandomX seed block");
+                    return ExitCode::FAILURE;
+                }
+                Err(error) => {
+                    error!(%error, "failed to load RandomX seed block");
+                    return ExitCode::FAILURE;
+                }
+            };
+            let seed = randomx_seed(seed_block.block_id());
 
-            manager
+            WorkManager::new(header, seed_height, seed, execution, native_state)
         }
         None => {
-            info!("no persisted NIAHCIA chain head; starting from genesis template");
+            info!("no persisted NIAHCIA chain head; starting from native genesis template");
 
-            let parent = match engine.latest_block() {
-                Ok(parent) => parent,
+            let mut native_state = NativeStateV1::default();
+            let execution = match execute_block_v1(
+                &mut native_state,
+                &[],
+                AddressNetwork::Devnet,
+                NativeExecutionContextV1 {
+                    base_fee_per_gas: 0,
+                    cpu_producer: fee_recipient,
+                },
+            ) {
+                Ok(execution) => execution,
                 Err(error) => {
-                    error!(%error, "failed to load latest Reth block for genesis");
+                    error!(%error, "failed to build native genesis execution");
                     return ExitCode::FAILURE;
                 }
             };
 
-            let timestamp = unix_timestamp().max(parent.timestamp.saturating_add(1));
-            let built = match engine.build_payload_v3(&parent, timestamp, fee_recipient) {
-                Ok(built) => built,
-                Err(error) => {
-                    error!(%error, "failed to build initial Reth execution payload");
-                    return ExitCode::FAILURE;
-                }
-            };
-
-            if let Err(error) = engine.validate_payload_v3(&built) {
-                error!(%error, "failed to validate initial Reth execution payload");
-                return ExitCode::FAILURE;
-            }
-
-            let execution = &built.commitments;
             let header = BlockHeaderV1 {
                 version: 1,
                 parent_hash: [0u8; 32],
                 height: 0,
-                timestamp: execution.timestamp,
+                timestamp: unix_timestamp(),
                 transactions_root: execution.transactions_root,
-                execution_root: execution.commitment_hash(),
+                execution_root: execution.execution_root,
                 target: DEVNET_GENESIS_TARGET,
                 nonce: 0,
                 extra_nonce: 0,
@@ -230,22 +279,8 @@ fn main() -> ExitCode {
 
             let seed_height = randomx_seed_height(0);
             let seed = randomx_seed([0u8; 32]);
-            let execution_hash = built.execution_payload_hash;
 
-            let replay_bytes = match engine.encode_replay_payload(&built) {
-                Ok(bytes) => bytes,
-                Err(error) => {
-                    error!(%error, "failed to encode initial execution replay payload");
-                    return ExitCode::FAILURE;
-                }
-            };
-
-            if let Err(error) = state.store_execution_payload(execution_hash, &replay_bytes) {
-                error!(%error, "failed to persist initial execution replay payload");
-                return ExitCode::FAILURE;
-            }
-
-            WorkManager::new(header, seed_height, seed, execution_hash)
+            WorkManager::new(header, seed_height, seed, execution, native_state)
         }
     };
 
@@ -277,7 +312,6 @@ fn main() -> ExitCode {
         config.p2p_bind,
         config.p2p_peers.clone(),
         state.clone(),
-        engine.clone(),
         work_manager,
         fee_recipient,
         running.clone(),

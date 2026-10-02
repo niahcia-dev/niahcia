@@ -203,6 +203,8 @@ pub struct NativeReceiptV1 {
 }
 
 impl NativeReceiptV1 {
+    const CANONICAL_LEN: usize = 89;
+
     pub fn commitment(&self) -> Hash32 {
         let mut preimage = Vec::with_capacity(RECEIPT_DOMAIN.len() + 88);
         preimage.extend_from_slice(RECEIPT_DOMAIN);
@@ -212,6 +214,38 @@ impl NativeReceiptV1 {
         preimage.extend_from_slice(&self.base_fee_burned.to_be_bytes());
         preimage.extend_from_slice(&self.producer_priority_fee.to_be_bytes());
         keccak256(&preimage)
+    }
+
+    pub fn canonical_bytes(&self) -> [u8; Self::CANONICAL_LEN] {
+        let mut out = [0_u8; Self::CANONICAL_LEN];
+        out[0] = 1;
+        out[1..33].copy_from_slice(&self.transaction_id);
+        out[33..41].copy_from_slice(&self.gas_used.to_be_bytes());
+        out[41..57].copy_from_slice(&self.effective_fee_per_gas.to_be_bytes());
+        out[57..73].copy_from_slice(&self.base_fee_burned.to_be_bytes());
+        out[73..89].copy_from_slice(&self.producer_priority_fee.to_be_bytes());
+        out
+    }
+
+    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() != Self::CANONICAL_LEN {
+            return Err(format!(
+                "invalid native receipt length: expected {}, found {}",
+                Self::CANONICAL_LEN,
+                bytes.len()
+            ));
+        }
+        if bytes[0] != 1 {
+            return Err(format!("unsupported native receipt version: {}", bytes[0]));
+        }
+
+        Ok(Self {
+            transaction_id: bytes[1..33].try_into().unwrap(),
+            gas_used: u64::from_be_bytes(bytes[33..41].try_into().unwrap()),
+            effective_fee_per_gas: u128::from_be_bytes(bytes[41..57].try_into().unwrap()),
+            base_fee_burned: u128::from_be_bytes(bytes[57..73].try_into().unwrap()),
+            producer_priority_fee: u128::from_be_bytes(bytes[73..89].try_into().unwrap()),
+        })
     }
 }
 
@@ -264,6 +298,135 @@ pub struct NativeBlockExecutionResultV1 {
 impl NativeBlockExecutionResultV1 {
     pub fn monetary_effect_input(&self) -> (u128, u128) {
         (self.base_fee_burned, self.producer_priority_fee)
+    }
+
+    pub fn canonical_bytes(&self) -> Result<Vec<u8>, String> {
+        let receipt_count = u64::try_from(self.receipts.len())
+            .map_err(|_| "native receipt count exceeds u64".to_string())?;
+
+        let receipts_len = self
+            .receipts
+            .len()
+            .checked_mul(NativeReceiptV1::CANONICAL_LEN)
+            .ok_or_else(|| "native execution result length overflow".to_string())?;
+
+        let mut out = Vec::with_capacity(177usize.saturating_add(receipts_len));
+        out.push(1);
+        out.extend_from_slice(&self.transactions_root);
+        out.extend_from_slice(&self.state_root);
+        out.extend_from_slice(&self.receipts_root);
+        out.extend_from_slice(&self.execution_root);
+        out.extend_from_slice(&self.gas_used.to_be_bytes());
+        out.extend_from_slice(&self.base_fee_burned.to_be_bytes());
+        out.extend_from_slice(&self.producer_priority_fee.to_be_bytes());
+        out.extend_from_slice(&receipt_count.to_be_bytes());
+
+        for receipt in &self.receipts {
+            out.extend_from_slice(&receipt.canonical_bytes());
+        }
+
+        Ok(out)
+    }
+
+    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, String> {
+        const HEADER_LEN: usize = 177;
+
+        if bytes.len() < HEADER_LEN {
+            return Err("native execution result is truncated".into());
+        }
+        if bytes[0] != 1 {
+            return Err(format!(
+                "unsupported native execution result version: {}",
+                bytes[0]
+            ));
+        }
+
+        let transactions_root = bytes[1..33].try_into().unwrap();
+        let state_root = bytes[33..65].try_into().unwrap();
+        let receipts_root = bytes[65..97].try_into().unwrap();
+        let execution_root = bytes[97..129].try_into().unwrap();
+        let gas_used = u64::from_be_bytes(bytes[129..137].try_into().unwrap());
+        let base_fee_burned = u128::from_be_bytes(bytes[137..153].try_into().unwrap());
+        let producer_priority_fee = u128::from_be_bytes(bytes[153..169].try_into().unwrap());
+
+        let receipt_count = u64::from_be_bytes(bytes[169..177].try_into().unwrap());
+        let receipt_count = usize::try_from(receipt_count)
+            .map_err(|_| "native receipt count exceeds platform limits".to_string())?;
+
+        let receipts_len = receipt_count
+            .checked_mul(NativeReceiptV1::CANONICAL_LEN)
+            .ok_or_else(|| "native execution result length overflow".to_string())?;
+        let expected_len = HEADER_LEN
+            .checked_add(receipts_len)
+            .ok_or_else(|| "native execution result length overflow".to_string())?;
+
+        if bytes.len() != expected_len {
+            return Err(format!(
+                "native execution result length mismatch: expected {expected_len}, found {}",
+                bytes.len()
+            ));
+        }
+
+        let mut receipts = Vec::with_capacity(receipt_count);
+        for index in 0..receipt_count {
+            let start = HEADER_LEN + index * NativeReceiptV1::CANONICAL_LEN;
+            let end = start + NativeReceiptV1::CANONICAL_LEN;
+            receipts.push(NativeReceiptV1::from_canonical_bytes(&bytes[start..end])?);
+        }
+
+        let actual_receipts_root = native_receipts_root_v1(&receipts);
+        if actual_receipts_root != receipts_root {
+            return Err("native execution receipts root mismatch".into());
+        }
+
+        let mut actual_gas_used = 0_u64;
+        let mut actual_base_fee_burned = 0_u128;
+        let mut actual_producer_priority_fee = 0_u128;
+
+        for receipt in &receipts {
+            actual_gas_used = actual_gas_used
+                .checked_add(receipt.gas_used)
+                .ok_or_else(|| "native execution receipt gas overflow".to_string())?;
+            actual_base_fee_burned = actual_base_fee_burned
+                .checked_add(receipt.base_fee_burned)
+                .ok_or_else(|| "native execution receipt base fee overflow".to_string())?;
+            actual_producer_priority_fee = actual_producer_priority_fee
+                .checked_add(receipt.producer_priority_fee)
+                .ok_or_else(|| "native execution receipt priority fee overflow".to_string())?;
+        }
+
+        if actual_gas_used != gas_used {
+            return Err("native execution gas accounting mismatch".into());
+        }
+        if actual_base_fee_burned != base_fee_burned {
+            return Err("native execution base fee accounting mismatch".into());
+        }
+        if actual_producer_priority_fee != producer_priority_fee {
+            return Err("native execution priority fee accounting mismatch".into());
+        }
+
+        let actual_execution_root = native_execution_root_v1(
+            transactions_root,
+            state_root,
+            receipts_root,
+            gas_used,
+            base_fee_burned,
+            producer_priority_fee,
+        );
+        if actual_execution_root != execution_root {
+            return Err("native execution root mismatch".into());
+        }
+
+        Ok(Self {
+            transactions_root,
+            state_root,
+            receipts_root,
+            execution_root,
+            gas_used,
+            base_fee_burned,
+            producer_priority_fee,
+            receipts,
+        })
     }
 }
 
@@ -1282,6 +1445,62 @@ mod tests {
             native_receipts_root_v1(&[]),
             keccak256(EMPTY_RECEIPTS_ROOT_DOMAIN)
         );
+    }
+
+    #[test]
+    fn native_receipt_canonical_round_trip_is_exact() {
+        let receipt = NativeReceiptV1 {
+            transaction_id: [0x11; 32],
+            gas_used: 1_000,
+            effective_fee_per_gas: 7,
+            base_fee_burned: 3_000,
+            producer_priority_fee: 4_000,
+        };
+
+        let encoded = receipt.canonical_bytes();
+        assert_eq!(encoded.len(), NativeReceiptV1::CANONICAL_LEN);
+        assert_eq!(encoded[0], 1);
+        assert_eq!(
+            NativeReceiptV1::from_canonical_bytes(&encoded).unwrap(),
+            receipt
+        );
+
+        let mut wrong_version = encoded;
+        wrong_version[0] = 2;
+        assert!(NativeReceiptV1::from_canonical_bytes(&wrong_version).is_err());
+        assert!(NativeReceiptV1::from_canonical_bytes(&encoded[..88]).is_err());
+    }
+
+    #[test]
+    fn native_execution_result_canonical_round_trip_validates_commitments() {
+        let mut state = NativeStateV1::default();
+        let execution = execute_block_v1(
+            &mut state,
+            &[],
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 0,
+                cpu_producer: [0x09; 20],
+            },
+        )
+        .unwrap();
+
+        let encoded = execution.canonical_bytes().unwrap();
+        assert_eq!(encoded[0], 1);
+        assert_eq!(
+            NativeBlockExecutionResultV1::from_canonical_bytes(&encoded).unwrap(),
+            execution
+        );
+
+        let mut tampered = encoded.clone();
+        tampered[97] ^= 0x01;
+        assert!(NativeBlockExecutionResultV1::from_canonical_bytes(&tampered).is_err());
+
+        let mut wrong_version = encoded.clone();
+        wrong_version[0] = 2;
+        assert!(NativeBlockExecutionResultV1::from_canonical_bytes(&wrong_version).is_err());
+
+        assert!(NativeBlockExecutionResultV1::from_canonical_bytes(&encoded[..176]).is_err());
     }
 
     #[test]

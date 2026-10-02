@@ -127,64 +127,6 @@ impl PersistedServiceSuccess {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PersistedNativeExecutionV1 {
-    pub transactions_root: Hash32,
-    pub state_root: Hash32,
-    pub receipts_root: Hash32,
-    pub execution_root: Hash32,
-    pub gas_used: u64,
-    pub base_fee_burned: u128,
-    pub producer_priority_fee: u128,
-}
-
-impl PersistedNativeExecutionV1 {
-    const VALUE_LEN: usize = 168;
-
-    fn from_result(result: &NativeBlockExecutionResultV1) -> Self {
-        Self {
-            transactions_root: result.transactions_root,
-            state_root: result.state_root,
-            receipts_root: result.receipts_root,
-            execution_root: result.execution_root,
-            gas_used: result.gas_used,
-            base_fee_burned: result.base_fee_burned,
-            producer_priority_fee: result.producer_priority_fee,
-        }
-    }
-
-    fn encode_value(&self) -> [u8; Self::VALUE_LEN] {
-        let mut out = [0_u8; Self::VALUE_LEN];
-        out[0..32].copy_from_slice(&self.transactions_root);
-        out[32..64].copy_from_slice(&self.state_root);
-        out[64..96].copy_from_slice(&self.receipts_root);
-        out[96..128].copy_from_slice(&self.execution_root);
-        out[128..136].copy_from_slice(&self.gas_used.to_be_bytes());
-        out[136..152].copy_from_slice(&self.base_fee_burned.to_be_bytes());
-        out[152..168].copy_from_slice(&self.producer_priority_fee.to_be_bytes());
-        out
-    }
-
-    fn decode(value: &[u8]) -> Result<Self, String> {
-        if value.len() != Self::VALUE_LEN {
-            return Err(format!(
-                "invalid persisted native execution length: {}",
-                value.len()
-            ));
-        }
-
-        Ok(Self {
-            transactions_root: value[0..32].try_into().unwrap(),
-            state_root: value[32..64].try_into().unwrap(),
-            receipts_root: value[64..96].try_into().unwrap(),
-            execution_root: value[96..128].try_into().unwrap(),
-            gas_used: u64::from_be_bytes(value[128..136].try_into().unwrap()),
-            base_fee_burned: u128::from_be_bytes(value[136..152].try_into().unwrap()),
-            producer_priority_fee: u128::from_be_bytes(value[152..168].try_into().unwrap()),
-        })
-    }
-}
-
 pub struct StateStore {
     db: Database,
 }
@@ -261,7 +203,7 @@ impl StateStore {
     pub fn native_block_execution(
         &self,
         block_id: Hash32,
-    ) -> Result<Option<PersistedNativeExecutionV1>, String> {
+    ) -> Result<Option<NativeBlockExecutionResultV1>, String> {
         let read = self
             .db
             .begin_read()
@@ -274,7 +216,9 @@ impl StateStore {
             .get(block_id.as_slice())
             .map_err(|e| format!("failed to read native block execution: {e}"))?
         {
-            Some(value) => PersistedNativeExecutionV1::decode(value.value()).map(Some),
+            Some(value) => NativeBlockExecutionResultV1::from_canonical_bytes(value.value())
+                .map(Some)
+                .map_err(|e| format!("invalid persisted native execution: {e}")),
             None => Ok(None),
         }
     }
@@ -646,8 +590,7 @@ impl StateStore {
         let block_id = record.block_id();
         let encoded_block = record.encode_value()?;
 
-        let persisted_execution = PersistedNativeExecutionV1::from_result(execution);
-        let encoded_execution = persisted_execution.encode_value();
+        let encoded_execution = execution.canonical_bytes()?;
 
         let snapshot = state.canonical_bytes()?;
         let mut encoded_state = Vec::with_capacity(32 + snapshot.len());
@@ -1230,7 +1173,7 @@ mod tests {
             assert_eq!(outcome.current_best, block_id);
             assert_eq!(
                 store.native_block_execution(block_id).unwrap(),
-                Some(super::PersistedNativeExecutionV1::from_result(&execution))
+                Some(execution.clone())
             );
             assert_eq!(
                 store.native_state_snapshot(block_id).unwrap(),
@@ -1247,7 +1190,7 @@ mod tests {
             let reopened = StateStore::open(&path).unwrap();
             assert_eq!(
                 reopened.native_block_execution(block_id).unwrap(),
-                Some(super::PersistedNativeExecutionV1::from_result(&execution))
+                Some(execution.clone())
             );
             assert_eq!(
                 reopened.native_state_snapshot(block_id).unwrap(),

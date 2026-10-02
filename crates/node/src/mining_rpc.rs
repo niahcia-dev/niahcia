@@ -1,8 +1,12 @@
+use crate::address::AddressNetwork;
 use crate::consensus::{
     devnet_next_target, randomx_seed, randomx_seed_height, validate_timestamp,
     DEVNET_GENESIS_TARGET, MEDIAN_TIME_WINDOW,
 };
 use crate::engine::EngineClient;
+use crate::native_execution::{
+    execute_block_v1, NativeBlockExecutionResultV1, NativeExecutionContextV1, NativeStateV1,
+};
 use crate::pow::RandomXVerifier;
 use crate::state::StateStore;
 use crate::work::{Address20, BlockHeaderV1, Hash32};
@@ -26,7 +30,8 @@ struct WorkState {
     header: BlockHeaderV1,
     randomx_seed_height: u64,
     randomx_seed: [u8; 32],
-    execution_hash: Hash32,
+    execution: NativeBlockExecutionResultV1,
+    native_state: NativeStateV1,
     solved: bool,
 }
 
@@ -35,7 +40,8 @@ impl WorkManager {
         header: BlockHeaderV1,
         randomx_seed_height: u64,
         randomx_seed: [u8; 32],
-        execution_hash: Hash32,
+        execution: NativeBlockExecutionResultV1,
+        native_state: NativeStateV1,
     ) -> Self {
         Self {
             inner: Arc::new(RwLock::new(WorkState {
@@ -43,7 +49,8 @@ impl WorkManager {
                 header,
                 randomx_seed_height,
                 randomx_seed,
-                execution_hash,
+                execution,
+                native_state,
                 solved: false,
             })),
         }
@@ -65,7 +72,15 @@ impl WorkManager {
         template_id: Hash32,
         nonce: u64,
         extra_nonce: u64,
-    ) -> Result<(BlockHeaderV1, Hash32, Hash32), String> {
+    ) -> Result<
+        (
+            BlockHeaderV1,
+            Hash32,
+            NativeBlockExecutionResultV1,
+            NativeStateV1,
+        ),
+        String,
+    > {
         let state = self
             .inner
             .read()
@@ -80,7 +95,12 @@ impl WorkManager {
         let mut header = state.header.clone();
         header.nonce = nonce;
         header.extra_nonce = extra_nonce;
-        Ok((header, state.randomx_seed, state.execution_hash))
+        Ok((
+            header,
+            state.randomx_seed,
+            state.execution.clone(),
+            state.native_state.clone(),
+        ))
     }
 
     fn mark_solved(&self, generation: u64, template_id: Hash32) -> Result<(), String> {
@@ -107,7 +127,8 @@ impl WorkManager {
         header: BlockHeaderV1,
         randomx_seed_height: u64,
         randomx_seed: Hash32,
-        execution_hash: Hash32,
+        execution: NativeBlockExecutionResultV1,
+        native_state: NativeStateV1,
     ) -> Result<u64, String> {
         let mut state = self
             .inner
@@ -120,7 +141,8 @@ impl WorkManager {
         state.header = header;
         state.randomx_seed_height = randomx_seed_height;
         state.randomx_seed = randomx_seed;
-        state.execution_hash = execution_hash;
+        state.execution = execution;
+        state.native_state = native_state;
         state.solved = false;
         Ok(state.generation)
     }
@@ -311,14 +333,15 @@ fn submit_work(
         .and_then(Value::as_u64)
         .ok_or_else(|| "pow_submitWork extra_nonce must be a u64".to_string())?;
 
-    let (header, seed, execution_hash) =
+    let (header, seed, execution, native_state) =
         work.submission_candidate(generation, template_id, nonce, extra_nonce)?;
     let pow_hash = validate_block_candidate(&header, seed, state)?;
-    let outcome = state.insert_mined_block_with_execution_outcome(header, execution_hash)?;
+    let outcome =
+        state.insert_native_block_with_execution_outcome(header, &execution, &native_state)?;
+
     if outcome.current_best == outcome.block.block_id() {
-        if let Some((engine, fee_recipient)) = engine {
-            engine.set_canonical_head_v3(execution_hash)?;
-            install_next_work(work, state, engine, fee_recipient, execution_hash)?;
+        if let Some((_engine, fee_recipient)) = engine {
+            install_next_native_work(work, state, fee_recipient)?;
         } else {
             work.mark_solved(generation, template_id)?;
         }
@@ -349,65 +372,74 @@ fn submit_work(
     }))
 }
 
-pub(crate) fn install_next_work(
+pub(crate) fn install_next_native_work(
     work: &WorkManager,
     state: &StateStore,
-    engine: &EngineClient,
     fee_recipient: Address20,
-    execution_parent_hash: Hash32,
 ) -> Result<(), String> {
-    let parent = engine.block_by_hash(execution_parent_hash)?;
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| format!("system clock error while refreshing mining work: {e}"))?
-        .as_secs();
-    let timestamp = now.max(parent.timestamp.saturating_add(1));
-    let built = engine.build_payload_v3(&parent, timestamp, fee_recipient)?;
-    engine.validate_payload_v3(&built)?;
-
-    let niahcia_parent = state
+    let parent = state
         .best_chain_head()?
         .ok_or_else(|| "accepted canonical block missing from state".to_string())?;
-    let height = niahcia_parent
+    let height = parent
         .header
         .height
         .checked_add(1)
         .ok_or_else(|| "NIAHCIA height overflow".to_string())?;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| format!("system clock error while refreshing mining work: {e}"))?
+        .as_secs();
+    let timestamp = now.max(parent.header.timestamp.saturating_add(1));
+
     let genesis = state
         .canonical_block_at_height(0)?
         .ok_or_else(|| "canonical chain is missing devnet genesis".to_string())?;
     let target = devnet_next_target(
         genesis.header.timestamp,
-        niahcia_parent.header.height,
-        niahcia_parent.header.timestamp,
+        parent.header.height,
+        parent.header.timestamp,
     )?;
-    let execution = &built.commitments;
+
+    let mut native_state = state
+        .native_state_snapshot(parent.block_id())?
+        .ok_or_else(|| "canonical parent is missing native state snapshot".to_string())?;
+
+    let execution = execute_block_v1(
+        &mut native_state,
+        &[],
+        AddressNetwork::Devnet,
+        NativeExecutionContextV1 {
+            base_fee_per_gas: 0,
+            cpu_producer: fee_recipient,
+        },
+    )?;
+
     let header = BlockHeaderV1 {
         version: 1,
-        parent_hash: niahcia_parent.block_id(),
+        parent_hash: parent.block_id(),
         height,
-        timestamp: execution.timestamp,
+        timestamp,
         transactions_root: execution.transactions_root,
-        execution_root: execution.commitment_hash(),
+        execution_root: execution.execution_root,
         target,
         nonce: 0,
         extra_nonce: 0,
     };
+
     let seed_height = randomx_seed_height(height);
     let seed_block = state
         .canonical_block_at_height(seed_height)?
         .ok_or_else(|| format!("canonical chain missing RandomX seed block {seed_height}"))?;
     let seed = randomx_seed(seed_block.block_id());
-    let execution_hash = built.execution_payload_hash;
-    let replay_bytes = engine.encode_replay_payload(&built)?;
-    state.store_execution_payload(execution_hash, &replay_bytes)?;
-    let next_generation = work.replace(header, seed_height, seed, execution_hash)?;
+
+    let next_generation = work.replace(header, seed_height, seed, execution, native_state)?;
+
     info!(
         generation = next_generation,
-        height,
-        execution_payload_hash = %hex::encode(execution_hash),
-        "installed next Reth-backed NIAHCIA mining template"
+        height, "installed next native NIAHCIA mining template"
     );
+
     Ok(())
 }
 
@@ -486,6 +518,10 @@ fn parse_hash32_hex(value: &str) -> Result<Hash32, String> {
 #[cfg(test)]
 mod tests {
     use super::{submit_work, WorkManager};
+    use crate::address::AddressNetwork;
+    use crate::native_execution::{
+        execute_block_v1, NativeBlockExecutionResultV1, NativeExecutionContextV1, NativeStateV1,
+    };
     use crate::state::StateStore;
     use crate::work::BlockHeaderV1;
     use serde_json::json;
@@ -516,11 +552,27 @@ mod tests {
         }
     }
 
+    fn native_fixture() -> (NativeBlockExecutionResultV1, NativeStateV1) {
+        let mut state = NativeStateV1::default();
+        let execution = execute_block_v1(
+            &mut state,
+            &[],
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 0,
+                cpu_producer: [0x09; 20],
+            },
+        )
+        .unwrap();
+        (execution, state)
+    }
+
     #[test]
     fn submit_work_independently_verifies_and_persists_block() {
         let path = temp_state_path("submit-valid");
         let store = StateStore::open(&path).unwrap();
 
+        let (execution, native_state) = native_fixture();
         let header = BlockHeaderV1 {
             version: 1,
             parent_hash: [0_u8; 32],
@@ -529,17 +581,13 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
-            transactions_root: [0x22; 32],
-            execution_root: [0x33; 32],
+            transactions_root: execution.transactions_root,
+            execution_root: execution.execution_root,
             target: [0xff; 32],
             nonce: 0,
             extra_nonce: 0,
         };
-        let execution_hash = [0x99; 32];
-        store
-            .store_execution_payload(execution_hash, b"test-replay-payload")
-            .unwrap();
-        let manager = WorkManager::new(header.clone(), 0, [0x42; 32], execution_hash);
+        let manager = WorkManager::new(header.clone(), 0, [0x42; 32], execution, native_state);
         let template_id = header.mining_template_id();
 
         let request = json!({
@@ -588,7 +636,8 @@ mod tests {
             nonce: 0,
             extra_nonce: 0,
         };
-        let manager = WorkManager::new(header.clone(), 0, [0x42; 32], [0x99; 32]);
+        let (execution, native_state) = native_fixture();
+        let manager = WorkManager::new(header.clone(), 0, [0x42; 32], execution, native_state);
         let request = json!({
             "params": {
                 "generation": 0,
@@ -622,7 +671,8 @@ mod tests {
             nonce: 0,
             extra_nonce: 0,
         };
-        let manager = WorkManager::new(header, 0, [0x42; 32], [0x99; 32]);
+        let (execution, native_state) = native_fixture();
+        let manager = WorkManager::new(header, 0, [0x42; 32], execution, native_state);
 
         let request = json!({
             "params": {
@@ -644,14 +694,21 @@ mod tests {
 
     #[test]
     fn replacing_work_marks_previous_generation_stale() {
-        let manager = WorkManager::new(header(1), 0, [0x33; 32], [0x99; 32]);
+        let (execution, native_state) = native_fixture();
+        let manager = WorkManager::new(
+            header(1),
+            0,
+            [0x33; 32],
+            execution.clone(),
+            native_state.clone(),
+        );
         let (generation, current, _, _) = manager.current();
         let old_id = current.mining_template_id();
 
         assert!(!manager.is_stale(generation, &old_id));
 
         manager
-            .replace(header(2), 0, [0x42; 32], [0x99; 32])
+            .replace(header(2), 0, [0x42; 32], execution, native_state)
             .unwrap();
 
         assert!(manager.is_stale(generation, &old_id));

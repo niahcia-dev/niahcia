@@ -1,6 +1,7 @@
+use crate::address::AddressNetwork;
 use crate::consensus::{randomx_seed, randomx_seed_height};
-use crate::engine::EngineClient;
-use crate::mining_rpc::{install_next_work, validate_block_candidate, WorkManager};
+use crate::mining_rpc::{install_next_native_work, validate_block_candidate, WorkManager};
+use crate::native_execution::{execute_block_v1, NativeExecutionContextV1, NativeStateV1};
 use crate::state::StateStore;
 use crate::work::{Address20, BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
 use std::io::{Read, Write};
@@ -11,7 +12,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 pub const DEVNET_MAGIC: [u8; 4] = *b"NIAH";
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
 pub const FRAME_HEADER_LEN: usize = 12;
 pub const MAX_FRAME_PAYLOAD: usize = 4 * 1024 * 1024;
 pub const MAX_BLOCKS_PER_MESSAGE: u16 = 128;
@@ -22,7 +23,6 @@ pub fn spawn(
     bind: SocketAddr,
     peers: Vec<SocketAddr>,
     state: Arc<StateStore>,
-    engine: Arc<EngineClient>,
     work: WorkManager,
     fee_recipient: Address20,
     running: Arc<AtomicBool>,
@@ -33,20 +33,17 @@ pub fn spawn(
     Ok(thread::spawn(move || {
         for peer in peers {
             let state = Arc::clone(&state);
-            let engine = Arc::clone(&engine);
             let work = work.clone();
             let running = Arc::clone(&running);
             thread::spawn(move || {
                 while running.load(Ordering::SeqCst) {
                     match TcpStream::connect_timeout(&peer, IO_TIMEOUT) {
-                        Ok(stream) => {
-                            match sync_peer(stream, &state, &engine, &work, fee_recipient) {
-                                Ok(()) => tracing::info!(%peer, "outbound P2P sync complete"),
-                                Err(error) => {
-                                    tracing::warn!(%peer, %error, "outbound P2P sync failed")
-                                }
+                        Ok(stream) => match sync_peer(stream, &state, &work, fee_recipient) {
+                            Ok(()) => tracing::info!(%peer, "outbound P2P sync complete"),
+                            Err(error) => {
+                                tracing::warn!(%peer, %error, "outbound P2P sync failed")
                             }
-                        }
+                        },
                         Err(error) => {
                             tracing::warn!(%peer, %error, "failed to connect static P2P peer")
                         }
@@ -60,12 +57,9 @@ pub fn spawn(
             match listener.accept() {
                 Ok((stream, peer)) => {
                     let state = Arc::clone(&state);
-                    let engine = Arc::clone(&engine);
                     let work = work.clone();
                     thread::spawn(move || {
-                        if let Err(error) =
-                            serve_peer(stream, &state, &engine, &work, fee_recipient)
-                        {
+                        if let Err(error) = serve_peer(stream, &state, &work, fee_recipient) {
                             tracing::warn!(%peer, %error, "inbound P2P handshake failed");
                         } else {
                             tracing::info!(%peer, "inbound P2P handshake complete");
@@ -103,9 +97,9 @@ fn exchange_hello(mut stream: TcpStream, state: &StateStore) -> Result<HelloV1, 
         .set_write_timeout(Some(IO_TIMEOUT))
         .map_err(io_error)?;
     let local = local_hello(state)?;
-    write_message(&mut stream, &MessageV1::Hello(local))?;
+    write_message(&mut stream, &MessageV2::Hello(local))?;
     match read_message(&mut stream)? {
-        MessageV1::Hello(remote) => Ok(remote),
+        MessageV2::Hello(remote) => Ok(remote),
         _ => Err("peer did not send Hello as its first message".into()),
     }
 }
@@ -128,7 +122,6 @@ fn local_hello(state: &StateStore) -> Result<HelloV1, String> {
 fn serve_peer(
     mut stream: TcpStream,
     state: &StateStore,
-    engine: &EngineClient,
     work: &WorkManager,
     fee_recipient: Address20,
 ) -> Result<(), String> {
@@ -136,14 +129,12 @@ fn serve_peer(
 
     loop {
         match read_message(&mut stream) {
-            Ok(MessageV1::GetBlocks(request)) => {
+            Ok(MessageV2::GetBlocks(request)) => {
                 let blocks = canonical_transfer_range(state, request.start_height, request.count)?;
-                write_message(&mut stream, &MessageV1::Blocks(blocks))?;
+                write_message(&mut stream, &MessageV2::Blocks(blocks))?;
             }
-            Ok(MessageV1::Hello(_)) => return Err("peer sent duplicate Hello".into()),
-            Ok(MessageV1::Blocks(blocks)) => {
-                ingest_blocks(state, engine, work, fee_recipient, blocks)?
-            }
+            Ok(MessageV2::Hello(_)) => return Err("peer sent duplicate Hello".into()),
+            Ok(MessageV2::Blocks(blocks)) => ingest_blocks(state, work, fee_recipient, blocks)?,
             Err(error) if is_disconnect_error(&error) => return Ok(()),
             Err(error) => return Err(error),
         }
@@ -153,7 +144,6 @@ fn serve_peer(
 fn sync_peer(
     mut stream: TcpStream,
     state: &StateStore,
-    engine: &EngineClient,
     work: &WorkManager,
     fee_recipient: Address20,
 ) -> Result<(), String> {
@@ -166,13 +156,13 @@ fn sync_peer(
     while start_height <= remote_height {
         write_message(
             &mut stream,
-            &MessageV1::GetBlocks(GetBlocksV1 {
+            &MessageV2::GetBlocks(GetBlocksV1 {
                 start_height,
                 count: MAX_BLOCKS_PER_MESSAGE,
             }),
         )?;
         let blocks = match read_message(&mut stream)? {
-            MessageV1::Blocks(blocks) => blocks,
+            MessageV2::Blocks(blocks) => blocks,
             _ => return Err("peer did not answer GetBlocks with Blocks".into()),
         };
         if blocks.is_empty() {
@@ -180,7 +170,7 @@ fn sync_peer(
         }
         let received = u64::try_from(blocks.len())
             .map_err(|_| "received block count does not fit u64".to_string())?;
-        ingest_blocks(state, engine, work, fee_recipient, blocks)?;
+        ingest_blocks(state, work, fee_recipient, blocks)?;
         start_height = start_height
             .checked_add(received)
             .ok_or_else(|| "P2P sync height overflow".to_string())?;
@@ -201,13 +191,13 @@ fn find_sync_start(
     loop {
         write_message(
             &mut *stream,
-            &MessageV1::GetBlocks(GetBlocksV1 {
+            &MessageV2::GetBlocks(GetBlocksV1 {
                 start_height: height,
                 count: 1,
             }),
         )?;
         let blocks = match read_message(&mut *stream)? {
-            MessageV1::Blocks(blocks) => blocks,
+            MessageV2::Blocks(blocks) => blocks,
             _ => return Err("peer did not answer common-ancestor probe with Blocks".into()),
         };
         let Some(remote_block) = blocks.first() else {
@@ -231,10 +221,9 @@ fn find_sync_start(
 
 fn ingest_blocks(
     state: &StateStore,
-    engine: &EngineClient,
     work: &WorkManager,
     fee_recipient: Address20,
-    blocks: Vec<BlockTransferV1>,
+    blocks: Vec<BlockTransferV2>,
 ) -> Result<(), String> {
     for transfer in blocks {
         let seed_height = randomx_seed_height(transfer.header.height);
@@ -245,13 +234,36 @@ fn ingest_blocks(
         };
         let seed = randomx_seed(seed_block_id);
         validate_block_candidate(&transfer.header, seed, state)?;
-        engine.replay_execution_payload(&transfer.replay_payload, transfer.execution_hash)?;
-        state.store_execution_payload(transfer.execution_hash, &transfer.replay_payload)?;
-        let outcome = state
-            .insert_mined_block_with_execution_outcome(transfer.header, transfer.execution_hash)?;
+
+        let mut native_state = if transfer.header.height == 0 {
+            if transfer.header.parent_hash != [0_u8; 32] {
+                return Err("genesis block must have a zero parent hash".into());
+            }
+            NativeStateV1::default()
+        } else {
+            state
+                .native_state_snapshot(transfer.header.parent_hash)?
+                .ok_or_else(|| "candidate parent is missing native state snapshot".to_string())?
+        };
+
+        let execution = execute_block_v1(
+            &mut native_state,
+            &[],
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 0,
+                cpu_producer: [0_u8; 20],
+            },
+        )?;
+
+        let outcome = state.insert_native_block_with_execution_outcome(
+            transfer.header,
+            &execution,
+            &native_state,
+        )?;
+
         if outcome.current_best == outcome.block.block_id() {
-            engine.set_canonical_head_v3(transfer.execution_hash)?;
-            install_next_work(work, state, engine, fee_recipient, transfer.execution_hash)?;
+            install_next_native_work(work, state, fee_recipient)?;
         }
     }
     Ok(())
@@ -282,7 +294,7 @@ fn canonical_transfer_range(
     state: &StateStore,
     start_height: u64,
     count: u16,
-) -> Result<Vec<BlockTransferV1>, String> {
+) -> Result<Vec<BlockTransferV2>, String> {
     if count == 0 || count > MAX_BLOCKS_PER_MESSAGE {
         return Err("GetBlocks count is outside protocol bounds".into());
     }
@@ -293,29 +305,14 @@ fn canonical_transfer_range(
     if start >= chain.len() {
         return Ok(Vec::new());
     }
+
     let end = start.saturating_add(count as usize).min(chain.len());
-    let mut transfers = Vec::with_capacity(end - start);
-    for block in &chain[start..end] {
-        let block_id = block.block_id();
-        let execution_hash = state.execution_hash(block_id)?.ok_or_else(|| {
-            format!(
-                "canonical block {} has no execution mapping",
-                block.header.height
-            )
-        })?;
-        let replay_payload = state.execution_payload(execution_hash)?.ok_or_else(|| {
-            format!(
-                "canonical block {} has no execution replay payload",
-                block.header.height
-            )
-        })?;
-        transfers.push(BlockTransferV1 {
+    Ok(chain[start..end]
+        .iter()
+        .map(|block| BlockTransferV2 {
             header: block.header.clone(),
-            execution_hash,
-            replay_payload,
-        });
-    }
-    Ok(transfers)
+        })
+        .collect())
 }
 
 fn is_disconnect_error(error: &str) -> bool {
@@ -343,20 +340,18 @@ pub struct GetBlocksV1 {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BlockTransferV1 {
+pub struct BlockTransferV2 {
     pub header: BlockHeaderV1,
-    pub execution_hash: Hash32,
-    pub replay_payload: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MessageV1 {
+pub enum MessageV2 {
     Hello(HelloV1),
     GetBlocks(GetBlocksV1),
-    Blocks(Vec<BlockTransferV1>),
+    Blocks(Vec<BlockTransferV2>),
 }
 
-pub fn write_message(mut writer: impl Write, message: &MessageV1) -> Result<(), String> {
+pub fn write_message(mut writer: impl Write, message: &MessageV2) -> Result<(), String> {
     let (message_type, payload) = encode_message(message)?;
     if payload.len() > MAX_FRAME_PAYLOAD {
         return Err("P2P frame payload exceeds protocol maximum".into());
@@ -374,7 +369,7 @@ pub fn write_message(mut writer: impl Write, message: &MessageV1) -> Result<(), 
     writer.write_all(&payload).map_err(io_error)
 }
 
-pub fn read_message(mut reader: impl Read) -> Result<MessageV1, String> {
+pub fn read_message(mut reader: impl Read) -> Result<MessageV2, String> {
     let mut header = [0_u8; FRAME_HEADER_LEN];
     reader.read_exact(&mut header).map_err(io_error)?;
     if header[0..4] != DEVNET_MAGIC {
@@ -396,9 +391,9 @@ pub fn read_message(mut reader: impl Read) -> Result<MessageV1, String> {
     decode_message(message_type, &payload)
 }
 
-fn encode_message(message: &MessageV1) -> Result<(u16, Vec<u8>), String> {
+fn encode_message(message: &MessageV2) -> Result<(u16, Vec<u8>), String> {
     match message {
-        MessageV1::Hello(hello) => {
+        MessageV2::Hello(hello) => {
             if hello.cumulative_work.len() > u16::MAX as usize {
                 return Err("cumulative work encoding is too large".into());
             }
@@ -420,7 +415,7 @@ fn encode_message(message: &MessageV1) -> Result<(u16, Vec<u8>), String> {
             out.extend_from_slice(&hello.cumulative_work);
             Ok((MSG_HELLO, out))
         }
-        MessageV1::GetBlocks(request) => {
+        MessageV2::GetBlocks(request) => {
             if request.count == 0 || request.count > MAX_BLOCKS_PER_MESSAGE {
                 return Err("GetBlocks count is outside protocol bounds".into());
             }
@@ -429,27 +424,23 @@ fn encode_message(message: &MessageV1) -> Result<(u16, Vec<u8>), String> {
             out.extend_from_slice(&request.count.to_be_bytes());
             Ok((MSG_GET_BLOCKS, out))
         }
-        MessageV1::Blocks(blocks) => {
+        MessageV2::Blocks(blocks) => {
             if blocks.len() > MAX_BLOCKS_PER_MESSAGE as usize {
                 return Err("Blocks message exceeds protocol batch limit".into());
             }
-            let mut out = Vec::new();
+            let mut out = Vec::with_capacity(
+                2usize.saturating_add(blocks.len().saturating_mul(BLOCK_HEADER_V1_LEN)),
+            );
             out.extend_from_slice(&(blocks.len() as u16).to_be_bytes());
             for block in blocks {
-                if block.replay_payload.len() > u32::MAX as usize {
-                    return Err("execution replay payload is too large".into());
-                }
                 out.extend_from_slice(&block.header.canonical_bytes());
-                out.extend_from_slice(&block.execution_hash);
-                out.extend_from_slice(&(block.replay_payload.len() as u32).to_be_bytes());
-                out.extend_from_slice(&block.replay_payload);
             }
             Ok((MSG_BLOCKS, out))
         }
     }
 }
 
-fn decode_message(message_type: u16, payload: &[u8]) -> Result<MessageV1, String> {
+fn decode_message(message_type: u16, payload: &[u8]) -> Result<MessageV2, String> {
     let mut cursor = Cursor::new(payload);
     let message = match message_type {
         MSG_HELLO => {
@@ -461,7 +452,7 @@ fn decode_message(message_type: u16, payload: &[u8]) -> Result<MessageV1, String
             };
             let work_len = cursor.u16()? as usize;
             let cumulative_work = cursor.bytes(work_len)?.to_vec();
-            MessageV1::Hello(HelloV1 {
+            MessageV2::Hello(HelloV1 {
                 best_height,
                 best_block_id,
                 cumulative_work,
@@ -473,7 +464,7 @@ fn decode_message(message_type: u16, payload: &[u8]) -> Result<MessageV1, String
             if count == 0 || count > MAX_BLOCKS_PER_MESSAGE {
                 return Err("GetBlocks count is outside protocol bounds".into());
             }
-            MessageV1::GetBlocks(GetBlocksV1 {
+            MessageV2::GetBlocks(GetBlocksV1 {
                 start_height,
                 count,
             })
@@ -487,16 +478,9 @@ fn decode_message(message_type: u16, payload: &[u8]) -> Result<MessageV1, String
             for _ in 0..count {
                 let header =
                     BlockHeaderV1::from_canonical_bytes(cursor.bytes(BLOCK_HEADER_V1_LEN)?)?;
-                let execution_hash = cursor.hash32()?;
-                let replay_len = cursor.u32()? as usize;
-                let replay_payload = cursor.bytes(replay_len)?.to_vec();
-                blocks.push(BlockTransferV1 {
-                    header,
-                    execution_hash,
-                    replay_payload,
-                });
+                blocks.push(BlockTransferV2 { header });
             }
-            MessageV1::Blocks(blocks)
+            MessageV2::Blocks(blocks)
         }
         other => return Err(format!("unknown NIAHCIA P2P message type {other}")),
     };
@@ -537,10 +521,6 @@ impl<'a> Cursor<'a> {
         Ok(u16::from_be_bytes(self.bytes(2)?.try_into().unwrap()))
     }
 
-    fn u32(&mut self) -> Result<u32, String> {
-        Ok(u32::from_be_bytes(self.bytes(4)?.try_into().unwrap()))
-    }
-
     fn u64(&mut self) -> Result<u64, String> {
         Ok(u64::from_be_bytes(self.bytes(8)?.try_into().unwrap()))
     }
@@ -576,7 +556,7 @@ mod tests {
         }
     }
 
-    fn round_trip(message: MessageV1) {
+    fn round_trip(message: MessageV2) {
         let mut encoded = Vec::new();
         write_message(&mut encoded, &message).unwrap();
         assert_eq!(read_message(encoded.as_slice()).unwrap(), message);
@@ -584,7 +564,7 @@ mod tests {
 
     #[test]
     fn hello_v1_round_trips_and_locks_frame_prefix() {
-        let message = MessageV1::Hello(HelloV1 {
+        let message = MessageV2::Hello(HelloV1 {
             best_height: Some(7),
             best_block_id: [0x44; 32].into(),
             cumulative_work: vec![0x01, 0x02, 0x03],
@@ -592,31 +572,29 @@ mod tests {
         let mut encoded = Vec::new();
         write_message(&mut encoded, &message).unwrap();
         assert_eq!(&encoded[0..4], b"NIAH");
-        assert_eq!(&encoded[4..6], &1_u16.to_be_bytes());
+        assert_eq!(&encoded[4..6], &2_u16.to_be_bytes());
         assert_eq!(&encoded[6..8], &MSG_HELLO.to_be_bytes());
         assert_eq!(read_message(encoded.as_slice()).unwrap(), message);
     }
 
     #[test]
     fn get_blocks_v1_round_trips() {
-        round_trip(MessageV1::GetBlocks(GetBlocksV1 {
+        round_trip(MessageV2::GetBlocks(GetBlocksV1 {
             start_height: 8,
             count: 32,
         }));
     }
 
     #[test]
-    fn blocks_v1_round_trips() {
-        round_trip(MessageV1::Blocks(vec![BlockTransferV1 {
+    fn blocks_v2_round_trips() {
+        round_trip(MessageV2::Blocks(vec![BlockTransferV2 {
             header: header(),
-            execution_hash: [0x55; 32],
-            replay_payload: b"replay".to_vec(),
         }]));
     }
 
     #[test]
     fn rejects_wrong_magic_version_and_oversized_frame_before_payload_read() {
-        let message = MessageV1::GetBlocks(GetBlocksV1 {
+        let message = MessageV2::GetBlocks(GetBlocksV1 {
             start_height: 0,
             count: 1,
         });
@@ -630,7 +608,7 @@ mod tests {
             .contains("magic"));
 
         let mut wrong_version = encoded.clone();
-        wrong_version[4..6].copy_from_slice(&2_u16.to_be_bytes());
+        wrong_version[4..6].copy_from_slice(&1_u16.to_be_bytes());
         assert!(read_message(wrong_version.as_slice())
             .unwrap_err()
             .contains("version"));
@@ -647,11 +625,7 @@ mod tests {
         let mut truncated = Vec::new();
         write_message(
             &mut truncated,
-            &MessageV1::Blocks(vec![BlockTransferV1 {
-                header: header(),
-                execution_hash: [0x55; 32],
-                replay_payload: b"replay".to_vec(),
-            }]),
+            &MessageV2::Blocks(vec![BlockTransferV2 { header: header() }]),
         )
         .unwrap();
         truncated.pop();
@@ -660,7 +634,7 @@ mod tests {
         let mut trailing = Vec::new();
         write_message(
             &mut trailing,
-            &MessageV1::GetBlocks(GetBlocksV1 {
+            &MessageV2::GetBlocks(GetBlocksV1 {
                 start_height: 0,
                 count: 1,
             }),
@@ -675,7 +649,7 @@ mod tests {
 
         assert!(write_message(
             Vec::new(),
-            &MessageV1::GetBlocks(GetBlocksV1 {
+            &MessageV2::GetBlocks(GetBlocksV1 {
                 start_height: 0,
                 count: MAX_BLOCKS_PER_MESSAGE + 1,
             }),
