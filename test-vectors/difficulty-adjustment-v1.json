@@ -1,0 +1,89 @@
+{
+  "name": "NIAHCIA Difficulty Adjustment V1 arithmetic vectors",
+  "status": "draft",
+  "constants": {
+    "target_block_interval_seconds": 30,
+    "window_blocks": 60,
+    "min_solve_time_seconds": 1,
+    "max_solve_time_seconds": 300,
+    "harder_bound_ratio": "7/8",
+    "easier_bound_ratio": "9/8"
+  },
+  "vectors": [
+    {
+      "name": "steady",
+      "previous_target": "1000",
+      "samples": {"count": 60, "target": "1000", "solve_time_seconds": 30},
+      "raw_target": "1000",
+      "harder_bound": "875",
+      "easier_bound": "1125",
+      "expected_next_target": "1000"
+    },
+    {
+      "name": "fast_window_hits_harder_clamp",
+      "previous_target": "1000",
+      "samples": {"count": 60, "target": "1000", "solve_time_seconds": 15},
+      "raw_target": "500",
+      "harder_bound": "875",
+      "easier_bound": "1125",
+      "expected_next_target": "875"
+    },
+    {
+      "name": "slow_window_hits_easier_clamp",
+      "previous_target": "1000",
+      "samples": {"count": 60, "target": "1000", "solve_time_seconds": 60},
+      "raw_target": "2000",
+      "harder_bound": "875",
+      "easier_bound": "1125",
+      "expected_next_target": "1125"
+    },
+    {
+      "name": "mixed_historical_targets",
+      "previous_target": "800",
+      "sample_groups": [
+        {"count": 30, "target": "1000", "solve_time_seconds": 15},
+        {"count": 30, "target": "500", "solve_time_seconds": 30}
+      ],
+      "raw_target": "500",
+      "harder_bound": "700",
+      "easier_bound": "900",
+      "expected_next_target": "700"
+    },
+    {
+      "name": "long_outlier_is_bounded",
+      "previous_target": "1000",
+      "sample_groups": [
+        {"count": 59, "target": "1000", "solve_time_seconds": 30},
+        {"count": 1, "target": "1000", "solve_time_seconds": 3600}
+      ],
+      "bounded_outlier_seconds": 300,
+      "raw_target": "1150",
+      "harder_bound": "875",
+      "easier_bound": "1125",
+      "expected_next_target": "1125"
+    }
+  ],
+  "block_work_vectors": [
+    {
+      "target": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+      "expected_block_work": "1"
+    },
+    {
+      "target": "57896044618658097711785492504343953926634992332820282019728792003956564819967",
+      "expected_block_work": "2"
+    },
+    {
+      "target": "1000",
+      "expected_block_work": "115676412824491703719851133874813094758511473192448115923534049957955174466"
+    },
+    {
+      "target": "1",
+      "expected_block_work": "57896044618658097711785492504343953926634992332820282019728792003956564819968"
+    }
+  ],
+  "notes": [
+    "All values are decimal integers.",
+    "These vectors exercise arithmetic only; they do not freeze network pow_limit or startup policy.",
+    "A Rust U256/extended-width implementation must reproduce these values exactly before consensus freeze."
+  ]
+}

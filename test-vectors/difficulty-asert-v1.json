@@ -1,0 +1,57 @@
+{
+  "name": "NIAHCIA ASERT V1 fixed-point vectors",
+  "status": "draft",
+  "parameters": {
+    "ideal_block_time_seconds": 30,
+    "half_life_seconds": 4320,
+    "radix": 65536
+  },
+  "anchor": {
+    "target": "1000",
+    "height": 1,
+    "parent_time": 0
+  },
+  "vectors": [
+    {
+      "name": "on_schedule_first",
+      "evaluation_height": 1,
+      "evaluation_time": 30,
+      "expected_target": "1000"
+    },
+    {
+      "name": "on_schedule_second",
+      "evaluation_height": 2,
+      "evaluation_time": 60,
+      "expected_target": "1000"
+    },
+    {
+      "name": "thirty_seconds_behind_schedule",
+      "evaluation_height": 2,
+      "evaluation_time": 90,
+      "expected_target": "1004"
+    },
+    {
+      "name": "on_schedule_height_100",
+      "evaluation_height": 100,
+      "evaluation_time": 3000,
+      "expected_target": "1000"
+    },
+    {
+      "name": "height_100_thirty_seconds_behind",
+      "evaluation_height": 100,
+      "evaluation_time": 3030,
+      "expected_target": "1004"
+    },
+    {
+      "name": "height_100_thirty_seconds_ahead",
+      "evaluation_height": 100,
+      "evaluation_time": 2970,
+      "expected_target": "995"
+    }
+  ],
+  "notes": [
+    "Targets are full integer targets, not compact nBits values.",
+    "The exponent division truncates toward zero.",
+    "These are development conformance vectors and do not freeze mainnet network parameters."
+  ]
+}

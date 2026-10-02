@@ -1,0 +1,28 @@
+{
+  "name": "randomx-pow-v1-header-vector-1",
+  "status": "locked-development-vector",
+  "randomx_flags": "FLAG_DEFAULT",
+  "seed_hex": "4242424242424242424242424242424242424242424242424242424242424242",
+  "header": {
+    "version": 1,
+    "parent_hash_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "height": 2048,
+    "timestamp": 1800000123,
+    "transactions_root_hex": "2222222222222222222222222222222222222222222222222222222222222222",
+    "execution_root_hex": "3333333333333333333333333333333333333333333333333333333333333333",
+    "target_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "nonce_hex": "0102030405060708",
+    "extra_nonce_hex": "1112131415161718"
+  },
+  "canonical_header_164_bytes_hex": "0000000111111111111111111111111111111111111111111111111111111111111111110000000000000800000000006b49d27b22222222222222222222222222222222222222222222222222222222222222223333333333333333333333333333333333333333333333333333333333333333ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff01020304050607081112131415161718",
+  "randomx_hash_hex": "b66abdedf1d9a99ae6f82919b4ebe118ac05b2038caefa1e345eed3525d12588",
+  "target_interpretation": "unsigned-big-endian-256",
+  "valid_against_header_target": true,
+  "invalid_target_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+  "valid_against_invalid_target": false,
+  "notes": [
+    "RandomX input is exactly the canonical 164-byte BlockHeaderV1.",
+    "The seed is a fixed 32-byte consensus-seed fixture; seed derivation is covered separately.",
+    "This is protocol-development test data, not a live-network block."
+  ]
+}

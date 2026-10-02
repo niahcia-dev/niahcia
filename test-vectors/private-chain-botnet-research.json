@@ -1,0 +1,21 @@
+{
+  "name": "NIAHCIA private-chain botnet Monte Carlo",
+  "status": "research-only",
+  "runs_per_cell": 5000,
+  "target_block_seconds": 30,
+  "asert_half_life_seconds": 4320,
+  "rows": [
+    {"attacker_hash_vs_honest":0.25,"combined_attacker_share":0.2,"success_5m":0.0118,"success_15m":0.0,"success_30m":0.0},
+    {"attacker_hash_vs_honest":0.5,"combined_attacker_share":0.3333333333,"success_5m":0.1018,"success_15m":0.0104,"success_30m":0.0006},
+    {"attacker_hash_vs_honest":1.0,"combined_attacker_share":0.5,"success_5m":0.4990,"success_15m":0.4946,"success_30m":0.5116},
+    {"attacker_hash_vs_honest":2.0,"combined_attacker_share":0.6666666667,"success_5m":0.9704,"success_15m":0.9988,"success_30m":1.0},
+    {"attacker_hash_vs_honest":5.0,"combined_attacker_share":0.8333333333,"success_5m":1.0,"success_15m":1.0,"success_30m":1.0},
+    {"attacker_hash_vs_honest":10.0,"combined_attacker_share":0.9090909091,"success_5m":1.0,"success_15m":1.0,"success_30m":1.0}
+  ],
+  "limitations": [
+    "Both branches use honest timestamps.",
+    "No propagation advantage or eclipse attack is modeled.",
+    "No selfish-mining release strategy is modeled.",
+    "Success means private accumulated work exceeds public accumulated work at the end of the fixed interval."
+  ]
+}

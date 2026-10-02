@@ -1,0 +1,25 @@
+{
+  "name": "NIAHCIA botnet and partial-attacker research results",
+  "status": "simulation-only",
+  "asert_half_life_seconds": 4320,
+  "target_block_seconds": 30,
+  "partial_timestamp_attacker": [
+    {"share": 0.10, "mean_solve_seconds": 29.9631, "mean_target_ratio": 1.001546},
+    {"share": 0.25, "mean_solve_seconds": 29.9663, "mean_target_ratio": 1.001719},
+    {"share": 0.33, "mean_solve_seconds": 29.9678, "mean_target_ratio": 1.001890},
+    {"share": 0.40, "mean_solve_seconds": 29.9726, "mean_target_ratio": 1.002089},
+    {"share": 0.50, "mean_solve_seconds": 29.9905, "mean_target_ratio": 1.002947},
+    {"share": 0.60, "mean_solve_seconds": 30.0307, "mean_target_ratio": 1.007324}
+  ],
+  "temporary_botnet_burst_120_blocks": [
+    {"hash_multiplier": 2, "burst_mean_solve_seconds": 16.6309, "post_burst_mean_solve_seconds": 34.0915},
+    {"hash_multiplier": 5, "burst_mean_solve_seconds": 7.2965, "post_burst_mean_solve_seconds": 37.2922},
+    {"hash_multiplier": 10, "burst_mean_solve_seconds": 3.7752, "post_burst_mean_solve_seconds": 38.5290},
+    {"hash_multiplier": 25, "burst_mean_solve_seconds": 1.5429, "post_burst_mean_solve_seconds": 39.3210}
+  ],
+  "notes": [
+    "Twenty deterministic seeds were averaged.",
+    "These are controller-development simulations, not consensus vectors.",
+    "The botnet burst scenario uses honest timestamps; coordinated private-chain behavior is not yet modeled."
+  ]
+}

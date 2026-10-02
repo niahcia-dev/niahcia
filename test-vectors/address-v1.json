@@ -1,0 +1,113 @@
+{
+  "suite": "NIAHCIA Address V1 Interoperability Vectors",
+  "version": 1,
+  "status": "locked-development-vector",
+  "encoding": "Bech32m",
+  "decoded_length_bytes": 22,
+  "notes": [
+    "These vectors are authoritative cross-implementation fixtures for the locked NIAHCIA Address V1 container.",
+    "Decoded data is version || kind || payload20.",
+    "Version 0x01 is Address V1.",
+    "Kind 0x00 is Account and kind 0x01 is Contract."
+  ],
+  "vectors": [
+    {
+      "name": "mainnet-account-zero",
+      "network": "mainnet",
+      "hrp": "niah",
+      "version_hex": "01",
+      "kind": "Account",
+      "kind_hex": "00",
+      "payload_hex": "0000000000000000000000000000000000000000",
+      "decoded_hex": "01000000000000000000000000000000000000000000",
+      "address": "niah1qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg6tnyn"
+    },
+    {
+      "name": "mainnet-contract-zero",
+      "network": "mainnet",
+      "hrp": "niah",
+      "version_hex": "01",
+      "kind": "Contract",
+      "kind_hex": "01",
+      "payload_hex": "0000000000000000000000000000000000000000",
+      "decoded_hex": "01010000000000000000000000000000000000000000",
+      "address": "niah1qyqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqquk68t8"
+    },
+    {
+      "name": "testnet-account-zero",
+      "network": "testnet",
+      "hrp": "tniah",
+      "version_hex": "01",
+      "kind": "Account",
+      "kind_hex": "00",
+      "payload_hex": "0000000000000000000000000000000000000000",
+      "decoded_hex": "01000000000000000000000000000000000000000000",
+      "address": "tniah1qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqugtn3d"
+    },
+    {
+      "name": "testnet-contract-zero",
+      "network": "testnet",
+      "hrp": "tniah",
+      "version_hex": "01",
+      "kind": "Contract",
+      "kind_hex": "01",
+      "payload_hex": "0000000000000000000000000000000000000000",
+      "decoded_hex": "01010000000000000000000000000000000000000000",
+      "address": "tniah1qyqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqgy687e"
+    },
+    {
+      "name": "devnet-account-zero",
+      "network": "devnet",
+      "hrp": "dniah",
+      "version_hex": "01",
+      "kind": "Account",
+      "kind_hex": "00",
+      "payload_hex": "0000000000000000000000000000000000000000",
+      "decoded_hex": "01000000000000000000000000000000000000000000",
+      "address": "dniah1qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqw26l4w"
+    },
+    {
+      "name": "devnet-contract-zero",
+      "network": "devnet",
+      "hrp": "dniah",
+      "version_hex": "01",
+      "kind": "Contract",
+      "kind_hex": "01",
+      "payload_hex": "0000000000000000000000000000000000000000",
+      "decoded_hex": "01010000000000000000000000000000000000000000",
+      "address": "dniah1qyqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6xtt66"
+    }
+  ],
+  "account_derivation": {
+    "curve": "secp256k1",
+    "public_key_encoding": "uncompressed SEC1",
+    "hash_input": "64-byte X || Y; exclude the 0x04 SEC1 prefix",
+    "hash": "Keccak-256",
+    "payload_rule": "last 20 bytes of Keccak-256(X || Y)",
+    "synthetic_test_vector": {
+      "private_key_hex": "0101010101010101010101010101010101010101010101010101010101010101",
+      "public_key_uncompressed_hex": "041b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f70beaf8f588b541507fed6a642c5ab42dfdf8120a7f639de5122d47a69a8e8d1",
+      "public_key_xy_hex": "1b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f70beaf8f588b541507fed6a642c5ab42dfdf8120a7f639de5122d47a69a8e8d1",
+      "keccak256_hex": "b8a0722ae6cb48cde0b4ae1f1a642f0e3c3af545e7acbd38b07251b3990914f1",
+      "payload_hex": "1a642f0e3c3af545e7acbd38b07251b3990914f1",
+      "addresses": {
+        "mainnet": "niah1qyqp5ep0pc7r4a29u7kt6w9swfgm8xgfzncsse486g",
+        "testnet": "tniah1qyqp5ep0pc7r4a29u7kt6w9swfgm8xgfzncsyt480k",
+        "devnet": "dniah1qyqp5ep0pc7r4a29u7kt6w9swfgm8xgfzncskfytt4"
+      }
+    }
+  },
+  "contract_derivation": {
+    "payload_source": "authoritative EVM execution result",
+    "payload_length_bytes": 20,
+    "container_kind_hex": "01",
+    "create_semantics": "EVM CREATE",
+    "create2_semantics": "EVM CREATE2",
+    "rules": [
+      "The NIAHCIA contract payload is exactly the 20-byte EVM contract address.",
+      "NIAHCIA does not define a competing contract-creation nonce.",
+      "Protocol-object and registry nonces are not EVM account nonces.",
+      "The same 20-byte execution address may be represented with different NIAHCIA network HRPs only in the corresponding network context."
+    ]
+  }
+}

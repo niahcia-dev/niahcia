@@ -1,0 +1,39 @@
+{
+  "name": "service-epoch-report-v1-locked-vector-1",
+  "status": "locked-development-vector",
+  "notes": [
+    "This vector is for cross-implementation compatibility testing.",
+    "The private key is synthetic test data only and MUST NOT be used on any live network."
+  ],
+  "network_id_ascii": "niahcia-dev",
+  "private_key_hex": "0707070707070707070707070707070707070707070707070707070707070707",
+  "public_key_compressed_sec1_hex": "02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f",
+  "service_node_id_hex": "d070a1e364585c32ce042e933504a05b74913ff8d3bef399d6b9b9abf3fb3d8b",
+  "report": {
+    "object_type_hex": "0x0208",
+    "schema_version": 1,
+    "operator_id_hex": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "epoch_start_height": 0,
+    "epoch_end_height": 720,
+    "commitments_sampled": 2,
+    "challenges_passed": 2,
+    "challenges_failed": 0,
+    "deadlines_missed": 0,
+    "verified_bytes_served": 6144,
+    "distinct_requester_count": 2,
+    "distinct_challenge_block_count": 2,
+    "service_classes": [
+      "ARCHIVE",
+      "MODEL_STORAGE"
+    ],
+    "evidence_root_hex": "b510c5e894da2eec30586ac3109f551f16af2123e34e7429302df5252c1d54d7",
+    "eligibility_weight": 6144,
+    "created_block_hex": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "report_id_preimage_nce1_hex": "a4010102190208030104b00101035820d070a1e364585c32ce042e933504a05b74913ff8d3bef399d6b9b9abf3fb3d8b045820bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0500061902d00702080209000a000b1918000c020d020e8267415243484956456d4d4f44454c5f53544f524147450f5820b510c5e894da2eec30586ac3109f551f16af2123e34e7429302df5252c1d54d710191800115820cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "report_id_hex": "4111ebc6d0283609830f9666ac017def52f977d5e170b2960acd9432a4809597",
+  "signing_preimage_nce1_hex": "a4010102190208030104b101010258204111ebc6d0283609830f9666ac017def52f977d5e170b2960acd9432a4809597035820d070a1e364585c32ce042e933504a05b74913ff8d3bef399d6b9b9abf3fb3d8b045820bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0500061902d00702080209000a000b1918000c020d020e8267415243484956456d4d4f44454c5f53544f524147450f5820b510c5e894da2eec30586ac3109f551f16af2123e34e7429302df5252c1d54d710191800115820cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "signing_digest_hex": "61a0eb64c68188f8144a5a73bf41868f50c7afd58f2e63f61ea04582f0dcf552",
+  "signature_compact_rs_hex": "40077b047eb28cdc5903d2e22aad96a56f0c21506a0a5a395a78763ea24135512df31821934df7d3b3a5dabff9314fe568d56f8620f8d20dddf59e018e797cc3",
+  "canonical_signed_nce1_hex": "a4010102190208030104b201010258204111ebc6d0283609830f9666ac017def52f977d5e170b2960acd9432a4809597035820d070a1e364585c32ce042e933504a05b74913ff8d3bef399d6b9b9abf3fb3d8b045820bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0500061902d00702080209000a000b1918000c020d020e8267415243484956456d4d4f44454c5f53544f524147450f5820b510c5e894da2eec30586ac3109f551f16af2123e34e7429302df5252c1d54d710191800115820cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc12584040077b047eb28cdc5903d2e22aad96a56f0c21506a0a5a395a78763ea24135512df31821934df7d3b3a5dabff9314fe568d56f8620f8d20dddf59e018e797cc3"
+}
