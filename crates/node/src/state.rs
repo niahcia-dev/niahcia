@@ -987,6 +987,112 @@ mod tests {
     }
 
     #[test]
+    fn native_v3_block_commit_atomically_persists_body_execution_and_state() {
+        use crate::address::AddressNetwork;
+        use crate::native_block_body::NativeBlockBodyV1;
+        use crate::native_execution::{execute_block_v1, NativeExecutionContextV1, NativeStateV1};
+
+        let path = temp_state_path("native-v3-block-atomic");
+        let mut state = NativeStateV1::default();
+        let execution = execute_block_v1(
+            &mut state,
+            &[],
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 0,
+                cpu_producer: [0_u8; 20],
+            },
+        )
+        .unwrap();
+        let body = NativeBlockBodyV1::empty();
+
+        let mut block = header([0_u8; 32], 0, [0xff; 32], 1);
+        block.transactions_root = execution.transactions_root;
+        block.execution_root = execution.execution_root;
+        let block_id = block.block_id();
+
+        {
+            let store = StateStore::open(&path).unwrap();
+            let outcome = store
+                .insert_native_block_with_body_and_execution_outcome(
+                    block.clone(),
+                    &body,
+                    &execution,
+                    &state,
+                )
+                .unwrap();
+
+            assert_eq!(outcome.block.block_id(), block_id);
+            assert_eq!(store.native_block_body(block_id).unwrap(), Some(body.clone()));
+            assert_eq!(
+                store.native_block_execution(block_id).unwrap(),
+                Some(execution.clone())
+            );
+            assert_eq!(
+                store.native_state_snapshot(block_id).unwrap(),
+                Some(state.clone())
+            );
+        }
+
+        {
+            let reopened = StateStore::open(&path).unwrap();
+            assert_eq!(reopened.native_block_body(block_id).unwrap(), Some(body));
+            assert_eq!(
+                reopened.native_block_execution(block_id).unwrap(),
+                Some(execution)
+            );
+            assert_eq!(reopened.native_state_snapshot(block_id).unwrap(), Some(state));
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn native_v3_block_commit_rejects_body_root_mismatch_without_persisting() {
+        use crate::address::AddressNetwork;
+        use crate::native_block_body::NativeBlockBodyV1;
+        use crate::native_execution::{execute_block_v1, NativeExecutionContextV1, NativeStateV1};
+
+        let path = temp_state_path("native-v3-body-root-mismatch");
+        let store = StateStore::open(&path).unwrap();
+
+        let mut state = NativeStateV1::default();
+        let execution = execute_block_v1(
+            &mut state,
+            &[],
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 0,
+                cpu_producer: [0_u8; 20],
+            },
+        )
+        .unwrap();
+
+        let body = NativeBlockBodyV1::empty();
+        let mut block = header([0_u8; 32], 0, [0xff; 32], 2);
+        block.transactions_root = [0x55; 32];
+        block.execution_root = execution.execution_root;
+        let block_id = block.block_id();
+
+        let err = store
+            .insert_native_block_with_body_and_execution_outcome(
+                block,
+                &body,
+                &execution,
+                &state,
+            )
+            .unwrap_err();
+        assert!(err.contains("block body transactions root"));
+
+        assert!(store.load_chain_block(block_id).unwrap().is_none());
+        assert!(store.native_block_body(block_id).unwrap().is_none());
+        assert!(store.native_block_execution(block_id).unwrap().is_none());
+        assert!(store.native_state_snapshot(block_id).unwrap().is_none());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn native_block_commit_atomically_persists_execution_and_state() {
         use crate::address::AddressNetwork;
         use crate::native_execution::{execute_block_v1, NativeExecutionContextV1, NativeStateV1};
