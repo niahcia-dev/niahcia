@@ -786,7 +786,9 @@ fn parse_hash32_hex(value: &str) -> Result<Hash32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{install_next_native_work_from_mempool, submit_work, WorkManager};
+    use super::{
+        install_next_native_work_from_mempool, submit_work, submit_work_with_mempool, WorkManager,
+    };
     use crate::address::AddressNetwork;
     use crate::native_execution::{
         execute_block_v1, NativeBlockExecutionResultV1, NativeExecutionContextV1, NativeStateV1,
@@ -1032,6 +1034,93 @@ mod tests {
             .unwrap();
 
         assert_eq!(body.decoded_transactions().unwrap(), vec![valid]);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn solved_non_empty_template_persists_exact_body_and_evicts_mempool() {
+        let path = temp_state_path("submit-non-empty-body");
+        let store = StateStore::open(&path).unwrap();
+
+        let transaction = signed_template_transfer(1, 0, [0x22; 20], 0, 0);
+        let canonical = transaction.canonical_bytes().unwrap();
+        let tx_id = transaction.tx_id().unwrap();
+
+        let mut native_state = NativeStateV1::default();
+        let execution = execute_block_v1(
+            &mut native_state,
+            &[transaction.clone()],
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 0,
+                cpu_producer: [0_u8; 20],
+            },
+        )
+        .unwrap();
+
+        let body = crate::native_block_body::NativeBlockBodyV1::from_transactions(
+            [0_u8; 20],
+            &[transaction.clone()],
+        )
+        .unwrap();
+
+        let header = BlockHeaderV1 {
+            version: 1,
+            parent_hash: [0_u8; 32],
+            height: 0,
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            transactions_root: execution.transactions_root,
+            execution_root: execution.execution_root,
+            target: crate::consensus::DEVNET_GENESIS_TARGET,
+            nonce: 0,
+            extra_nonce: 0,
+        };
+
+        let manager = WorkManager::new_with_body(
+            header.clone(),
+            0,
+            [0x42; 32],
+            execution,
+            native_state,
+            body.clone(),
+        );
+
+        let mempool: SharedNativeMempoolV1 =
+            Arc::new(RwLock::new(NativeMempoolV1::new(AddressNetwork::Devnet)));
+        mempool
+            .write()
+            .unwrap()
+            .admit_canonical_bytes(&canonical)
+            .unwrap();
+
+        let request = json!({
+            "params": {
+                "generation": 0,
+                "template_id": hex::encode(header.mining_template_id()),
+                "nonce": 7,
+                "extra_nonce": 9
+            }
+        });
+
+        let result =
+            submit_work_with_mempool(&request, &manager, &store, &mempool, [0x77; 20]).unwrap();
+        assert_eq!(result["accepted"], true);
+        assert!(!mempool.read().unwrap().contains(&tx_id));
+
+        let mut solved = header;
+        solved.nonce = 7;
+        solved.extra_nonce = 9;
+        let block_id = solved.block_id();
+
+        assert_eq!(store.native_block_body(block_id).unwrap(), Some(body.clone()));
+
+        drop(store);
+        let reopened = StateStore::open(&path).unwrap();
+        assert_eq!(reopened.native_block_body(block_id).unwrap(), Some(body));
 
         let _ = std::fs::remove_file(path);
     }
