@@ -1021,7 +1021,10 @@ mod tests {
                 .unwrap();
 
             assert_eq!(outcome.block.block_id(), block_id);
-            assert_eq!(store.native_block_body(block_id).unwrap(), Some(body.clone()));
+            assert_eq!(
+                store.native_block_body(block_id).unwrap(),
+                Some(body.clone())
+            );
             assert_eq!(
                 store.native_block_execution(block_id).unwrap(),
                 Some(execution.clone())
@@ -1039,7 +1042,10 @@ mod tests {
                 reopened.native_block_execution(block_id).unwrap(),
                 Some(execution)
             );
-            assert_eq!(reopened.native_state_snapshot(block_id).unwrap(), Some(state));
+            assert_eq!(
+                reopened.native_state_snapshot(block_id).unwrap(),
+                Some(state)
+            );
         }
 
         let _ = std::fs::remove_file(path);
@@ -1073,12 +1079,7 @@ mod tests {
         let block_id = block.block_id();
 
         let err = store
-            .insert_native_block_with_body_and_execution_outcome(
-                block,
-                &body,
-                &execution,
-                &state,
-            )
+            .insert_native_block_with_body_and_execution_outcome(block, &body, &execution, &state)
             .unwrap_err();
         assert!(err.contains("block body transactions root"));
 
