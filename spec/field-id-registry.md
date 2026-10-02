@@ -557,6 +557,9 @@ Exclusion is a preimage rule, not a renumbering rule.
 13  settlement_policy
 14  sequence
 15  status
+16  worker_payment_account
+17  claim_deadline_height
+18  refund_available_height
 ```
 
 ## PaymentAuthorization — object type 0x000F
