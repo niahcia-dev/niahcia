@@ -214,3 +214,12 @@ ComputeChannel settlement is the normal chain aggregation point for many ordinar
 The chain does not need individual Job creation, stream, response, or usage-receipt transactions.
 
 The newest valid cumulative usage receipt summarizes the maximum acknowledged channel spend at settlement time.
+
+
+## Native settlement boundary
+
+Native Compute Settlement V1 defines the minimal chain state for channel funding, settlement, and refund.
+
+The first milestone does not require Jobs, ResultCommitments, PaymentAuthorizations, WorkerAdvertisements, or ordinary usage-receipt issuance to be published on-chain.
+
+Worker/operator chain registration and service bonds are also deferred from the first ordinary paid-compute settlement milestone.
