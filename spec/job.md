@@ -153,3 +153,12 @@ Streaming output is an AI P2P data-plane operation. Blockchain settlement is asy
 ## Prototype status
 
 Prototype work may initially support `TEXT_INFERENCE` with pinned Agent/Model/ExecutionProfile objects, but the former fixed redundant 2-of-3 verification assumption is superseded. Development verification behavior must reference an explicit development `VerificationPolicy` until the replacement V1 verification design is locked.
+
+
+## Transport delivery
+
+Ordinary V1 Jobs MAY be delivered directly over AI Transport V1 rather than published individually on-chain.
+
+The transport carries the canonical Job plus the encrypted input/context required by the selected worker.
+
+Job transport does not alter Job identity, pricing, payment authorization, verification, or settlement semantics.
