@@ -345,6 +345,84 @@ mod tests {
     }
 
     #[test]
+    fn compute_usage_receipt_vector_matches_locked_json() {
+        let vectors: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../test-vectors/compute-usage-receipt-v1.json"
+        ))
+        .unwrap();
+
+        let receipt_json = &vectors["receipt"];
+        let private_key = hex::decode(vectors["test_private_key"].as_str().unwrap()).unwrap();
+        let signing_key = SigningKey::from_slice(&private_key).unwrap();
+        let encoded = signing_key.verifying_key().to_encoded_point(false);
+        let channel_public_key: [u8; 65] = encoded.as_bytes().try_into().unwrap();
+
+        assert_eq!(
+            hex::encode(channel_public_key),
+            vectors["channel_public_key"].as_str().unwrap()
+        );
+
+        let mut receipt = ComputeUsageReceiptV1 {
+            receipt_id: [0x01; 32],
+            channel_id: [0x02; 32],
+            authorization_id: [0x03; 32],
+            worker_id: [0x04; 32],
+            operator_id: [0x05; 32],
+            sequence: 2,
+            previous_receipt_id: [0x06; 32],
+            cumulative_spent: receipt_json["cumulative_spent_aniah"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            job_id: [0x07; 32],
+            result_commitment_id: [0x08; 32],
+            price_offer_id: [0x09; 32],
+            job_charge: receipt_json["job_charge_aniah"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            metering_evidence_hash: [0x0a; 32],
+            expires_at: receipt_json["expires_at"].as_u64().unwrap(),
+            channel_signature: vec![0; 64],
+        };
+
+        assert_eq!(
+            hex::encode(receipt.canonical_bytes_without_signature().unwrap()),
+            vectors["unsigned_canonical_hex"].as_str().unwrap()
+        );
+        assert_eq!(
+            hex::encode(receipt.signing_digest(AddressNetwork::Devnet).unwrap()),
+            vectors["signing_digest"].as_str().unwrap()
+        );
+
+        let signature: Signature = signing_key
+            .sign_prehash(&receipt.signing_digest(AddressNetwork::Devnet).unwrap())
+            .unwrap();
+        receipt.channel_signature = signature.to_bytes().to_vec();
+
+        assert_eq!(
+            hex::encode(&receipt.channel_signature),
+            vectors["signature"].as_str().unwrap()
+        );
+        assert_eq!(
+            hex::encode(receipt.canonical_bytes().unwrap()),
+            vectors["signed_canonical_hex"].as_str().unwrap()
+        );
+
+        receipt
+            .verify_signature(AddressNetwork::Devnet, &channel_public_key)
+            .unwrap();
+
+        let decoded = ComputeUsageReceiptV1::from_canonical_bytes(
+            &hex::decode(vectors["signed_canonical_hex"].as_str().unwrap()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(decoded, receipt);
+    }
+
+    #[test]
     fn receipt_rejects_job_charge_above_cumulative_spend() {
         let (mut receipt, _) = signed_receipt();
         receipt.job_charge = receipt.cumulative_spent + 1;
