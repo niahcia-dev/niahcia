@@ -91,3 +91,10 @@ A standing advertisement may expose multiple offers for different model/profile/
 Workers MUST NOT rely on mutable unsigned pricing that can change after Job acceptance.
 
 A worker MAY reject future Jobs when an offer expires or capacity changes, but already accepted Jobs remain bounded by their accepted `offer_id` and `max_price`.
+
+
+## Transport endpoint
+
+`endpoint_descriptor` SHOULD follow AI Transport V1 and commit an authenticated, expiring transport endpoint plus worker transport public key/protocol version.
+
+The worker's advertised identity/transport key authenticates the endpoint. Fresh per-ComputeSession traffic keys are derived during transport establishment; long-lived worker identity keys are not direct chat-content encryption keys.
