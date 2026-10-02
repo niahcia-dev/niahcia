@@ -98,7 +98,10 @@ impl MonetaryStateV1 {
     /// Detach the current canonical tip. Rollback is tip-only by construction,
     /// which makes reorg ordering explicit and prevents arbitrary historical
     /// subtraction.
-    pub fn detach_tip(&mut self, expected_block_id: Hash32) -> Result<BlockMonetaryEffectV1, String> {
+    pub fn detach_tip(
+        &mut self,
+        expected_block_id: Hash32,
+    ) -> Result<BlockMonetaryEffectV1, String> {
         let effect = self
             .canonical_effects
             .last()

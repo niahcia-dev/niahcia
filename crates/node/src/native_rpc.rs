@@ -87,11 +87,8 @@ mod tests {
 
     #[test]
     fn validates_native_address_and_reports_canonical_form() {
-        let address = NiahciaAddressV1::new(
-            AddressNetwork::Devnet,
-            AddressKind::Account,
-            [0x42; 20],
-        );
+        let address =
+            NiahciaAddressV1::new(AddressNetwork::Devnet, AddressKind::Account, [0x42; 20]);
         let encoded = address.encode().unwrap();
         let result = validate_address(&encoded, AddressNetwork::Devnet);
         assert!(result.valid);
@@ -106,13 +103,10 @@ mod tests {
 
     #[test]
     fn valid_foreign_network_address_is_not_a_network_match() {
-        let encoded = NiahciaAddressV1::new(
-            AddressNetwork::Mainnet,
-            AddressKind::Account,
-            [0x11; 20],
-        )
-        .encode()
-        .unwrap();
+        let encoded =
+            NiahciaAddressV1::new(AddressNetwork::Mainnet, AddressKind::Account, [0x11; 20])
+                .encode()
+                .unwrap();
         let result = validate_address(&encoded, AddressNetwork::Devnet);
         assert!(result.valid);
         assert!(!result.network_match);

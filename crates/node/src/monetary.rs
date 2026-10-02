@@ -125,10 +125,7 @@ mod tests {
             MonetaryPolicyV1::cpu_subsidy(MAIN_EMISSION_REFERENCE),
             TAIL_SUBSIDY
         );
-        assert_eq!(
-            MonetaryPolicyV1::cpu_subsidy(u128::MAX),
-            TAIL_SUBSIDY
-        );
+        assert_eq!(MonetaryPolicyV1::cpu_subsidy(u128::MAX), TAIL_SUBSIDY);
     }
 
     #[test]

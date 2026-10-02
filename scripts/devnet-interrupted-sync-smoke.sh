@@ -56,7 +56,14 @@ start_node() {
   local name="$1" data="$2" reth_http="$3" reth_engine="$4" mining="$5" p2p="$6" peers="$7"
   (cd "$NIAHCIA_DIR"; NIAHCIA_NETWORK=devnet NIAHCIA_DATA_DIR="$data" NIAHCIA_RETH_HTTP_RPC="$reth_http" NIAHCIA_RETH_ENGINE_API="$reth_engine" NIAHCIA_RETH_JWT_PATH="$JWT" NIAHCIA_MINING_RPC_BIND="${mining#http://}" NIAHCIA_P2P_BIND="$p2p" NIAHCIA_P2P_PEERS="$peers" NIAHCIA_LOG_LEVEL=info "$NIAHCIA_BIN") >"$tmp/niahcia-$name.log" 2>&1 &
   local pid=$!; if [[ "$name" == "a" ]]; then a_pid="$pid"; else b_pid="$pid"; fi
-  wait_rpc "$mining" pow_getWork '{}'
+  if ! wait_rpc "$mining" pow_getWork '{}'; then
+    echo "NIAHCIA node $name failed to become mining-RPC ready" >&2
+    echo "=== niahcia-$name.log ===" >&2
+    cat "$tmp/niahcia-$name.log" >&2
+    echo "=== reth-$name.log tail ===" >&2
+    tail -100 "$tmp/reth-$name.log" >&2
+    return 1
+  fi
 }
 
 stop_a() { kill -INT "$a_pid"; wait "$a_pid"; a_pid=""; }
