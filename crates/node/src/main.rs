@@ -286,11 +286,12 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    if let Err(error) = p2p::spawn(
+    if let Err(error) = p2p::spawn_v3(
         config.p2p_bind,
         config.p2p_peers.clone(),
         state.clone(),
         work_manager,
+        native_mempool,
         fee_recipient,
         running.clone(),
     ) {
