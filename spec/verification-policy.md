@@ -102,3 +102,16 @@ Primary-worker selection for ordinary paid STANDARD jobs may be performed locall
 A VerificationPolicy that claims independent verification imposes additional constraints on verifier selection. In particular, distinct worker IDs under the same operator do not satisfy operator diversity.
 
 Future HIGH-ASSURANCE policies may require stronger unpredictable verifier assignment. Such randomness is a verification-policy concern and is not required for ordinary primary-worker scheduling.
+
+
+## Publication policy
+
+VerificationPolicy determines whether verification evidence remains off-chain or requires native-chain anchoring.
+
+STANDARD policy SHOULD remain off-chain.
+
+VERIFIED policy MAY remain off-chain when independent evidence is sufficient for the participating parties and settlement rules.
+
+HIGH_ASSURANCE policy MAY require chain-visible commitments, evidence roots, challenge windows, or dispute state.
+
+This avoids imposing high-assurance publication costs on ordinary chat.
