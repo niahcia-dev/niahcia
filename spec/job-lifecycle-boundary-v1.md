@@ -197,4 +197,6 @@ ComputeChannel final settlement/refund
 
 Everything else for a SMALL STANDARD Job should remain off-chain unless a failure test explicitly exercises dispute handling.
 
+Worker/operator registration is not required on-chain for this first milestone; signed off-chain identities are sufficient for purchaser-selected compute. Service bonds are deferred until an accountability/high-assurance use case requires them.
+
 This proves that decentralized AI chat does not require per-prompt blockchain traffic.
