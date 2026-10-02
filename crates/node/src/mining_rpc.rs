@@ -394,6 +394,7 @@ fn handle_connection(
         .map_err(|e| format!("failed to write RPC response: {e}"))
 }
 
+#[cfg(test)]
 fn submit_work(
     request: &Value,
     work: &WorkManager,
@@ -870,7 +871,7 @@ mod tests {
 
     fn canonical_parent_with_state(
         store: &StateStore,
-        mut state: NativeStateV1,
+        state: NativeStateV1,
     ) -> (BlockHeaderV1, NativeStateV1) {
         let execution = execute_block_v1(
             &mut state.clone(),
@@ -1044,7 +1045,7 @@ mod tests {
         let mut native_state = NativeStateV1::default();
         let execution = execute_block_v1(
             &mut native_state,
-            &[transaction.clone()],
+            std::slice::from_ref(&transaction),
             AddressNetwork::Devnet,
             NativeExecutionContextV1 {
                 base_fee_per_gas: 0,
@@ -1055,7 +1056,7 @@ mod tests {
 
         let body = crate::native_block_body::NativeBlockBodyV1::from_transactions(
             [0_u8; 20],
-            &[transaction.clone()],
+            std::slice::from_ref(&transaction),
         )
         .unwrap();
 
