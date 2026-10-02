@@ -55,9 +55,11 @@ pub fn submit_raw_transaction_hex(
     transaction_hex: &str,
     mempool: &SharedNativeMempoolV1,
 ) -> Result<String, String> {
-    let raw = transaction_hex.strip_prefix("0x").unwrap_or(transaction_hex);
-    let bytes = hex::decode(raw)
-        .map_err(|e| format!("invalid canonical native transaction hex: {e}"))?;
+    let raw = transaction_hex
+        .strip_prefix("0x")
+        .unwrap_or(transaction_hex);
+    let bytes =
+        hex::decode(raw).map_err(|e| format!("invalid canonical native transaction hex: {e}"))?;
 
     let tx_id = mempool
         .write()
@@ -105,12 +107,10 @@ mod tests {
 
     fn signed_transfer_hex() -> String {
         use crate::native_transaction::{
-            NativeActionV1, NativeTransactionBodyV1, SignedNativeTransactionV1,
-            DEVNET_CHAIN_ID, DEVNET_NETWORK_ID, NATIVE_TRANSFER_GAS_V1,
+            NativeActionV1, NativeTransactionBodyV1, SignedNativeTransactionV1, DEVNET_CHAIN_ID,
+            DEVNET_NETWORK_ID, NATIVE_TRANSFER_GAS_V1,
         };
-        use k256::ecdsa::{
-            signature::hazmat::PrehashSigner, Signature, SigningKey,
-        };
+        use k256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey};
 
         let signing_key = SigningKey::from_slice(&[0x01; 32]).unwrap();
         let public_key = signing_key
@@ -145,9 +145,7 @@ mod tests {
 
     #[test]
     fn submits_canonical_transaction_hex_to_shared_mempool() {
-        let mempool = Arc::new(RwLock::new(NativeMempoolV1::new(
-            AddressNetwork::Devnet,
-        )));
+        let mempool = Arc::new(RwLock::new(NativeMempoolV1::new(AddressNetwork::Devnet)));
 
         let tx_id = submit_raw_transaction_hex(&signed_transfer_hex(), &mempool).unwrap();
 
