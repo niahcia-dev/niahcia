@@ -118,7 +118,7 @@ Requirements:
 
 The embedded receipt bytes are validated exactly; they are not reinterpreted from JSON or an RPC structure.
 
-The enclosing native transaction may be submitted by any fee-paying account.
+The enclosing native Settle transaction sender MUST equal the channel's committed `worker_payment_account`. This prevents an older valid cumulative receipt held by the funding wallet from being used to terminally underpay the worker.
 
 ## ComputeChannelRefundPayloadV1
 
