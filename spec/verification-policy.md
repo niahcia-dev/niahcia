@@ -93,3 +93,12 @@ agreement_threshold = 2
 is **SUPERSEDED** and must not be treated as the current NIAHCIA verification design.
 
 The replacement verification design remains a candidate and must be specified with explicit eligibility, selection, evidence, diversity, timeout, challenge, dispute, and settlement rules before it is locked. Until then, implementations may use development-only policies for testing but must label them as such.
+
+
+## Selection boundary
+
+Primary-worker selection for ordinary paid STANDARD jobs may be performed locally by the wallet under Worker Selection V1.
+
+A VerificationPolicy that claims independent verification imposes additional constraints on verifier selection. In particular, distinct worker IDs under the same operator do not satisfy operator diversity.
+
+Future HIGH-ASSURANCE policies may require stronger unpredictable verifier assignment. Such randomness is a verification-policy concern and is not required for ordinary primary-worker scheduling.
