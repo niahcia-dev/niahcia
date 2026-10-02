@@ -280,6 +280,119 @@ mod tests {
         NativeStateV2::from_v1(accounts)
     }
 
+    fn resign_v2(transaction: &mut SignedNativeTransactionV2, signing_key: &SigningKey) {
+        let digest = transaction.signing_digest().unwrap();
+        let signature: Signature = signing_key.sign_prehash(&digest).unwrap();
+        transaction.signature = signature.to_bytes().to_vec();
+    }
+
+    fn settle_fixture() -> (
+        NativeStateV2,
+        SignedNativeTransactionV2,
+        SigningKey,
+        SigningKey,
+    ) {
+        let worker_key = SigningKey::from_slice(&[0x31; 32]).unwrap();
+        let worker_public_key = worker_key
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec();
+        let worker_payment_account =
+            crate::address::NiahciaAddressV1::account_from_uncompressed_public_key(
+                AddressNetwork::Devnet,
+                &worker_public_key,
+            )
+            .unwrap()
+            .payload;
+
+        let channel_key = SigningKey::from_slice(&[0x41; 32]).unwrap();
+        let channel_encoded = channel_key.verifying_key().to_encoded_point(false);
+        let channel_public_key: [u8; 65] = channel_encoded.as_bytes().try_into().unwrap();
+
+        let channel_id = [0x91; 32];
+        let worker_id = [0x92; 32];
+        let operator_id = [0x93; 32];
+
+        let mut accounts = NativeStateV1::default();
+        accounts.set_account(
+            worker_payment_account,
+            AccountStateV1 {
+                balance: 100,
+                nonce: 2,
+            },
+        );
+
+        let mut state = NativeStateV2::from_v1(accounts);
+        state
+            .set_channel(ComputeChannelStateV1 {
+                channel_id,
+                funding_account: [0x94; 20],
+                worker_id,
+                operator_id,
+                channel_public_key,
+                worker_payment_account,
+                authorized_amount: 1_000,
+                settled_amount: 0,
+                opened_height: 10,
+                expiry_height: 100,
+                claim_deadline_height: 120,
+                refund_available_height: 121,
+                service_scope_commitment: [0x95; 32],
+                model_scope_commitment: [0x96; 32],
+                execution_profile_scope_commitment: [0x97; 32],
+                settlement_policy: ComputeChannelSettlementPolicyV1::CumulativeReceipt,
+                state: ComputeChannelStatusV1::Open,
+            })
+            .unwrap();
+
+        let mut receipt = ComputeUsageReceiptV1 {
+            receipt_id: [0xa1; 32],
+            channel_id,
+            authorization_id: [0xa2; 32],
+            worker_id,
+            operator_id,
+            sequence: 3,
+            previous_receipt_id: [0xa3; 32],
+            cumulative_spent: 370,
+            job_id: [0xa4; 32],
+            result_commitment_id: [0xa5; 32],
+            price_offer_id: [0xa6; 32],
+            job_charge: 25,
+            metering_evidence_hash: [0xa7; 32],
+            expires_at: 115,
+            channel_signature: vec![0; 64],
+        };
+        let digest = receipt.signing_digest(AddressNetwork::Devnet).unwrap();
+        let signature: Signature = channel_key.sign_prehash(&digest).unwrap();
+        receipt.channel_signature = signature.to_bytes().to_vec();
+
+        let settle_payload = ComputeChannelSettlePayloadV1 {
+            channel_id,
+            final_usage_receipt: receipt.canonical_bytes().unwrap(),
+        };
+
+        let mut transaction = SignedNativeTransactionV2 {
+            body: NativeTransactionBodyV2 {
+                network_id: DEVNET_NETWORK_ID,
+                chain_id: DEVNET_CHAIN_ID,
+                nonce: 2,
+                action: NativeActionV2::ComputeChannelSettle,
+                target_payload: Vec::new(),
+                value: 0,
+                gas_limit: 0,
+                max_fee_per_gas: 0,
+                max_priority_fee_per_gas: 0,
+                data: settle_payload.canonical_bytes().unwrap(),
+            },
+            public_key: worker_public_key,
+            signature: vec![0; 64],
+        };
+        resign_v2(&mut transaction, &worker_key);
+
+        (state, transaction, worker_key, channel_key)
+    }
+
     #[test]
     fn open_plan_derives_exact_channel_without_mutating_state() {
         let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
@@ -303,6 +416,164 @@ mod tests {
             plan.channel_id,
             derive_compute_channel_id_v1(transaction.tx_id().unwrap())
         );
+    }
+
+    #[test]
+    fn settle_plan_derives_payment_and_refund_without_mutation() {
+        let (state, transaction, _, _) = settle_fixture();
+        let before = state.clone();
+
+        let plan =
+            plan_compute_channel_settle_v1(&state, &transaction, AddressNetwork::Devnet, 110)
+                .unwrap();
+
+        assert_eq!(state, before);
+        assert_eq!(plan.cumulative_spent, 370);
+        assert_eq!(plan.worker_payment, 370);
+        assert_eq!(plan.funding_refund, 630);
+        assert_eq!(plan.channel_state_after.settled_amount, 370);
+        assert_eq!(
+            plan.channel_state_after.state,
+            ComputeChannelStatusV1::Settled
+        );
+    }
+
+    #[test]
+    fn settle_plan_requires_worker_payment_account_sender() {
+        let (state, mut transaction, _, _) = settle_fixture();
+        let other_key = SigningKey::from_slice(&[0x32; 32]).unwrap();
+        transaction.public_key = other_key
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec();
+        resign_v2(&mut transaction, &other_key);
+
+        let error =
+            plan_compute_channel_settle_v1(&state, &transaction, AddressNetwork::Devnet, 110)
+                .unwrap_err();
+        assert!(error.contains("worker_payment_account"));
+    }
+
+    #[test]
+    fn settle_plan_rejects_claim_deadline_and_receipt_expiry() {
+        let (state, transaction, worker_key, _) = settle_fixture();
+
+        let error =
+            plan_compute_channel_settle_v1(&state, &transaction, AddressNetwork::Devnet, 121)
+                .unwrap_err();
+        assert!(error.contains("claim deadline"));
+
+        let payload =
+            ComputeChannelSettlePayloadV1::from_canonical_bytes(&transaction.body.data).unwrap();
+        let mut receipt =
+            ComputeUsageReceiptV1::from_canonical_bytes(&payload.final_usage_receipt).unwrap();
+        receipt.expires_at = 109;
+
+        let channel_key = SigningKey::from_slice(&[0x41; 32]).unwrap();
+        let digest = receipt.signing_digest(AddressNetwork::Devnet).unwrap();
+        let signature: Signature = channel_key.sign_prehash(&digest).unwrap();
+        receipt.channel_signature = signature.to_bytes().to_vec();
+
+        let mut expired_transaction = transaction;
+        expired_transaction.body.data = ComputeChannelSettlePayloadV1 {
+            channel_id: payload.channel_id,
+            final_usage_receipt: receipt.canonical_bytes().unwrap(),
+        }
+        .canonical_bytes()
+        .unwrap();
+        resign_v2(&mut expired_transaction, &worker_key);
+
+        let error =
+            plan_compute_channel_settle_v1(&state, &expired_transaction, AddressNetwork::Devnet, 110)
+                .unwrap_err();
+        assert!(error.contains("receipt is expired"));
+    }
+
+    #[test]
+    fn settle_plan_rejects_invalid_receipt_signature_and_identity() {
+        let (state, transaction, worker_key, _) = settle_fixture();
+        let payload =
+            ComputeChannelSettlePayloadV1::from_canonical_bytes(&transaction.body.data).unwrap();
+        let mut receipt =
+            ComputeUsageReceiptV1::from_canonical_bytes(&payload.final_usage_receipt).unwrap();
+
+        receipt.worker_id = [0xfe; 32];
+        let channel_key = SigningKey::from_slice(&[0x41; 32]).unwrap();
+        let digest = receipt.signing_digest(AddressNetwork::Devnet).unwrap();
+        let signature: Signature = channel_key.sign_prehash(&digest).unwrap();
+        receipt.channel_signature = signature.to_bytes().to_vec();
+
+        let mut identity_transaction = transaction.clone();
+        identity_transaction.body.data = ComputeChannelSettlePayloadV1 {
+            channel_id: payload.channel_id,
+            final_usage_receipt: receipt.canonical_bytes().unwrap(),
+        }
+        .canonical_bytes()
+        .unwrap();
+        resign_v2(&mut identity_transaction, &worker_key);
+
+        let error =
+            plan_compute_channel_settle_v1(&state, &identity_transaction, AddressNetwork::Devnet, 110)
+                .unwrap_err();
+        assert!(error.contains("worker_id mismatch"));
+
+        let mut tampered_payload =
+            ComputeChannelSettlePayloadV1::from_canonical_bytes(&transaction.body.data).unwrap();
+        let mut tampered_receipt =
+            ComputeUsageReceiptV1::from_canonical_bytes(&tampered_payload.final_usage_receipt)
+                .unwrap();
+        tampered_receipt.channel_signature[0] ^= 1;
+        tampered_payload.final_usage_receipt = tampered_receipt.canonical_bytes().unwrap();
+
+        let mut tampered_transaction = transaction;
+        tampered_transaction.body.data = tampered_payload.canonical_bytes().unwrap();
+        resign_v2(&mut tampered_transaction, &worker_key);
+
+        assert!(plan_compute_channel_settle_v1(
+            &state,
+            &tampered_transaction,
+            AddressNetwork::Devnet,
+            110
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn settle_plan_rejects_overspend_and_nonzero_transaction_value() {
+        let (state, transaction, worker_key, _) = settle_fixture();
+        let payload =
+            ComputeChannelSettlePayloadV1::from_canonical_bytes(&transaction.body.data).unwrap();
+        let mut receipt =
+            ComputeUsageReceiptV1::from_canonical_bytes(&payload.final_usage_receipt).unwrap();
+        receipt.cumulative_spent = 1_001;
+
+        let channel_key = SigningKey::from_slice(&[0x41; 32]).unwrap();
+        let digest = receipt.signing_digest(AddressNetwork::Devnet).unwrap();
+        let signature: Signature = channel_key.sign_prehash(&digest).unwrap();
+        receipt.channel_signature = signature.to_bytes().to_vec();
+
+        let mut overspend_transaction = transaction.clone();
+        overspend_transaction.body.data = ComputeChannelSettlePayloadV1 {
+            channel_id: payload.channel_id,
+            final_usage_receipt: receipt.canonical_bytes().unwrap(),
+        }
+        .canonical_bytes()
+        .unwrap();
+        resign_v2(&mut overspend_transaction, &worker_key);
+
+        let error =
+            plan_compute_channel_settle_v1(&state, &overspend_transaction, AddressNetwork::Devnet, 110)
+                .unwrap_err();
+        assert!(error.contains("exceeds channel authorization"));
+
+        let mut value_transaction = transaction;
+        value_transaction.body.value = 1;
+        resign_v2(&mut value_transaction, &worker_key);
+        let error =
+            plan_compute_channel_settle_v1(&state, &value_transaction, AddressNetwork::Devnet, 110)
+                .unwrap_err();
+        assert!(error.contains("value must be zero"));
     }
 
     #[test]
