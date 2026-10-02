@@ -28,7 +28,7 @@ This avoids turning worker scheduling into a miner-influenced on-chain lottery.
 
 ## Discovery
 
-Wallets obtain signed, expiring WorkerAdvertisement records through decentralized discovery.
+Wallets obtain signed, expiring WorkerAdvertisement records through Worker Discovery V1 or another compatible decentralized discovery source.
 
 A wallet MUST treat an expired advertisement as ineligible.
 
