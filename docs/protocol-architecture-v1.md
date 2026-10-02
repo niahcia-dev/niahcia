@@ -26,14 +26,13 @@ NIAHCIA consensus daemon
         |
         +-- RandomX PoW / cumulative-work chain selection
         +-- chain P2P / synchronization / reorg handling
+        +-- native transactions / native execution / native state
         +-- native RPC and mining RPC
-        |
-        +-- authenticated Reth Engine API boundary
-                    |
-                    +-- EVM execution and state
 ```
 
-AI compute, agent, verification, and service/storage protocols are defined at the protocol level and will be integrated into the reference implementation incrementally. They do not become chain-consensus authorities merely because this implementation hosts components for them.
+AI compute, Agent, verification, and optional service/storage protocols are defined at the protocol level and will be integrated incrementally. The base chain must remain valid and usable without any AI worker or storage/service provider.
+
+For the first AI milestone, chat history and private Agent memory are wallet/client-local by default. Decentralized storage is optional and deferred.
 
 ## Current interoperability note
 
