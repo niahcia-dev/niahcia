@@ -195,16 +195,34 @@ The previous handoff's `#266` blocker is stale: the referenced issue is not curr
 
 Current priority has moved past transaction propagation/non-empty block transport: that V3 baseline is green.
 
+NativeStateV2 inactive foundation is now implemented and green. Current implementation includes:
+
+- deterministic NativeStateV2 account + compute-channel state root;
+- canonical version-2 snapshot encoding/strict decoding;
+- V1 account-root reuse without changing NativeStateV1 bytes or vectors;
+- ComputeChannelStateV1 canonical 363-byte record commitment;
+- strict timeline/value/state validation;
+- strict valid-uncompressed-secp256k1 channel public-key validation;
+- lexicographically ordered channel-root construction;
+- V1 -> V2 migration with an empty channel map;
+- restart-safe V2 snapshot persistence using explicit V2 APIs;
+- explicit V1/V2 snapshot-version discrimination rather than decoder fallback;
+- conflict prevention between V1 and V2 snapshots for the same block;
+- locked JSON interoperability vectors in `test-vectors/native-state-v2.json`, mirrored to `niahcia-protocol`;
+- Rust tests that recompute and enforce the migration root, channel record hash, channel root, V2 state root, and exact snapshot bytes.
+
+This StateV2 code remains inactive at runtime. No activation height is set and no NativeTransaction V2 compute action executes yet.
+
 Next implementation priority is to prepare the **explicit NativeStateV2 / NativeTransactionV2 activation boundary** for compute-channel settlement without modifying or invalidating NativeStateV1/NativeTransactionV1 behavior.
 
 Proceed in small validated milestones:
 
 1. Preserve the now-green P2P V3 + NativeBlockBodyV1 + NativeMempoolV1 path unchanged.
-2. Implement NativeStateV2 data structures/serialization/root calculation behind an explicit inactive/versioned boundary first; do not activate compute actions yet.
-3. Add canonical migration vectors/tests proving V1 accounts -> V2 accounts + empty channel map at activation.
-4. Add ComputeChannelStateV1 canonical encoding/decoding and state-root participation with restart/reorg tests.
-5. Only after StateV2 persistence/vectors are green, implement NativeTransaction schema V2 signing/ID decoding and the three explicit compute actions.
-6. Implement ComputeChannelOpen first, then Settle, then Refund, each with atomic execution/persistence and negative-path tests.
+2. Preserve the now-green inactive NativeStateV2 codec, persistence, migration vectors, and version discriminator unchanged.
+3. Implement NativeTransaction schema V2 **codec/signing/transaction-ID only** behind an inactive boundary. Retain all V1 field meanings and preserve V1 vectors.
+4. Add locked V2 transaction vectors for signing digest, transaction ID, canonical bytes, strict decoding, and network/domain separation before any V2 execution is enabled.
+5. After the V2 transaction codec/vectors are green, implement canonical ComputeChannelOpen/Settle/Refund payload codecs; still do not execute them yet.
+6. Only then implement ComputeChannelOpen execution first, followed by Settle and Refund, each with atomic execution/persistence and negative-path tests.
 7. Keep gas constants deliberately unset until the action payload sizes/signature-verification costs are reviewed; do not invent consensus gas values locally.
 8. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
 9. Do not add worker/operator on-chain registration or bonds to the first ordinary paid-compute milestone.
