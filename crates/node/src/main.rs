@@ -20,12 +20,13 @@ use config::NodeConfig;
 use consensus::{randomx_seed, randomx_seed_height, DEVNET_GENESIS_TARGET};
 use mining_rpc::WorkManager;
 use native_execution::{execute_block_v1, NativeExecutionContextV1, NativeStateV1};
+use native_mempool::NativeMempoolV1;
 use state::StateStore;
 use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{error, info};
@@ -255,6 +256,10 @@ fn main() -> ExitCode {
         }
     };
 
+    let native_mempool = Arc::new(RwLock::new(NativeMempoolV1::new(
+        AddressNetwork::Devnet,
+    )));
+
     let running = Arc::new(AtomicBool::new(true));
 
     {
@@ -271,6 +276,7 @@ fn main() -> ExitCode {
         config.mining_rpc_bind,
         work_manager.clone(),
         state.clone(),
+        native_mempool.clone(),
         fee_recipient,
         running.clone(),
     ) {
