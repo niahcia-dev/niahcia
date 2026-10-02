@@ -1,7 +1,5 @@
 use crate::address::AddressNetwork;
-use crate::native_transaction::{
-    DEVNET_NETWORK_ID, MAINNET_NETWORK_ID, TESTNET_NETWORK_ID,
-};
+use crate::native_transaction::{DEVNET_NETWORK_ID, MAINNET_NETWORK_ID, TESTNET_NETWORK_ID};
 use crate::nce::{decode_envelope, encode_bytes, encode_envelope, encode_map, encode_unsigned};
 use crate::work::{keccak256, Hash32};
 use k256::ecdsa::{signature::hazmat::PrehashVerifier, Signature, VerifyingKey};
@@ -192,8 +190,7 @@ impl ComputeUsageReceiptV1 {
         let job_charge = u128::from_be_bytes(read_fixed::<16>(&mut reader, "job_charge")?);
 
         expect_key(&mut reader, 14, "metering_evidence_hash")?;
-        let metering_evidence_hash =
-            read_fixed::<32>(&mut reader, "metering_evidence_hash")?;
+        let metering_evidence_hash = read_fixed::<32>(&mut reader, "metering_evidence_hash")?;
 
         expect_key(&mut reader, 15, "expires_at")?;
         let expires_at = reader.unsigned()?;
