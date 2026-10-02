@@ -222,12 +222,7 @@ fn serve_peer_v3(
                 if admit_transactions_v3(mempool, &transactions)?
                     && state.best_chain_head()?.is_some()
                 {
-                    install_next_native_work_from_mempool(
-                        work,
-                        state,
-                        mempool,
-                        fee_recipient,
-                    )?;
+                    install_next_native_work_from_mempool(work, state, mempool, fee_recipient)?;
                 }
             }
             Ok(MessageV3::Hello(_)) => return Err("P2P V3 peer sent duplicate Hello".into()),
@@ -490,6 +485,10 @@ fn ancestor_block_id_at_height(
         }
         block_id = block.header.parent_hash;
     }
+}
+
+fn io_error(error: std::io::Error) -> String {
+    format!("P2P I/O error: {error}")
 }
 
 fn is_disconnect_error(error: &str) -> bool {
