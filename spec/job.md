@@ -64,6 +64,23 @@ Payment authorization is a separate concern. A Job may prove that valid bounded 
 
 Implementations MUST NOT infer that two Jobs belong to the same wallet merely because both are validly funded.
 
+## Payment authorization
+
+A chargeable Job SHOULD bind to a `PaymentAuthorizationV1` or another explicitly versioned payment authority.
+
+The authorization proves that the requester identity may incur charges within a hard maximum without requiring the Job requester to be the durable funding account.
+
+For channel-backed payment:
+
+```text
+funding account
+  -> ComputeChannelV1
+      -> PaymentAuthorizationV1
+          -> Job
+```
+
+The Job's accepted price MUST NOT exceed either its own declared maximum or any applicable authorization/channel ceiling.
+
 ## Parent/child jobs
 
 Agent-to-agent calls and compound workloads use:
