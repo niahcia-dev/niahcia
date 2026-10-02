@@ -456,6 +456,43 @@ Exclusion is a preimage rule, not a renumbering rule.
 ```
 
 
+## ComputeChannel — object type 0x000E
+
+```text
+1   schema_version
+2   channel_id
+3   funding_account
+4   channel_public_key
+5   authorized_amount
+6   service_scope
+7   opened_height
+8   expiry_height
+9   settlement_policy
+10  sequence
+11  status
+```
+
+## PaymentAuthorization — object type 0x000F
+
+```text
+1   schema_version
+2   authorization_id
+3   channel_id
+4   authorized_subject
+5   service_type
+6   model_scope
+7   execution_profile_scope
+8   max_per_job
+9   max_total
+10  max_jobs
+11  valid_from
+12  expires_at
+13  delegation_depth
+14  parent_authorization_id
+15  nonce
+16  signature
+```
+
 ## NativeTransactionBody — object type 0x0010
 
 ```text
