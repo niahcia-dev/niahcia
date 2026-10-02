@@ -134,3 +134,47 @@ This specification intentionally does not fix NIAH-denominated chat prices, free
 Future versions may define canonical encodings, signed authentication challenges, encrypted conversation manifests, delegated session keys, device synchronization, spending permits, recovery mechanisms, agent-owned sessions, confidential-compute attestations, and privacy-preserving inference profiles.
 
 Those additions MUST preserve the central v1 properties: the wallet controls the AI identity and chat keys; portals are replaceable; private persistent chat is encrypted by default; and conversation plaintext is not public chain data.
+
+
+## Wallet as the V1 Agent home
+
+For the first end-to-end AI milestone, the wallet/client is the default home and controller of the user's private Agent state.
+
+An Agent does not require a permanent Agent server, storage provider, or persistent compute worker merely to exist or to use memory.
+
+The wallet/client may retain locally:
+
+- Agent configuration and selected AgentVersion;
+- system instructions and private preferences;
+- local encrypted conversation history;
+- local encrypted memory;
+- permitted tools/capabilities;
+- spending limits and payment authorization state;
+- temporary chat/session/job identities.
+
+The wallet then assembles the minimum context required for each remote inference job and transmits only that context to the selected compute worker.
+
+Compute workers are replaceable execution providers. They do not become the durable home, controller, or owner of the Agent merely because they execute a job.
+
+This local-first Agent-home rule does not prevent future always-online autonomous Agents or decentralized persistence. Those are optional later extensions.
+
+## Local session identity
+
+A ChatSession does not need to be an on-chain object.
+
+A wallet MAY create a local session identity and key set whose relationship to the wallet's durable payment account is not publicly disclosed by default.
+
+A worker-facing session/job identity MAY therefore be pseudonymous, temporary, and rotatable. Possession of valid payment authorization does not require exposing the wallet's primary public account as the requester identity.
+
+The protocol SHOULD distinguish:
+
+```text
+wallet/root authority
+payment authority
+chat/session identity
+job identity
+Agent capability authority
+content-encryption authority
+```
+
+These roles may be controlled by one wallet locally while remaining distinct protocol identities and keys.
