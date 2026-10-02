@@ -158,6 +158,21 @@ A successful block result contains:
 - aggregate producer_priority_fee
 - ordered transaction receipts
 
+## Canonical persistence and independent validation
+
+A persisted native block execution result MUST retain the complete canonical `NativeBlockExecutionResultV1`, including its ordered receipts and aggregate accounting fields. A node MUST NOT replace this data with an external execution hash, replay-journal pointer, or summary that cannot reproduce the committed execution result.
+
+Canonical block persistence binds, atomically:
+
+- `BlockHeaderV1`;
+- the complete canonical native execution result;
+- the resulting `NativeStateV1` snapshot;
+- cumulative chain work and canonical-head selection.
+
+If any commitment check or persistence step fails, none of those state changes may become visible as a committed native block transition.
+
+A receiving peer MUST independently validate the block transition from locally trusted parent state and protocol data. Peer-supplied state snapshots are not authoritative.
+
 ## Empty blocks
 
 An empty block:
