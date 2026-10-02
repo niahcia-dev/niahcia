@@ -1357,6 +1357,124 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 
+    fn sample_state_v2() -> crate::native_state_v2::NativeStateV2 {
+        use crate::native_execution::{AccountStateV1, NativeStateV1};
+        use crate::native_state_v2::{
+            ComputeChannelSettlementPolicyV1, ComputeChannelStateV1,
+            ComputeChannelStatusV1, NativeStateV2,
+        };
+
+        let mut accounts = NativeStateV1::default();
+        accounts.set_account(
+            [0x11; 20],
+            AccountStateV1 {
+                balance: 1_000,
+                nonce: 2,
+            },
+        );
+
+        let mut public_key = [0_u8; 65];
+        public_key[0] = 0x04;
+        public_key[1..].fill(0x42);
+
+        let mut state = NativeStateV2::from_v1(accounts);
+        state
+            .set_channel(ComputeChannelStateV1 {
+                channel_id: [0x22; 32],
+                funding_account: [0x11; 20],
+                worker_id: [0x33; 32],
+                operator_id: [0x44; 32],
+                channel_public_key: public_key,
+                worker_payment_account: [0x55; 20],
+                authorized_amount: 500,
+                settled_amount: 0,
+                opened_height: 10,
+                expiry_height: 20,
+                claim_deadline_height: 25,
+                refund_available_height: 26,
+                service_scope_commitment: [0x66; 32],
+                model_scope_commitment: [0x77; 32],
+                execution_profile_scope_commitment: [0x88; 32],
+                settlement_policy: ComputeChannelSettlementPolicyV1::CumulativeReceipt,
+                state: ComputeChannelStatusV1::Open,
+            })
+            .unwrap();
+        state
+    }
+
+    #[test]
+    fn native_state_v2_snapshot_survives_restart_and_is_idempotent() {
+        let path = temp_state_path("native-state-v2-restart");
+        let block = header([0_u8; 32], 0, [0xff; 32], 7);
+        let block_id = block.block_id();
+        let expected = sample_state_v2();
+
+        {
+            let store = StateStore::open(&path).unwrap();
+            store.insert_chain_block(block).unwrap();
+            store
+                .store_native_state_v2_snapshot(block_id, &expected)
+                .unwrap();
+            store
+                .store_native_state_v2_snapshot(block_id, &expected)
+                .unwrap();
+
+            assert_eq!(
+                store.native_state_v2_snapshot(block_id).unwrap(),
+                Some(expected.clone())
+            );
+        }
+
+        {
+            let reopened = StateStore::open(&path).unwrap();
+            assert_eq!(
+                reopened.native_state_v2_snapshot(block_id).unwrap(),
+                Some(expected)
+            );
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn native_state_v2_snapshot_requires_persisted_block() {
+        let path = temp_state_path("native-state-v2-requires-block");
+        let store = StateStore::open(&path).unwrap();
+        let state = sample_state_v2();
+
+        let err = store
+            .store_native_state_v2_snapshot([0x91; 32], &state)
+            .unwrap_err();
+        assert!(err.contains("unpersisted NIAHCIA block"));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn native_state_v1_and_v2_snapshots_cannot_conflict_for_same_block() {
+        use crate::native_execution::NativeStateV1;
+
+        let path = temp_state_path("native-state-version-conflict");
+        let store = StateStore::open(&path).unwrap();
+
+        let block = header([0_u8; 32], 0, [0xff; 32], 8);
+        let block_id = block.block_id();
+        store.insert_chain_block(block).unwrap();
+
+        let v1 = NativeStateV1::default();
+        store.store_native_state_snapshot(block_id, &v1).unwrap();
+
+        let err = store
+            .store_native_state_v2_snapshot(block_id, &sample_state_v2())
+            .unwrap_err();
+        assert!(err.contains("different native state snapshot"));
+
+        assert!(store.native_state_snapshot(block_id).unwrap().is_some());
+        assert!(store.native_state_v2_snapshot(block_id).is_err());
+
+        let _ = std::fs::remove_file(path);
+    }
+
     #[test]
     fn native_state_snapshot_requires_persisted_block() {
         use crate::native_execution::NativeStateV1;
