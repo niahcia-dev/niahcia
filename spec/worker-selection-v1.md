@@ -59,6 +59,7 @@ Examples:
 - workload class is supported;
 - advertisement is current;
 - worker status is eligible;
+- a signed current ComputePriceOfferV1 exists for the requested service/model/profile;
 - quoted/standing maximum price fits the authorization;
 - capacity is non-zero;
 - required bond/accountability policy is met;
@@ -183,3 +184,14 @@ The first implementation should:
 5. record selection distribution for testing;
 6. simulate worker failure and reselection;
 7. demonstrate that no website or chain miner selected the worker.
+
+
+## Pricing interaction
+
+Pricing eligibility uses a signed current ComputePriceOfferV1.
+
+Wallets MAY use price as one bounded selection input, but should not automatically collapse all demand onto the cheapest worker.
+
+A worker whose offer would exceed the requester's hard maximum is ineligible for that Job/session.
+
+A later price increase affects future Jobs only and may trigger voluntary reselection.
