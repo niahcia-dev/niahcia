@@ -143,7 +143,9 @@ impl TryFrom<u8> for NativeStateSnapshotVersion {
         match value {
             1 => Ok(Self::V1),
             2 => Ok(Self::V2),
-            other => Err(format!("unsupported native state snapshot version: {other}")),
+            other => Err(format!(
+                "unsupported native state snapshot version: {other}"
+            )),
         }
     }
 }
