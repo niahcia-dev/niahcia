@@ -1,5 +1,8 @@
 use crate::address::AddressNetwork;
-use crate::native_compute_payloads::{derive_compute_channel_id_v1, ComputeChannelOpenPayloadV1};
+use crate::compute_usage_receipt_v1::ComputeUsageReceiptV1;
+use crate::native_compute_payloads::{
+    derive_compute_channel_id_v1, ComputeChannelOpenPayloadV1, ComputeChannelSettlePayloadV1,
+};
 use crate::native_state_v2::{ComputeChannelStateV1, ComputeChannelStatusV1, NativeStateV2};
 use crate::native_transaction_v2::{NativeActionV2, SignedNativeTransactionV2};
 use crate::work::Hash32;
@@ -12,6 +15,19 @@ pub struct ValidatedComputeChannelOpenV1 {
     pub expected_nonce: u64,
     pub authorized_amount: u128,
     pub channel_state: ComputeChannelStateV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedComputeChannelSettleV1 {
+    pub transaction_id: Hash32,
+    pub channel_id: Hash32,
+    pub submitter_account: [u8; 20],
+    pub receipt_id: Hash32,
+    pub receipt_sequence: u64,
+    pub cumulative_spent: u128,
+    pub worker_payment: u128,
+    pub funding_refund: u128,
+    pub channel_state_after: ComputeChannelStateV1,
 }
 
 pub fn plan_compute_channel_open_v1(
@@ -91,6 +107,96 @@ pub fn plan_compute_channel_open_v1(
         expected_nonce: transaction.body.nonce,
         authorized_amount: payload.authorized_amount,
         channel_state,
+    })
+}
+
+pub fn plan_compute_channel_settle_v1(
+    state: &NativeStateV2,
+    transaction: &SignedNativeTransactionV2,
+    network: AddressNetwork,
+    current_height: u64,
+) -> Result<ValidatedComputeChannelSettleV1, String> {
+    transaction.verify_signature(network)?;
+
+    if transaction.body.action != NativeActionV2::ComputeChannelSettle {
+        return Err("native transaction V2 action is not ComputeChannelSettle".into());
+    }
+
+    if transaction.body.value != 0 {
+        return Err("ComputeChannelSettle transaction value must be zero".into());
+    }
+
+    let payload = ComputeChannelSettlePayloadV1::from_canonical_bytes(&transaction.body.data)?;
+    let channel = state
+        .channel(payload.channel_id)
+        .cloned()
+        .ok_or_else(|| "ComputeChannelSettle channel does not exist".to_string())?;
+
+    if channel.state != ComputeChannelStatusV1::Open {
+        return Err("ComputeChannelSettle channel is not OPEN".into());
+    }
+
+    let submitter = transaction.authenticated_sender(network)?.payload;
+    if submitter != channel.worker_payment_account {
+        return Err("ComputeChannelSettle sender is not the committed worker_payment_account".into());
+    }
+
+    let account = state.accounts().account(submitter);
+    if account.nonce != transaction.body.nonce {
+        return Err(format!(
+            "native account nonce mismatch: expected {}, found {}",
+            account.nonce, transaction.body.nonce
+        ));
+    }
+
+    if current_height > channel.claim_deadline_height {
+        return Err("ComputeChannelSettle is after the channel claim deadline".into());
+    }
+
+    let receipt = ComputeUsageReceiptV1::from_canonical_bytes(&payload.final_usage_receipt)?;
+
+    if current_height > receipt.expires_at {
+        return Err("ComputeChannelSettle receipt is expired".into());
+    }
+
+    if receipt.worker_id != channel.worker_id {
+        return Err("ComputeChannelSettle receipt worker_id mismatch".into());
+    }
+
+    if receipt.operator_id != channel.operator_id {
+        return Err("ComputeChannelSettle receipt operator_id mismatch".into());
+    }
+
+    receipt.verify_signature(network, &channel.channel_public_key)?;
+
+    if receipt.cumulative_spent > channel.authorized_amount {
+        return Err("ComputeChannelSettle cumulative spend exceeds channel authorization".into());
+    }
+
+    if receipt.cumulative_spent < channel.settled_amount {
+        return Err("ComputeChannelSettle cumulative spend is below accepted channel state".into());
+    }
+
+    let funding_refund = channel
+        .authorized_amount
+        .checked_sub(receipt.cumulative_spent)
+        .ok_or_else(|| "ComputeChannelSettle refund arithmetic underflow".to_string())?;
+
+    let mut channel_state_after = channel;
+    channel_state_after.settled_amount = receipt.cumulative_spent;
+    channel_state_after.state = ComputeChannelStatusV1::Settled;
+    channel_state_after.validate()?;
+
+    Ok(ValidatedComputeChannelSettleV1 {
+        transaction_id: transaction.tx_id()?,
+        channel_id: payload.channel_id,
+        submitter_account: submitter,
+        receipt_id: receipt.receipt_id,
+        receipt_sequence: receipt.sequence,
+        cumulative_spent: receipt.cumulative_spent,
+        worker_payment: receipt.cumulative_spent,
+        funding_refund,
+        channel_state_after,
     })
 }
 
