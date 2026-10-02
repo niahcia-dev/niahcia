@@ -159,6 +159,8 @@ This document assigns permanent numeric field identifiers used by NCE/1 canonica
 
 ## Job — object type 0x0008
 
+### Schema V1 — superseded candidate; IDs remain reserved
+
 ```text
 1   schema_version
 2   job_id
@@ -182,6 +184,30 @@ This document assigns permanent numeric field identifiers used by NCE/1 canonica
 20  status
 21  accepted_result_id
 ```
+
+### Schema V2 — current candidate additions
+
+V2 may reuse V1 fields only with the same semantic meaning. New V2 semantics append:
+
+```text
+22  input_commitment
+23  encrypted_input_descriptor
+24  model_version
+25  payment_authorization_id
+26  price_offer_id
+27  quote_id
+28  max_price
+29  payment_risk_mode
+30  compute_session_id
+31  submitted_height
+32  assignment_deadline
+33  execution_deadline
+34  result_destination
+35  resource_limits
+36  requester_signature
+```
+
+V1 IDs 9, 13, 15, 18, 19, 20, and 21 remain permanently reserved with their V1 meanings even when omitted from normal V2 encoding.
 
 ## VerificationPolicy — object type 0x0009
 
