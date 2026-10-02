@@ -13,8 +13,9 @@ use crate::p2p_transaction_relay::{
 };
 use crate::p2p_v3_codec::BlockTransferV3;
 use crate::p2p_v3_frame::{read_message_v3, write_message_v3, MessageV3};
-use crate::state::StateStore;
+use crate::state::{ChainReorg, StateStore};
 use crate::work::{Address20, Hash32};
+use std::collections::HashSet;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -393,7 +394,10 @@ fn ingest_blocks_v3(
 
         if outcome.current_best == outcome.block.block_id() {
             let canonical_ids = match outcome.reorg.as_ref() {
-                Some(reorg) => reorg.attached.clone(),
+                Some(reorg) => {
+                    reconsider_detached_transactions_v3(state, mempool, reorg)?;
+                    reorg.attached.clone()
+                }
                 None => vec![outcome.block.block_id()],
             };
             remove_canonical_transactions_v3(state, mempool, &canonical_ids)?;
@@ -443,6 +447,55 @@ fn canonical_transfer_range_v3(
             Ok(transfer)
         })
         .collect()
+}
+
+fn reconsider_detached_transactions_v3(
+    state: &StateStore,
+    mempool: &SharedNativeMempoolV1,
+    reorg: &ChainReorg,
+) -> Result<(), String> {
+    let mut winning_tx_ids = HashSet::new();
+    for block_id in &reorg.attached {
+        let Some(body) = state.native_block_body(*block_id)? else {
+            continue;
+        };
+        for transaction in body.decoded_transactions()? {
+            winning_tx_ids.insert(transaction.tx_id()?);
+        }
+    }
+
+    let mut detached = Vec::new();
+    for block_id in &reorg.detached {
+        let Some(body) = state.native_block_body(*block_id)? else {
+            continue;
+        };
+        for canonical in &body.transactions {
+            let transaction =
+                crate::native_transaction::SignedNativeTransactionV1::from_canonical_bytes(
+                    canonical,
+                )?;
+            if !winning_tx_ids.contains(&transaction.tx_id()?) {
+                detached.push(canonical.clone());
+            }
+        }
+    }
+
+    let mut pool = mempool
+        .write()
+        .map_err(|_| "native mempool lock poisoned".to_string())?;
+
+    for canonical in detached {
+        if let Err(error) = pool.admit_canonical_bytes(&canonical) {
+            if !error.contains("duplicate native transaction") {
+                tracing::debug!(
+                    %error,
+                    "detached V3 transaction was not re-admitted to the local mempool"
+                );
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn remove_canonical_transactions_v3(
