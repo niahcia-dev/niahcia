@@ -12,6 +12,7 @@ pub mod native_transaction;
 pub mod nce;
 mod p2p;
 pub mod p2p_transaction_relay;
+pub mod p2p_v3_codec;
 pub mod pow;
 pub mod service;
 pub mod state;
