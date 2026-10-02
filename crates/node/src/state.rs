@@ -220,10 +220,7 @@ impl StateStore {
         }
     }
 
-    pub fn native_block_body(
-        &self,
-        block_id: Hash32,
-    ) -> Result<Option<NativeBlockBodyV1>, String> {
+    pub fn native_block_body(&self, block_id: Hash32) -> Result<Option<NativeBlockBodyV1>, String> {
         let read = self
             .db
             .begin_read()
@@ -268,9 +265,7 @@ impl StateStore {
                 .map_err(|e| format!("failed to inspect native block body: {e}"))?
             {
                 if existing.value() != encoded.as_slice() {
-                    return Err(
-                        "NIAHCIA block already has a different native block body".into(),
-                    );
+                    return Err("NIAHCIA block already has a different native block body".into());
                 }
                 return Ok(());
             }
