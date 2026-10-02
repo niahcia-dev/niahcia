@@ -1406,8 +1406,8 @@ mod tests {
     fn sample_state_v2() -> crate::native_state_v2::NativeStateV2 {
         use crate::native_execution::{AccountStateV1, NativeStateV1};
         use crate::native_state_v2::{
-            ComputeChannelSettlementPolicyV1, ComputeChannelStateV1,
-            ComputeChannelStatusV1, NativeStateV2,
+            ComputeChannelSettlementPolicyV1, ComputeChannelStateV1, ComputeChannelStatusV1,
+            NativeStateV2,
         };
 
         let mut accounts = NativeStateV1::default();
