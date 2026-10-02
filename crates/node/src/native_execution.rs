@@ -1,3 +1,5 @@
+use crate::address::AddressNetwork;
+use crate::native_transaction::{NativeActionV1, SignedNativeTransactionV1};
 use crate::work::{keccak256, Hash32};
 use std::collections::BTreeMap;
 
@@ -85,6 +87,90 @@ impl NativeStateV1 {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeTransferOutcomeV1 {
+    pub sender: AccountId,
+    pub recipient: AccountId,
+    pub value: u128,
+    pub max_execution_charge: u128,
+    pub nonce_before: u64,
+    pub nonce_after: u64,
+}
+
+pub fn execute_transfer_v1(
+    state: &mut NativeStateV1,
+    transaction: &SignedNativeTransactionV1,
+    network: AddressNetwork,
+) -> Result<NativeTransferOutcomeV1, String> {
+    transaction.body.validate(network)?;
+
+    if transaction.body.action != NativeActionV1::Transfer {
+        return Err("native transfer executor requires Transfer action".to_string());
+    }
+
+    let sender_address = transaction.authenticated_sender(network)?;
+    let sender = sender_address.payload;
+
+    let recipient: AccountId = transaction
+        .body
+        .target_payload
+        .as_slice()
+        .try_into()
+        .map_err(|_| "native transfer target must be exactly 20 bytes".to_string())?;
+
+    let sender_before = state.account(sender);
+
+    if sender_before.nonce != transaction.body.nonce {
+        return Err(format!(
+            "native account nonce mismatch: expected {}, found {}",
+            sender_before.nonce, transaction.body.nonce
+        ));
+    }
+
+    let max_execution_charge = transaction
+        .body
+        .max_fee_per_gas
+        .checked_mul(transaction.body.gas_limit as u128)
+        .ok_or_else(|| "native transaction maximum execution charge overflow".to_string())?;
+
+    let required_balance = transaction
+        .body
+        .value
+        .checked_add(max_execution_charge)
+        .ok_or_else(|| "native transaction required balance overflow".to_string())?;
+
+    if sender_before.balance < required_balance {
+        return Err(format!(
+            "insufficient native account balance: required {}, available {}",
+            required_balance, sender_before.balance
+        ));
+    }
+
+    // Apply against a clone so every failure before commit leaves canonical
+    // state completely unchanged.
+    let mut next = state.clone();
+
+    next.consume_nonce(sender, transaction.body.nonce)?;
+
+    if sender != recipient {
+        next.debit(sender, transaction.body.value)?;
+        next.credit(recipient, transaction.body.value)?;
+    }
+
+    let nonce_after = next.account(sender).nonce;
+
+    *state = next;
+
+    Ok(NativeTransferOutcomeV1 {
+        sender,
+        recipient,
+        value: transaction.body.value,
+        max_execution_charge,
+        nonce_before: sender_before.nonce,
+        nonce_after,
+    })
+}
+
 fn account_hash(account: AccountId, state: AccountStateV1) -> Hash32 {
     let mut preimage = Vec::with_capacity(ACCOUNT_DOMAIN.len() + 20 + 16 + 8);
 
@@ -99,9 +185,163 @@ fn account_hash(account: AccountId, state: AccountStateV1) -> Hash32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native_transaction::{NativeTransactionBodyV1, DEVNET_CHAIN_ID, DEVNET_NETWORK_ID};
+    use k256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey};
 
     fn account(marker: u8) -> AccountId {
         [marker; 20]
+    }
+
+    fn signed_transfer_to(
+        recipient: AccountId,
+        nonce: u64,
+        value: u128,
+        gas_limit: u64,
+        max_fee_per_gas: u128,
+    ) -> SignedNativeTransactionV1 {
+        let signing_key = SigningKey::from_slice(&[0x01; 32]).unwrap();
+        let public_key = signing_key
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec();
+
+        let mut tx = SignedNativeTransactionV1 {
+            body: NativeTransactionBodyV1 {
+                network_id: DEVNET_NETWORK_ID,
+                chain_id: DEVNET_CHAIN_ID,
+                nonce,
+                action: NativeActionV1::Transfer,
+                target_payload: recipient.to_vec(),
+                value,
+                gas_limit,
+                max_fee_per_gas,
+                data: Vec::new(),
+            },
+            public_key,
+            signature: vec![0; 64],
+        };
+
+        let digest = tx.signing_digest().unwrap();
+        let signature: Signature = signing_key.sign_prehash(&digest).unwrap();
+        tx.signature = signature.to_bytes().to_vec();
+        tx
+    }
+
+    fn transaction_sender(tx: &SignedNativeTransactionV1) -> AccountId {
+        tx.authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload
+    }
+
+    #[test]
+    fn transfer_execution_moves_value_and_consumes_nonce() {
+        let recipient = account(2);
+        let tx = signed_transfer_to(recipient, 0, 100, 10, 2);
+        let sender = transaction_sender(&tx);
+
+        let mut state = NativeStateV1::default();
+        state.credit(sender, 1_000).unwrap();
+
+        let outcome = execute_transfer_v1(&mut state, &tx, AddressNetwork::Devnet).unwrap();
+
+        assert_eq!(state.account(sender).balance, 900);
+        assert_eq!(state.account(sender).nonce, 1);
+        assert_eq!(state.account(recipient).balance, 100);
+
+        assert_eq!(outcome.sender, sender);
+        assert_eq!(outcome.recipient, recipient);
+        assert_eq!(outcome.value, 100);
+        assert_eq!(outcome.max_execution_charge, 20);
+        assert_eq!(outcome.nonce_before, 0);
+        assert_eq!(outcome.nonce_after, 1);
+    }
+
+    #[test]
+    fn insufficient_maximum_reserve_does_not_mutate_state() {
+        let recipient = account(2);
+        let tx = signed_transfer_to(recipient, 0, 100, 10, 2);
+        let sender = transaction_sender(&tx);
+
+        let mut state = NativeStateV1::default();
+        state.credit(sender, 119).unwrap();
+        let before = state.clone();
+
+        assert!(execute_transfer_v1(&mut state, &tx, AddressNetwork::Devnet).is_err());
+        assert_eq!(state, before);
+    }
+
+    #[test]
+    fn maximum_execution_charge_overflow_does_not_mutate_state() {
+        let recipient = account(2);
+        let tx = signed_transfer_to(recipient, 0, 1, u64::MAX, u128::MAX);
+        let sender = transaction_sender(&tx);
+
+        let mut state = NativeStateV1::default();
+        state.credit(sender, u128::MAX).unwrap();
+        let before = state.clone();
+
+        assert!(execute_transfer_v1(&mut state, &tx, AddressNetwork::Devnet).is_err());
+        assert_eq!(state, before);
+    }
+
+    #[test]
+    fn required_balance_overflow_does_not_mutate_state() {
+        let recipient = account(2);
+        let tx = signed_transfer_to(recipient, 0, u128::MAX, 1, 1);
+        let sender = transaction_sender(&tx);
+
+        let mut state = NativeStateV1::default();
+        state.credit(sender, u128::MAX).unwrap();
+        let before = state.clone();
+
+        assert!(execute_transfer_v1(&mut state, &tx, AddressNetwork::Devnet).is_err());
+        assert_eq!(state, before);
+    }
+
+    #[test]
+    fn wrong_nonce_does_not_mutate_state() {
+        let recipient = account(2);
+        let tx = signed_transfer_to(recipient, 1, 100, 10, 2);
+        let sender = transaction_sender(&tx);
+
+        let mut state = NativeStateV1::default();
+        state.credit(sender, 1_000).unwrap();
+        let before = state.clone();
+
+        assert!(execute_transfer_v1(&mut state, &tx, AddressNetwork::Devnet).is_err());
+        assert_eq!(state, before);
+    }
+
+    #[test]
+    fn self_transfer_only_consumes_nonce() {
+        let seed = signed_transfer_to(account(2), 0, 0, 10, 2);
+        let sender = transaction_sender(&seed);
+        let tx = signed_transfer_to(sender, 0, 100, 10, 2);
+
+        let mut state = NativeStateV1::default();
+        state.credit(sender, 1_000).unwrap();
+
+        execute_transfer_v1(&mut state, &tx, AddressNetwork::Devnet).unwrap();
+
+        assert_eq!(state.account(sender).balance, 1_000);
+        assert_eq!(state.account(sender).nonce, 1);
+    }
+
+    #[test]
+    fn invalid_signature_does_not_mutate_state() {
+        let recipient = account(2);
+        let mut tx = signed_transfer_to(recipient, 0, 100, 10, 2);
+        let sender = transaction_sender(&tx);
+
+        let mut state = NativeStateV1::default();
+        state.credit(sender, 1_000).unwrap();
+        let before = state.clone();
+
+        tx.signature[0] ^= 1;
+
+        assert!(execute_transfer_v1(&mut state, &tx, AddressNetwork::Devnet).is_err());
+        assert_eq!(state, before);
     }
 
     #[test]
