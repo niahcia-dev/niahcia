@@ -209,9 +209,8 @@ mod tests {
         transaction.signature = signature.to_bytes().to_vec();
         let state = state_for(&transaction, 5_000, 0);
 
-        let error =
-            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
-                .unwrap_err();
+        let error = plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
+            .unwrap_err();
         assert!(error.contains("not ComputeChannelOpen"));
     }
 
@@ -237,9 +236,8 @@ mod tests {
         let transaction = signed_open(&signing_key, 0, 999, 100);
         let state = state_for(&transaction, 5_000, 0);
 
-        let error =
-            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
-                .unwrap_err();
+        let error = plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
+            .unwrap_err();
         assert!(error.contains("value mismatch"));
     }
 
@@ -249,9 +247,8 @@ mod tests {
         let transaction = signed_open(&signing_key, 0, 1_000, 50);
         let state = state_for(&transaction, 5_000, 0);
 
-        let error =
-            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
-                .unwrap_err();
+        let error = plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
+            .unwrap_err();
         assert!(error.contains("expiry"));
     }
 
@@ -261,9 +258,8 @@ mod tests {
         let transaction = signed_open(&signing_key, 4, 1_000, 100);
         let state = state_for(&transaction, 5_000, 3);
 
-        let error =
-            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
-                .unwrap_err();
+        let error = plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
+            .unwrap_err();
         assert!(error.contains("nonce mismatch"));
     }
 
@@ -273,9 +269,8 @@ mod tests {
         let transaction = signed_open(&signing_key, 0, 1_000, 100);
         let state = state_for(&transaction, 999, 0);
 
-        let error =
-            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
-                .unwrap_err();
+        let error = plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
+            .unwrap_err();
         assert!(error.contains("insufficient"));
     }
 
@@ -289,9 +284,8 @@ mod tests {
             plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50).unwrap();
         state.set_channel(first.channel_state).unwrap();
 
-        let error =
-            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
-                .unwrap_err();
+        let error = plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50)
+            .unwrap_err();
         assert!(error.contains("already exists"));
     }
 
@@ -305,8 +299,7 @@ mod tests {
         transaction.signature = signature.to_bytes().to_vec();
         let state = state_for(&transaction, 5_000, 0);
 
-        let result =
-            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50);
+        let result = plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50);
         assert!(result.is_err());
     }
 }
