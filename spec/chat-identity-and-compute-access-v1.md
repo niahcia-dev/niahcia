@@ -178,3 +178,12 @@ content-encryption authority
 ```
 
 These roles may be controlled by one wallet locally while remaining distinct protocol identities and keys.
+
+
+## Worker transport
+
+Wallet-to-worker inference traffic SHOULD use AI Transport V1.
+
+Each ComputeSession derives fresh encrypted traffic keys after authenticating the selected worker against its signed WorkerAdvertisement endpoint descriptor.
+
+The wallet sends only the context required for the current Job. Transport encryption protects network transit but does not hide plaintext from a STANDARD compute worker after authorized decryption.
