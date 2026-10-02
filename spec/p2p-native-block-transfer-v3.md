@@ -20,7 +20,7 @@ A V3 peer MUST validate a V3 block from locally trusted parent state rather than
 
 ## BlockTransferV3
 
-One transferred block contains:
+One transferred block contains the fixed header plus canonical NativeBlockBodyV1 content:
 
 ```text
 BlockTransferV3
@@ -256,3 +256,10 @@ A devnet transition may be a clean protocol-version bump rather than backward-co
 8. detached-block transaction may be reconsidered for mempool;
 9. attached-block transaction is removed from mempool;
 10. V2 framing is not accepted as V3.
+
+
+## Canonical body object
+
+`spec/native-block-body-v1.md` defines the canonical block-body representation used for persistence/replay.
+
+P2P V3 framing may length-prefix the body for transport, but it MUST preserve/reconstruct the exact NativeBlockBodyV1 semantics and exact embedded transaction bytes.
