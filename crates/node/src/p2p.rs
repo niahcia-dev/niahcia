@@ -1,7 +1,10 @@
 use crate::address::AddressNetwork;
 use crate::consensus::{randomx_seed, randomx_seed_height};
 use crate::mining_rpc::{install_next_native_work, validate_block_candidate, WorkManager};
+use crate::native_block_body::NativeBlockBodyV1;
 use crate::native_execution::{execute_block_v1, NativeExecutionContextV1, NativeStateV1};
+use crate::native_transaction::native_transactions_root_v1;
+use crate::p2p_v3_codec::BlockTransferV3;
 use crate::state::StateStore;
 use crate::work::{Address20, BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
 use std::io::{Read, Write};
@@ -267,6 +270,112 @@ fn ingest_blocks(
         }
     }
     Ok(())
+}
+
+fn ingest_blocks_v3(
+    state: &StateStore,
+    work: &WorkManager,
+    fee_recipient: Address20,
+    blocks: Vec<BlockTransferV3>,
+) -> Result<(), String> {
+    for transfer in blocks {
+        transfer.validate_transaction_commitment()?;
+
+        let seed_height = randomx_seed_height(transfer.header.height);
+        let seed_block_id = if transfer.header.height == 0 {
+            [0_u8; 32]
+        } else {
+            ancestor_block_id_at_height(state, transfer.header.parent_hash, seed_height)?
+        };
+        let seed = randomx_seed(seed_block_id);
+        validate_block_candidate(&transfer.header, seed, state)?;
+
+        let mut native_state = if transfer.header.height == 0 {
+            if transfer.header.parent_hash != [0_u8; 32] {
+                return Err("genesis block must have a zero parent hash".into());
+            }
+            NativeStateV1::default()
+        } else {
+            state
+                .native_state_snapshot(transfer.header.parent_hash)?
+                .ok_or_else(|| "candidate parent is missing native state snapshot".to_string())?
+        };
+
+        let transactions = transfer.body.decoded_transactions()?;
+        let execution = execute_block_v1(
+            &mut native_state,
+            &transactions,
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 0,
+                cpu_producer: transfer.body.producer_fee_recipient,
+            },
+        )?;
+        transfer
+            .body
+            .validate_fee_recipient_canonicality(execution.producer_priority_fee)?;
+
+        if execution.transactions_root != transfer.header.transactions_root {
+            return Err("P2P V3 execution transactions root does not match header".into());
+        }
+        if execution.execution_root != transfer.header.execution_root {
+            return Err("P2P V3 execution root does not match header".into());
+        }
+
+        let outcome = state.insert_native_block_with_body_and_execution_outcome(
+            transfer.header,
+            &transfer.body,
+            &execution,
+            &native_state,
+        )?;
+
+        if outcome.current_best == outcome.block.block_id() {
+            install_next_native_work(work, state, fee_recipient)?;
+        }
+    }
+    Ok(())
+}
+
+fn canonical_transfer_range_v3(
+    state: &StateStore,
+    start_height: u64,
+    count: u16,
+) -> Result<Vec<BlockTransferV3>, String> {
+    if count == 0 || count > MAX_BLOCKS_PER_MESSAGE {
+        return Err("GetBlocks count is outside protocol bounds".into());
+    }
+
+    let chain = state.canonical_chain()?;
+    let start = usize::try_from(start_height)
+        .map_err(|_| "GetBlocks start height does not fit this platform".to_string())?;
+    if start >= chain.len() {
+        return Ok(Vec::new());
+    }
+
+    let empty_root = native_transactions_root_v1(&[])?;
+    let end = start.saturating_add(count as usize).min(chain.len());
+    chain[start..end]
+        .iter()
+        .map(|block| {
+            let body = match state.native_block_body(block.block_id())? {
+                Some(body) => body,
+                None if block.header.transactions_root == empty_root => NativeBlockBodyV1::empty(),
+                None => {
+                    return Err(format!(
+                        "non-empty canonical block {} is missing NativeBlockBodyV1",
+                        hex::encode(block.block_id())
+                    ))
+                }
+            };
+
+            let transfer = BlockTransferV3 {
+                header: block.header.clone(),
+                body,
+            };
+            transfer.validate_transaction_commitment()?;
+            Ok(transfer)
+        })
+        .collect()
 }
 
 fn ancestor_block_id_at_height(
