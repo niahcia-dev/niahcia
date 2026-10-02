@@ -10,9 +10,7 @@ use std::path::{Path, PathBuf};
 pub struct NodeConfig {
     pub network: String,
     pub data_dir: PathBuf,
-    pub reth_http_rpc: String,
     pub fee_recipient: String,
-    pub reth_jwt_path: PathBuf,
     pub mining_rpc_bind: SocketAddr,
     pub p2p_bind: SocketAddr,
     pub p2p_peers: Vec<SocketAddr>,
@@ -24,9 +22,7 @@ impl Default for NodeConfig {
         Self {
             network: "devnet".to_string(),
             data_dir: PathBuf::from("./data"),
-            reth_http_rpc: "http://127.0.0.1:8545".to_string(),
             fee_recipient: "0x0000000000000000000000000000000000000000".to_string(),
-            reth_jwt_path: PathBuf::from("./jwt.hex"),
             mining_rpc_bind: "127.0.0.1:9332".parse().expect("valid default socket"),
             p2p_bind: "127.0.0.1:9442".parse().expect("valid default P2P socket"),
             p2p_peers: Vec::new(),
@@ -53,14 +49,8 @@ impl NodeConfig {
         if let Ok(v) = env::var("NIAHCIA_DATA_DIR") {
             cfg.data_dir = PathBuf::from(v);
         }
-        if let Ok(v) = env::var("NIAHCIA_RETH_HTTP_RPC") {
-            cfg.reth_http_rpc = v;
-        }
         if let Ok(v) = env::var("NIAHCIA_FEE_RECIPIENT") {
             cfg.fee_recipient = v;
-        }
-        if let Ok(v) = env::var("NIAHCIA_RETH_JWT_PATH") {
-            cfg.reth_jwt_path = PathBuf::from(v);
         }
         if let Ok(v) = env::var("NIAHCIA_MINING_RPC_BIND") {
             cfg.mining_rpc_bind = v
@@ -148,12 +138,6 @@ impl NodeConfig {
             ));
         }
 
-        if !(self.reth_http_rpc.starts_with("http://")
-            || self.reth_http_rpc.starts_with("https://"))
-        {
-            return Err("reth_http_rpc must start with http:// or https://".into());
-        }
-
         self.validate_fee_recipient()?;
 
         if self.log_level.trim().is_empty() {
@@ -169,7 +153,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_devnet_account_normalizes_to_execution_payload() {
+    fn native_devnet_account_normalizes_to_fee_recipient() {
         let payload = [0x42; 20];
         let native = NiahciaAddressV1::new(AddressNetwork::Devnet, AddressKind::Account, payload)
             .encode()

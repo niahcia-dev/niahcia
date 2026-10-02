@@ -72,8 +72,6 @@ fn main() -> ExitCode {
 
     info!(version = VERSION, network = %config.network, "starting NIAHCIA");
     info!(data_dir = %config.data_dir.display(), "data directory");
-    info!(reth_http_rpc = %config.reth_http_rpc, "Reth public RPC");
-    info!(reth_jwt_path = %config.reth_jwt_path.display(), "Reth JWT path");
     info!(mining_rpc_bind = %config.mining_rpc_bind, "mining RPC bind");
     info!(p2p_bind = %config.p2p_bind, peers = config.p2p_peers.len(), "P2P configuration");
 
