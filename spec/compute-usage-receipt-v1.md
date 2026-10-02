@@ -147,3 +147,12 @@ For `SMALL` Jobs, one final Job-level acknowledgement remains the default.
 For `RESERVED` Jobs, a prior JobReservationV1 may hold authorized channel value while execution is in progress. The final usage receipt still acknowledges only the independently verified actual charge; unused reserved value is released.
 
 For future `STAGED` Jobs, each acknowledged stage contributes monotonically toward cumulative channel spend. Per-token signatures remain unnecessary.
+
+
+## Receipt expiry semantics
+
+`expires_at` is a NIAHCIA **block height**, not wall-clock time.
+
+A receipt is eligible for native settlement only when the settlement block height is less than or equal to `expires_at`, in addition to satisfying the channel's own `claim_deadline_height`.
+
+Using block height keeps receipt validity deterministic under consensus and aligned with ComputeChannel expiry/claim/refund boundaries.
