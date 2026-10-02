@@ -61,7 +61,7 @@ V1 locks:
 
 - Mainnet: `0x000000004E494148` (`1313423688` decimal; ASCII `NIAH`)
 - Testnet: `0x0000000154494148` (`5709054280` decimal; namespace `1` + ASCII `TIAH`)
-- Devnet: `0x0000000244494148` (`9736028488` decimal; namespace `2` + ASCII `DIAH`)
+- Devnet: `0x0000000244494148` (`9735586120` decimal; namespace `2` + ASCII `DIAH`)
 
 A node MUST reject a signed transaction when either its `network` or `chain_id` differs from the node's configured consensus identity. Internal execution-chain identifiers MUST NOT replace or reinterpret the NIAHCIA signed transaction domain.
 

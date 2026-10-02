@@ -7,6 +7,7 @@ pub mod monetary;
 pub mod monetary_state;
 pub mod native_execution;
 pub mod native_rpc;
+pub mod native_transaction;
 pub mod nce;
 mod p2p;
 pub mod pow;

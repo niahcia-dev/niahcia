@@ -29,7 +29,7 @@ Each network class has a native unsigned 64-bit NIAHCIA chain identifier:
 network   chain_id hex         decimal
 mainnet   0x000000004E494148   1313423688
 testnet   0x0000000154494148   5709054280
-devnet    0x0000000244494148   9736028488
+devnet    0x0000000244494148   9735586120
 ```
 
 When a fixed-width byte representation is required, `chain_id` is serialized
