@@ -45,6 +45,9 @@ ComputeChannelV1
 - settlement_policy
 - sequence
 - status
+- worker_payment_account
+- claim_deadline_height
+- refund_available_height
 ```
 
 Exact field IDs and settlement transaction encoding remain candidate until vectors are defined.
@@ -223,3 +226,51 @@ Native Compute Settlement V1 defines the minimal chain state for channel funding
 The first milestone does not require Jobs, ResultCommitments, PaymentAuthorizations, WorkerAdvertisements, or ordinary usage-receipt issuance to be published on-chain.
 
 Worker/operator chain registration and service bonds are also deferred from the first ordinary paid-compute settlement milestone.
+
+
+## Worker payout binding
+
+Because the first milestone does not require an on-chain Worker registry, the channel itself MUST commit the exact native `worker_payment_account` that receives valid settlement.
+
+`worker_id` and `operator_id` remain useful off-chain identity bindings, but settlement MUST NOT depend on resolving an unregistered worker ID into a payment address at close time.
+
+Changing the worker payout account requires a new channel.
+
+## Expiry, claim, and refund boundary
+
+`expiry_height` ends eligibility for new Jobs under the channel.
+
+It MUST NOT make locked value instantly refundable while the worker may still hold a valid signed cumulative receipt.
+
+The simple V1 timeline is:
+
+```text
+OPEN
+  |
+  | new Jobs allowed
+  v
+expiry_height
+  |
+  | no new Jobs
+  | worker may submit latest valid receipt
+  v
+claim_deadline_height
+  |
+  | worker claim window closed
+  v
+refund_available_height
+  |
+  | remaining/unclaimed value refundable
+```
+
+The protocol MUST enforce:
+
+```text
+opened_height < expiry_height <= claim_deadline_height <= refund_available_height
+```
+
+For the first milestone, `refund_available_height` MAY equal `claim_deadline_height + 1`.
+
+The exact production claim window is not locked here.
+
+A valid settlement submitted before or at the claim deadline takes precedence over later refund attempts.
