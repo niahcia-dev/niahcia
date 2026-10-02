@@ -18,10 +18,11 @@
 
 - CPU PoW is canonical chain authority; RandomX is current candidate.
 - GPU/accelerator AI compute is separate from mining.
-- Storage/service nodes provide measurable service but never fork-choice/finality authority.
+- Decentralized storage/service nodes are optional service providers, never fork-choice/finality authorities, and are not required for ordinary AI inference.
 - Agents/models/jobs/capabilities/memory/verification/payment are explicit protocol objects.
 - NIAHCIA native execution is now the active node execution path. The legacy Reth/EVM/Engine API/JWT integration, replay journals, and external execution-hash mappings have been removed from the reference node.
-- Key differentiation objectives: **portable agent sovereignty**, **economically maintained self-healing persistence**, and an **ownerless decentralized Primary Agent as a network public good**.
+- V1 AI state is local-first: wallet/client-local encrypted chat history and Agent memory are the default; decentralized persistence is deferred and optional.
+- Key differentiation objectives include portable Agent sovereignty, decentralized compute access, bounded wallet authority, and an ownerless decentralized Primary Agent as a network public good.
 
 ## Non-negotiable boundaries
 
@@ -83,6 +84,8 @@ Central rules:
 - persistent private chat content is **encrypted by default**;
 - wallet spending keys must remain separate from chat-content encryption keys;
 - each conversation should use an independent content-encryption key that can be wrapped for authorized devices/identities;
+- private conversation history and Agent memory are wallet/client-local by default in V1;
+- ordinary inference must not depend on a storage/service network;
 - prompts, responses, attachments, memories, private agent state, and private tool results must not be published on-chain;
 - portals should receive only minimum delegated authority and must not gain unrestricted wallet or spending control;
 - standard decentralized inference may still require temporary plaintext access inside the authorized execution environment; encryption at rest/in transit does not imply that a conventional worker is cryptographically blind to the prompt;
