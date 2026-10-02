@@ -487,6 +487,104 @@ mod tests {
     }
 
     #[test]
+    fn native_compute_payload_vectors_match_locked_json() {
+        let vectors: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../test-vectors/native-compute-action-payloads-v1.json"
+        ))
+        .unwrap();
+
+        let channel_vector = &vectors["channel_id_derivation"];
+        let open_tx_id: Hash32 =
+            hex::decode(channel_vector["open_transaction_id_v2"].as_str().unwrap())
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let expected_channel_id =
+            channel_vector["channel_id"].as_str().unwrap();
+
+        assert_eq!(
+            hex::encode(derive_compute_channel_id_v1(open_tx_id)),
+            expected_channel_id
+        );
+
+        let open = &vectors["open"];
+        let channel_public_key: [u8; 65] =
+            hex::decode(open["channel_public_key"].as_str().unwrap())
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let open_payload = ComputeChannelOpenPayloadV1 {
+            worker_id: [0x22; 32],
+            operator_id: [0x33; 32],
+            channel_public_key,
+            worker_payment_account: [0x44; 20],
+            authorized_amount: 1_000,
+            expiry_height: 100,
+            claim_deadline_height: 110,
+            refund_available_height: 111,
+            service_scope_commitment: [0x55; 32],
+            model_scope_commitment: [0x66; 32],
+            execution_profile_scope_commitment: [0x77; 32],
+            settlement_policy: ComputeChannelSettlementPolicyV1::CumulativeReceipt,
+        };
+
+        assert_eq!(
+            hex::encode(open_payload.canonical_bytes().unwrap()),
+            open["canonical_hex"].as_str().unwrap()
+        );
+
+        let channel_id: Hash32 = hex::decode(expected_channel_id)
+            .unwrap()
+            .try_into()
+            .unwrap();
+
+        let receipt_bytes =
+            hex::decode(vectors["usage_receipt_structural"]["canonical_hex"].as_str().unwrap())
+                .unwrap();
+        assert_eq!(
+            validate_usage_receipt_structure(&receipt_bytes).unwrap(),
+            channel_id
+        );
+
+        let settle_payload = ComputeChannelSettlePayloadV1 {
+            channel_id,
+            final_usage_receipt: receipt_bytes,
+        };
+        assert_eq!(
+            hex::encode(settle_payload.canonical_bytes().unwrap()),
+            vectors["settle"]["canonical_hex"].as_str().unwrap()
+        );
+
+        let refund_payload = ComputeChannelRefundPayloadV1 { channel_id };
+        assert_eq!(
+            hex::encode(refund_payload.canonical_bytes().unwrap()),
+            vectors["refund"]["canonical_hex"].as_str().unwrap()
+        );
+
+        assert_eq!(
+            ComputeChannelOpenPayloadV1::from_canonical_bytes(
+                &hex::decode(open["canonical_hex"].as_str().unwrap()).unwrap()
+            )
+            .unwrap(),
+            open_payload
+        );
+        assert_eq!(
+            ComputeChannelSettlePayloadV1::from_canonical_bytes(
+                &hex::decode(vectors["settle"]["canonical_hex"].as_str().unwrap()).unwrap()
+            )
+            .unwrap(),
+            settle_payload
+        );
+        assert_eq!(
+            ComputeChannelRefundPayloadV1::from_canonical_bytes(
+                &hex::decode(vectors["refund"]["canonical_hex"].as_str().unwrap()).unwrap()
+            )
+            .unwrap(),
+            refund_payload
+        );
+    }
+
+    #[test]
     fn channel_id_derivation_is_domain_separated() {
         let tx_id = [0x99; 32];
         let derived = derive_compute_channel_id_v1(tx_id);
