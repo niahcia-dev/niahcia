@@ -1064,6 +1064,61 @@ mod tests {
     }
 
     #[test]
+    fn native_block_body_survives_restart_and_is_idempotent() {
+        use crate::native_block_body::NativeBlockBodyV1;
+
+        let path = temp_state_path("native-block-body-restart");
+        let block = header([0_u8; 32], 0, [0xff; 32], 1);
+        let block_id = block.block_id();
+        let body = NativeBlockBodyV1::empty();
+
+        {
+            let store = StateStore::open(&path).unwrap();
+            store.insert_chain_block(block).unwrap();
+            store.store_native_block_body(block_id, &body).unwrap();
+            store.store_native_block_body(block_id, &body).unwrap();
+
+            assert_eq!(store.native_block_body(block_id).unwrap(), Some(body.clone()));
+        }
+
+        {
+            let reopened = StateStore::open(&path).unwrap();
+            assert_eq!(reopened.native_block_body(block_id).unwrap(), Some(body));
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn native_block_body_requires_persisted_block_and_rejects_conflict() {
+        use crate::native_block_body::NativeBlockBodyV1;
+
+        let path = temp_state_path("native-block-body-conflict");
+        let store = StateStore::open(&path).unwrap();
+
+        let body = NativeBlockBodyV1::empty();
+        let err = store
+            .store_native_block_body([0x91; 32], &body)
+            .unwrap_err();
+        assert!(err.contains("unpersisted NIAHCIA block"));
+
+        let block = header([0_u8; 32], 0, [0xff; 32], 2);
+        let block_id = block.block_id();
+        store.insert_chain_block(block).unwrap();
+        store.store_native_block_body(block_id, &body).unwrap();
+
+        let conflicting = NativeBlockBodyV1::new([0x44; 20], Vec::new()).unwrap();
+        let err = store
+            .store_native_block_body(block_id, &conflicting)
+            .unwrap_err();
+        assert!(err.contains("different native block body"));
+
+        assert_eq!(store.native_block_body(block_id).unwrap(), Some(body));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn native_state_snapshot_requires_persisted_block() {
         use crate::native_execution::NativeStateV1;
 
