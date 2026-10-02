@@ -498,8 +498,7 @@ fn reconsider_detached_transactions_v3(
         }
     }
 
-    let detached =
-        detached_transactions_to_reconsider_v3(&attached_bodies, &detached_bodies)?;
+    let detached = detached_transactions_to_reconsider_v3(&attached_bodies, &detached_bodies)?;
 
     let mut pool = mempool
         .write()
@@ -589,7 +588,6 @@ pub struct GetBlocksV1 {
     pub count: u16,
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::detached_transactions_to_reconsider_v3;
@@ -645,12 +643,8 @@ mod tests {
         )
         .unwrap();
 
-        let reconsider =
-            detached_transactions_to_reconsider_v3(&[attached], &[detached]).unwrap();
+        let reconsider = detached_transactions_to_reconsider_v3(&[attached], &[detached]).unwrap();
 
-        assert_eq!(
-            reconsider,
-            vec![detached_only.canonical_bytes().unwrap()]
-        );
+        assert_eq!(reconsider, vec![detached_only.canonical_bytes().unwrap()]);
     }
 }
