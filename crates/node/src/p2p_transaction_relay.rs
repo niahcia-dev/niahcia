@@ -121,10 +121,7 @@ pub fn missing_from_inventory(pool: &NativeMempoolV1, inventory: &TxInvV1) -> Ge
     }
 }
 
-pub fn transactions_for_request(
-    pool: &NativeMempoolV1,
-    request: &GetTxV1,
-) -> Result<TxV1, String> {
+pub fn transactions_for_request(pool: &NativeMempoolV1, request: &GetTxV1) -> Result<TxV1, String> {
     if request.tx_ids.len() > MAX_TX_REQUEST_ITEMS_V1 {
         return Err("GetTxV1 exceeds transaction request limit".into());
     }
@@ -264,11 +261,16 @@ mod tests {
     #[test]
     fn inventory_and_request_round_trip() {
         let ids = vec![[0x11; 32], [0x22; 32]];
-        let inv = TxInvV1 { tx_ids: ids.clone() };
+        let inv = TxInvV1 {
+            tx_ids: ids.clone(),
+        };
         assert_eq!(TxInvV1::decode(&inv.encode().unwrap()).unwrap(), inv);
 
         let request = GetTxV1 { tx_ids: ids };
-        assert_eq!(GetTxV1::decode(&request.encode().unwrap()).unwrap(), request);
+        assert_eq!(
+            GetTxV1::decode(&request.encode().unwrap()).unwrap(),
+            request
+        );
     }
 
     #[test]
