@@ -495,8 +495,7 @@ mod tests {
                 .unwrap()
                 .try_into()
                 .unwrap();
-        let expected_channel_id =
-            channel_vector["channel_id"].as_str().unwrap();
+        let expected_channel_id = channel_vector["channel_id"].as_str().unwrap();
 
         assert_eq!(
             hex::encode(derive_compute_channel_id_v1(open_tx_id)),
@@ -534,9 +533,12 @@ mod tests {
             .try_into()
             .unwrap();
 
-        let receipt_bytes =
-            hex::decode(vectors["usage_receipt_structural"]["canonical_hex"].as_str().unwrap())
-                .unwrap();
+        let receipt_bytes = hex::decode(
+            vectors["usage_receipt_structural"]["canonical_hex"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             validate_usage_receipt_structure(&receipt_bytes).unwrap(),
             channel_id
