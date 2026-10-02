@@ -20,7 +20,7 @@
 - GPU/accelerator AI compute is separate from mining.
 - Storage/service nodes provide measurable service but never fork-choice/finality authority.
 - Agents/models/jobs/capabilities/memory/verification/payment are explicit protocol objects.
-- NIAHCIA native execution is the active execution direction. Reth/EVM/Engine API/JWT integration is legacy code scheduled for coherent remove-and-replace once native transaction validation and state transition are ready.
+- NIAHCIA native execution is now the active node execution path. The legacy Reth/EVM/Engine API/JWT integration, replay journals, and external execution-hash mappings have been removed from the reference node.
 - Key differentiation objectives: **portable agent sovereignty**, **economically maintained self-healing persistence**, and an **ownerless decentralized Primary Agent as a network public good**.
 
 ## Non-negotiable boundaries
@@ -143,19 +143,21 @@ Implemented on `main`:
 
 - native Account state foundation with deterministic state-root calculation;
 - deterministic NativeStateV1 snapshot serialization and restart-safe persistence;
-- NCE/1 canonical deterministic CBOR encoding foundation;
-- NativeTransactionBodyV1 with locked network/chain identity, action validation, canonical NCE payload/body encoding, fixed-width monetary fields, and tests;
-- SignedNativeTransactionV1 with canonical signing digest, secp256k1 validation, low-S enforcement, authenticated sender derivation, canonical signed encoding, transaction ID, and locked interoperability vectors;
+- NCE/1 canonical deterministic CBOR encoding foundation plus strict shortest-form decoding for unsigned integers, definite byte strings, maps, and object envelopes;
+- NativeTransactionBodyV1 with locked network/chain identity, action validation, canonical NCE payload/body encoding, fixed-width monetary fields, strict canonical byte decoding, and round-trip/trailing-byte rejection tests;
+- SignedNativeTransactionV1 with canonical signing digest, secp256k1 validation, low-S enforcement, authenticated sender derivation, canonical signed encoding/decoding, transaction ID, round-trip canonicality enforcement, and locked interoperability vectors;
 - deterministic native Transfer execution with nonce, balance, gas-reserve, base-fee burn, producer-priority-fee, rollback, and overflow checks;
-- NativeBlockExecutionResultV1 with transaction, state, receipt, and execution commitments plus locked interoperability vectors;
-- atomic native block persistence binding BlockHeaderV1, native execution summary, NativeStateV1 snapshot, cumulative-work fork choice, and best-head update in one redb transaction;
-- native persistence restart recovery, idempotence, commitment-mismatch rejection, and full-suite regression coverage;
+- NativeBlockExecutionResultV1 with transaction, state, receipt, and execution commitments, complete canonical persistence including ordered receipts, and locked interoperability vectors;
+- atomic native block persistence binding BlockHeaderV1, the complete canonical NativeBlockExecutionResultV1, NativeStateV1 snapshot, cumulative-work fork choice, and best-head update in one redb transaction;
+- native persistence restart recovery, idempotence, commitment-mismatch rejection, native mining-template/solved-block submission, startup/restart recovery, and full-suite regression coverage;
 - Address V1 account derivation/interoperability work;
 - wallet-native encrypted chat protocol specification (specified only; not runtime implementation).
 
-Relevant completed checkpoints include native transaction signing, native Transfer execution, native block execution commitments, deterministic state snapshots, and atomic native block/execution/state persistence. The full node suite passed 177/177 tests at this handoff.
+Relevant completed checkpoints include native transaction signing, native Transfer execution, native block execution commitments, deterministic state snapshots, atomic native block/execution/state persistence, native mining migration, P2P Version 2 header-only native block validation, startup/restart migration, and complete removal of the legacy Reth execution path. The full node suite passed 175/175 tests at this handoff.
 
-The next implementation milestone is to migrate block-template/mining submission onto the native execution/state commit path. Once mining no longer depends on external execution hashes or replay journals, continue the coherent removal of the legacy Reth/EVM/Engine API/JWT subsystem, then migrate P2P and startup/restart paths before deleting obsolete legacy persistence tables and APIs.
+P2P Version 2 currently transports canonical BlockHeaderV1 values only and independently reconstructs the canonical empty native transaction set from locally trusted parent state. This is a deliberate development limitation, not the final transaction-block protocol. Before non-empty or fee-bearing transaction blocks are networked, the protocol must add canonical transaction/body transport and make the CPU producer fee recipient derivable or verifiable by every validating peer.
+
+The next implementation milestone is native transaction admission and propagation: build the first NativeMempoolV1 around SignedNativeTransactionV1, add RPC submission, then define and implement P2P transaction/block-body transport so mining can include non-empty native transaction sets.
 
 Do not implement ContractCall/ContractCreate runtime semantics until their native runtime behavior is explicitly specified. Do not invent a base-fee adjustment algorithm; Native Execution V1 currently consumes an explicit base fee and the evolution rule remains separate protocol work.
 
@@ -175,14 +177,16 @@ RandomX remains PoW direction. Ordinary/common RandomX miner/pool compatibility 
 
 The previous handoff's `#266` blocker is stale: the referenced issue is not currently retrievable from `niahcia/niahcia`. Do not treat it as an active blocker without fresh GitHub evidence.
 
-Current priority is the native execution replacement, in small validated milestones:
+Current priority is native transaction propagation and non-empty block transport, in small validated milestones:
 
-1. Migrate mining template construction and solved-block submission from external execution hashes/replay journals to NativeBlockExecutionResultV1 + NativeStateV1 and `insert_native_block_with_execution_outcome()`.
-2. Preserve the existing 164-byte BlockHeaderV1, CPU-PoW cumulative-work fork choice, deterministic equal-work tie-break, ancestry/reorg behavior, and locked consensus vectors while replacing execution plumbing.
-3. Migrate P2P block acceptance/replay and startup/restart recovery onto native execution/state persistence.
-4. Remove obsolete Reth/EVM/Engine API/JWT configuration, RPC client, replay journal, external execution-hash mappings, dependencies, tests, and documentation only after all live callers have native replacements.
-5. Keep NCE/1, transaction, execution, address, monetary, network, tests/vectors, `docs/spec-status.md`, and this handoff synchronized.
-6. Keep wallet-native encrypted chat as protocol-only until explicitly starting its implementation milestone.
+1. Build `NativeMempoolV1` around canonical `SignedNativeTransactionV1` objects, using strict NCE/1 decoding and existing signature/network/action validation.
+2. Add native RPC transaction submission without introducing a second transaction encoding.
+3. Define deterministic mempool admission/replacement/nonce/size policy separately from consensus execution rules.
+4. Extend P2P beyond the current Version 2 header-only empty-block milestone with canonical transaction or block-body transport and independent reconstruction/validation.
+5. Resolve producer-fee recipient commitment/derivation before fee-bearing transactions are included in networked blocks.
+6. Preserve the 164-byte BlockHeaderV1, CPU-PoW cumulative-work fork choice, deterministic equal-work tie-break, ancestry/reorg behavior, and locked interoperability vectors.
+7. Keep NCE/1, transaction, execution, address, monetary, network, tests/vectors, `docs/spec-status.md`, this handoff, and the `niahcia-protocol` mirror synchronized.
+8. Keep wallet-native encrypted chat as protocol-only until explicitly starting its implementation milestone.
 
 Deliberate consensus review still needed for RandomX stock miner/pool interoperability, public-testnet RandomX epoch/seed parameters, remaining monetary constants, genesis/network parameters, and chain-ID finalization.
 
@@ -245,6 +249,7 @@ If asked simply to continue: inspect current `main` and CI, read this handoff an
 - `spec/block-header-v1.md`
 - `spec/native-transaction-v1.md`
 - `spec/native-execution-v1.md`
+- `spec/p2p-native-block-transfer-v2.md`
 - `spec/randomx-pow-v1.md`
 - `spec/canonical-serialization.md`
 - `spec/domain-separation.md`
