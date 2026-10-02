@@ -157,3 +157,21 @@ with:
 - delegation_depth = 0.
 
 Recursive Agent delegation can be added later after the basic payment path is proven.
+
+
+## Pricing interaction
+
+A PaymentAuthorization bounds what a subject may spend; it does not let the worker choose an arbitrary charge.
+
+Each chargeable Job binds an accepted `offer_id` or quote plus a hard `max_price`.
+
+The effective payment ceiling is the minimum of:
+
+```text
+Job.max_price
+PaymentAuthorization.max_per_job
+PaymentAuthorization.remaining_total
+ComputeChannel.remaining_authorized_amount
+```
+
+Any calculated or claimed charge above that effective ceiling is invalid.
