@@ -1,9 +1,9 @@
 use crate::address::AddressNetwork;
-use crate::native_block_body::NativeBlockBodyV1;
 use crate::consensus::{
     devnet_next_target, randomx_seed, randomx_seed_height, validate_timestamp,
     DEVNET_GENESIS_TARGET, MEDIAN_TIME_WINDOW,
 };
+use crate::native_block_body::NativeBlockBodyV1;
 use crate::native_execution::{
     execute_block_v1, NativeBlockExecutionResultV1, NativeExecutionContextV1, NativeStateV1,
 };
@@ -323,14 +323,24 @@ fn handle_connection(
                 .and_then(|raw| submit_raw_transaction_hex(raw, mempool));
 
             match result {
-                Ok(tx_id) => json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "result": {
-                        "tx_id": tx_id,
-                        "mempool_count": mempool_size(mempool)?
+                Ok(tx_id) => {
+                    if state.best_chain_head()?.is_some() {
+                        install_next_native_work_from_mempool(
+                            work,
+                            state,
+                            mempool,
+                            fee_recipient,
+                        )?;
                     }
-                }),
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": {
+                            "tx_id": tx_id,
+                            "mempool_count": mempool_size(mempool)?
+                        }
+                    })
+                },
                 Err(message) => json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -348,7 +358,8 @@ fn handle_connection(
                 "transaction_count": mempool_size(mempool)?
             }
         }),
-        "pow_submitWork" => match submit_work(&request, work, state, Some(fee_recipient)) {
+        "pow_submitWork" => {
+            match submit_work_with_mempool(&request, work, state, mempool, fee_recipient) {
             Ok(result) => json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -362,6 +373,7 @@ fn handle_connection(
                     "message": message
                 }
             }),
+            }
         },
         _ => json!({
             "jsonrpc": "2.0",
@@ -393,6 +405,32 @@ fn submit_work(
     state: &StateStore,
     fee_recipient: Option<Address20>,
 ) -> Result<Value, String> {
+    submit_work_internal(request, work, state, None, fee_recipient)
+}
+
+fn submit_work_with_mempool(
+    request: &Value,
+    work: &WorkManager,
+    state: &StateStore,
+    mempool: &SharedNativeMempoolV1,
+    fee_recipient: Address20,
+) -> Result<Value, String> {
+    submit_work_internal(
+        request,
+        work,
+        state,
+        Some(mempool),
+        Some(fee_recipient),
+    )
+}
+
+fn submit_work_internal(
+    request: &Value,
+    work: &WorkManager,
+    state: &StateStore,
+    mempool: Option<&SharedNativeMempoolV1>,
+    fee_recipient: Option<Address20>,
+) -> Result<Value, String> {
     let params = request
         .get("params")
         .and_then(Value::as_object)
@@ -417,17 +455,27 @@ fn submit_work(
         .and_then(Value::as_u64)
         .ok_or_else(|| "pow_submitWork extra_nonce must be a u64".to_string())?;
 
-    let (header, seed, execution, native_state) =
+    let (header, seed, execution, native_state, body) =
         work.submission_candidate(generation, template_id, nonce, extra_nonce)?;
     let pow_hash = validate_block_candidate(&header, seed, state)?;
-    let outcome =
-        state.insert_native_block_with_execution_outcome(header, &execution, &native_state)?;
+    let outcome = state.insert_native_block_with_body_and_execution_outcome(
+        header,
+        &body,
+        &execution,
+        &native_state,
+    )?;
 
     if outcome.current_best == outcome.block.block_id() {
-        if let Some(fee_recipient) = fee_recipient {
-            install_next_native_work(work, state, fee_recipient)?;
-        } else {
-            work.mark_solved(generation, template_id)?;
+        match (mempool, fee_recipient) {
+            (Some(mempool), Some(fee_recipient)) => {
+                install_next_native_work_from_mempool(work, state, mempool, fee_recipient)?;
+            }
+            (None, Some(fee_recipient)) => {
+                install_next_native_work(work, state, fee_recipient)?;
+            }
+            _ => {
+                work.mark_solved(generation, template_id)?;
+            }
         }
     } else {
         work.mark_solved(generation, template_id)?;
@@ -566,12 +614,7 @@ pub(crate) fn install_next_native_work_from_mempool(
             .read()
             .map_err(|_| "native mempool lock poisoned".to_string())?;
         pool.ordered_entries()
-            .map(|entry| {
-                (
-                    entry.transaction.clone(),
-                    entry.canonical_bytes.len(),
-                )
-            })
+            .map(|entry| (entry.transaction.clone(), entry.canonical_bytes.len()))
             .collect::<Vec<_>>()
     };
 
