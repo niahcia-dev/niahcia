@@ -640,9 +640,7 @@ impl StateStore {
 
             if let Some(existing) = existing {
                 if existing.as_slice() != encoded_body.as_slice() {
-                    return Err(
-                        "NIAHCIA block already has a different native block body".into(),
-                    );
+                    return Err("NIAHCIA block already has a different native block body".into());
                 }
             } else {
                 bodies
