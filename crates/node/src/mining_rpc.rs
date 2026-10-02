@@ -786,9 +786,7 @@ fn parse_hash32_hex(value: &str) -> Result<Hash32, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        install_next_native_work_from_mempool, submit_work, WorkManager,
-    };
+    use super::{install_next_native_work_from_mempool, submit_work, WorkManager};
     use crate::address::AddressNetwork;
     use crate::native_execution::{
         execute_block_v1, NativeBlockExecutionResultV1, NativeExecutionContextV1, NativeStateV1,
@@ -972,13 +970,7 @@ mod tests {
             .unwrap();
 
         let manager = test_work_manager(&parent);
-        install_next_native_work_from_mempool(
-            &manager,
-            &store,
-            &mempool,
-            [0x77; 20],
-        )
-        .unwrap();
+        install_next_native_work_from_mempool(&manager, &store, &mempool, [0x77; 20]).unwrap();
 
         let (generation, header, _, _) = manager.current();
         let (_, _, execution, resulting_state, body) = manager
