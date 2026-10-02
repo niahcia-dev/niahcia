@@ -69,3 +69,10 @@ A peer MUST NOT be allowed to make a self-consistent block valid merely by suppl
 ## Compatibility rule
 
 The 164-byte `BlockHeaderV1`, CPU-PoW cumulative-work fork choice, canonical transaction commitment, and native execution commitments remain separate protocol surfaces. A future transaction-body transport extension does not silently change those locked or candidate formats.
+
+
+## Successor
+
+`spec/p2p-native-block-transfer-v3.md` defines the candidate full-body successor for non-empty native transaction blocks, including canonical transaction transport, transaction relay direction, and producer-fee-recipient validation.
+
+V2 remains the header-only empty-block development protocol and is not silently extended.
