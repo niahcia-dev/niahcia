@@ -105,6 +105,22 @@ Indefinite-length maps, arrays, byte strings, and text strings are forbidden.
 
 All lengths MUST be definite.
 
+## Canonical decoding
+
+NCE/1 canonicality applies to decoding as well as encoding.
+
+A verification parser MUST reject:
+
+- unsigned integers or lengths that are not encoded in the shortest permitted form;
+- indefinite-length values or reserved additional-information encodings;
+- truncated byte strings, arrays, maps, or envelope fields;
+- a value whose CBOR major type does not match the schema;
+- duplicate map keys or map keys that are not in the schema-required canonical order;
+- an envelope with the wrong field count, encoding version, object type, schema version, or payload field;
+- trailing bytes after a complete top-level protocol object.
+
+For consensus-, signature-, and hash-critical objects, successful decode followed by canonical re-encoding MUST reproduce the exact input bytes. A parser MUST NOT accept a non-canonical byte representation and silently normalize it before verification.
+
 ## Schema envelope
 
 Every canonical top-level protocol object is encoded inside a logical envelope:
