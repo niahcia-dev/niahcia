@@ -102,3 +102,22 @@ funding account
 `PaymentPlan` describes how one Job's permitted spend is allocated and settled among eligible participants.
 
 A PaymentPlan MUST NOT expand the amount or scope authorized by its parent PaymentAuthorization/ComputeChannel.
+
+
+## Relationship to ComputePricingV1
+
+ComputePricingV1 defines the accepted service price and metering formula.
+
+PaymentPlan does not authorize spending beyond that price or beyond PaymentAuthorization/ComputeChannel ceilings.
+
+For an ordinary primary-worker Job:
+
+```text
+signed price offer
+  -> Job max_price
+  -> measured valid usage
+  -> calculated final charge
+  -> PaymentPlan settlement allocation
+```
+
+The final allocated settlement MUST NOT exceed the accepted final charge.
