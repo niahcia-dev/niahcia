@@ -85,3 +85,12 @@ For token-generating workloads, the profile MUST specify the canonical token/out
 ## Prototype 0
 
 Prototype 0 uses a pinned vLLM version/build, one NVIDIA Ampere-class profile, fixed generation settings, and canonical token-sequence output hashing.
+
+
+## Long-running workloads
+
+ExecutionProfile may describe TRAINING/FINE_TUNING/CUSTOM workloads, but protocol support for a workload type does not imply that V1 payment/checkpoint semantics are ready for production use.
+
+Long-running workloads SHOULD NOT be enabled for production settlement until their interruption, checkpoint, restart, artifact commitment, staged payment, and metering rules are explicitly specified.
+
+The first end-to-end milestone remains focused on bounded inference workloads.
