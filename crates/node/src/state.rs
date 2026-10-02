@@ -1,4 +1,5 @@
 use crate::consensus::block_work;
+use crate::native_block_body::NativeBlockBodyV1;
 use crate::native_execution::{NativeBlockExecutionResultV1, NativeStateV1};
 use crate::work::{BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
 use num_bigint::BigUint;
@@ -12,6 +13,8 @@ const NATIVE_STATE_SNAPSHOTS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("native_state_snapshots_v1");
 const NATIVE_BLOCK_EXECUTION: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("native_block_execution_v1");
+const NATIVE_BLOCK_BODIES: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("native_block_bodies_v1");
 const CHAIN_META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_meta_v1");
 
 const BEST_HEAD_KEY: &[u8] = b"best_head";
@@ -160,6 +163,9 @@ impl StateStore {
                 .open_table(NATIVE_BLOCK_EXECUTION)
                 .map_err(|e| format!("failed to initialize native block execution table: {e}"))?;
             write
+                .open_table(NATIVE_BLOCK_BODIES)
+                .map_err(|e| format!("failed to initialize native block body table: {e}"))?;
+            write
                 .open_table(CHAIN_META)
                 .map_err(|e| format!("failed to initialize chain metadata table: {e}"))?;
         }
@@ -212,6 +218,71 @@ impl StateStore {
                 .map_err(|e| format!("invalid persisted native execution: {e}")),
             None => Ok(None),
         }
+    }
+
+    pub fn native_block_body(
+        &self,
+        block_id: Hash32,
+    ) -> Result<Option<NativeBlockBodyV1>, String> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("failed to begin native block body read: {e}"))?;
+        let table = read
+            .open_table(NATIVE_BLOCK_BODIES)
+            .map_err(|e| format!("failed to open native block body table: {e}"))?;
+
+        match table
+            .get(block_id.as_slice())
+            .map_err(|e| format!("failed to read native block body: {e}"))?
+        {
+            Some(value) => NativeBlockBodyV1::from_canonical_bytes(value.value())
+                .map(Some)
+                .map_err(|e| format!("invalid persisted native block body: {e}")),
+            None => Ok(None),
+        }
+    }
+
+    pub fn store_native_block_body(
+        &self,
+        block_id: Hash32,
+        body: &NativeBlockBodyV1,
+    ) -> Result<(), String> {
+        if self.load_chain_block(block_id)?.is_none() {
+            return Err("cannot persist native block body for an unpersisted NIAHCIA block".into());
+        }
+
+        let encoded = body.canonical_bytes()?;
+
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("failed to begin native block body write: {e}"))?;
+        {
+            let mut table = write
+                .open_table(NATIVE_BLOCK_BODIES)
+                .map_err(|e| format!("failed to open native block body table: {e}"))?;
+
+            if let Some(existing) = table
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to inspect native block body: {e}"))?
+            {
+                if existing.value() != encoded.as_slice() {
+                    return Err(
+                        "NIAHCIA block already has a different native block body".into(),
+                    );
+                }
+                return Ok(());
+            }
+
+            table
+                .insert(block_id.as_slice(), encoded.as_slice())
+                .map_err(|e| format!("failed to persist native block body: {e}"))?;
+        }
+
+        write
+            .commit()
+            .map_err(|e| format!("failed to commit native block body: {e}"))
     }
 
     pub fn store_native_state_snapshot(
