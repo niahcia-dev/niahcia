@@ -1,6 +1,7 @@
 use crate::consensus::block_work;
 use crate::native_block_body::NativeBlockBodyV1;
 use crate::native_execution::{NativeBlockExecutionResultV1, NativeStateV1};
+use crate::native_state_v2::NativeStateV2;
 use crate::native_transaction::native_transactions_root_v1;
 use crate::work::{BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
 use num_bigint::BigUint;
@@ -325,6 +326,89 @@ impl StateStore {
         write
             .commit()
             .map_err(|e| format!("failed to commit native state snapshot: {e}"))
+    }
+
+    pub fn store_native_state_v2_snapshot(
+        &self,
+        block_id: Hash32,
+        state: &NativeStateV2,
+    ) -> Result<(), String> {
+        if self.load_chain_block(block_id)?.is_none() {
+            return Err("cannot persist native state V2 for an unpersisted NIAHCIA block".into());
+        }
+
+        let state_root = state.state_root()?;
+        let snapshot = state.canonical_bytes()?;
+        let mut value = Vec::with_capacity(32 + snapshot.len());
+        value.extend_from_slice(&state_root);
+        value.extend_from_slice(&snapshot);
+
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("failed to begin native state V2 snapshot write: {e}"))?;
+        {
+            let mut table = write
+                .open_table(NATIVE_STATE_SNAPSHOTS)
+                .map_err(|e| format!("failed to open native state snapshot table: {e}"))?;
+
+            if let Some(existing) = table
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to inspect native state V2 snapshot: {e}"))?
+            {
+                if existing.value() != value.as_slice() {
+                    return Err(
+                        "NIAHCIA block already has a different native state snapshot".into(),
+                    );
+                }
+                return Ok(());
+            }
+
+            table
+                .insert(block_id.as_slice(), value.as_slice())
+                .map_err(|e| format!("failed to persist native state V2 snapshot: {e}"))?;
+        }
+
+        write
+            .commit()
+            .map_err(|e| format!("failed to commit native state V2 snapshot: {e}"))
+    }
+
+    pub fn native_state_v2_snapshot(
+        &self,
+        block_id: Hash32,
+    ) -> Result<Option<NativeStateV2>, String> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("failed to begin native state V2 snapshot read: {e}"))?;
+        let table = read
+            .open_table(NATIVE_STATE_SNAPSHOTS)
+            .map_err(|e| format!("failed to open native state snapshot table: {e}"))?;
+
+        let Some(value) = table
+            .get(block_id.as_slice())
+            .map_err(|e| format!("failed to read native state V2 snapshot: {e}"))?
+        else {
+            return Ok(None);
+        };
+
+        let value = value.value();
+        if value.len() < 32 {
+            return Err("persisted native state V2 snapshot is truncated".into());
+        }
+
+        let expected_root: Hash32 = value[..32]
+            .try_into()
+            .map_err(|_| "invalid persisted native state V2 root length".to_string())?;
+        let state = NativeStateV2::from_canonical_bytes(&value[32..])?;
+        let actual_root = state.state_root()?;
+
+        if actual_root != expected_root {
+            return Err("persisted native state V2 snapshot root mismatch".into());
+        }
+
+        Ok(Some(state))
     }
 
     pub fn native_state_snapshot(&self, block_id: Hash32) -> Result<Option<NativeStateV1>, String> {
