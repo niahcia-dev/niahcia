@@ -46,6 +46,49 @@ SignedNativeTransactionV2 retains:
 
 with the same high-level rule that the signature authenticates the exact canonical body bytes under the versioned native-transaction signing domain.
 
+## V2 signing domain
+
+NativeTransaction schema V2 MUST have an explicit signing/identifier domain.
+
+The candidate signing purpose is:
+
+```text
+SIGN/NATIVE_TRANSACTION/V2
+```
+
+Candidate signing digest:
+
+```text
+Keccak-256(
+  "NIAHCIA" ||
+  0x00 ||
+  "SIGN/NATIVE_TRANSACTION/V2" ||
+  0x00 ||
+  network_id ||
+  0x00 ||
+  canonical_unsigned_body_v2
+)
+```
+
+The `network_id` committed by the signing domain MUST equal the body network_id.
+
+The candidate transaction identifier is:
+
+```text
+tx_id_v2 =
+  Keccak-256(
+    "NIAHCIA/TX-ID/V2" ||
+    0x00 ||
+    canonical_signed_transaction_v2
+  )
+```
+
+This V2 transaction ID is the value used by ComputeChannelOpen channel-ID derivation.
+
+NativeTransaction V1 continues using its existing V1 signing and transaction-ID domains.
+
+A V1 signed transaction MUST NOT validate as V2 merely because its payload fields happen to be structurally similar.
+
 ## V2 action vocabulary
 
 V2 retains the V1 actions:
@@ -250,3 +293,30 @@ Implement in this order only after the current native transfer/P2P transaction p
 8. P2P non-empty block propagation with these transactions.
 
 Do not implement AI transport or worker runtime inside consensus execution.
+
+
+## Activation boundary
+
+NativeTransaction schema V2 compute actions are valid only when the active network parameters select NativeStateV2 / compute-action activation.
+
+Before activation:
+
+- schema V2 compute actions are consensus-invalid;
+- NativeStateV1 remains authoritative.
+
+At and after activation:
+
+- V2 compute actions may execute under the explicitly activated rules;
+- V1 Transfer semantics remain valid unless a separate transition says otherwise.
+
+The activation height/network parameter must be committed by the network-parameter specification and covered by migration vectors.
+
+## Gas schedule boundary
+
+Compute-channel actions require deterministic intrinsic gas values before implementation lock.
+
+Gas MUST be protocol accounting, not wall-clock execution time.
+
+The exact Open/Settle/Refund gas constants are deliberately not assigned by this document yet. They require explicit review alongside canonical payload size/signature-verification cost and test vectors.
+
+Implementations MUST NOT invent local gas values and treat them as consensus.
