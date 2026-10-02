@@ -300,6 +300,9 @@ fn read_fixed<const N: usize>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compute_usage_receipt_v1::{
+        COMPUTE_USAGE_RECEIPT_OBJECT_TYPE, COMPUTE_USAGE_RECEIPT_SCHEMA_VERSION,
+    };
     use crate::nce::{encode_bytes, encode_envelope, encode_map, encode_unsigned};
     use k256::ecdsa::SigningKey;
 
