@@ -129,6 +129,25 @@ impl PersistedServiceSuccess {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum NativeStateSnapshotVersion {
+    V1 = 1,
+    V2 = 2,
+}
+
+impl TryFrom<u8> for NativeStateSnapshotVersion {
+    type Error = String;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::V1),
+            2 => Ok(Self::V2),
+            other => Err(format!("unsupported native state snapshot version: {other}")),
+        }
+    }
+}
+
 pub struct StateStore {
     db: Database,
 }
@@ -280,6 +299,33 @@ impl StateStore {
         write
             .commit()
             .map_err(|e| format!("failed to commit native block body: {e}"))
+    }
+
+    pub fn native_state_snapshot_version(
+        &self,
+        block_id: Hash32,
+    ) -> Result<Option<NativeStateSnapshotVersion>, String> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("failed to begin native state snapshot version read: {e}"))?;
+        let table = read
+            .open_table(NATIVE_STATE_SNAPSHOTS)
+            .map_err(|e| format!("failed to open native state snapshot table: {e}"))?;
+
+        let Some(value) = table
+            .get(block_id.as_slice())
+            .map_err(|e| format!("failed to read native state snapshot version: {e}"))?
+        else {
+            return Ok(None);
+        };
+
+        let value = value.value();
+        if value.len() < 33 {
+            return Err("persisted native state snapshot is truncated".into());
+        }
+
+        NativeStateSnapshotVersion::try_from(value[32]).map(Some)
     }
 
     pub fn store_native_state_snapshot(
