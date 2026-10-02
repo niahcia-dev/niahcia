@@ -491,6 +491,102 @@ mod tests {
     }
 
     #[test]
+    fn native_state_v2_vectors_match_locked_json() {
+        let vectors: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../test-vectors/native-state-v2.json"
+        ))
+        .unwrap();
+
+        let migration = &vectors["migration_empty_channels"];
+
+        let mut v1 = NativeStateV1::default();
+        v1.set_account(
+            [0x11; 20],
+            AccountStateV1 {
+                balance: 123,
+                nonce: 7,
+            },
+        );
+        v1.set_account(
+            [0x22; 20],
+            AccountStateV1 {
+                balance: 456,
+                nonce: 9,
+            },
+        );
+
+        let migrated = NativeStateV2::from_v1(v1.clone());
+
+        assert_eq!(
+            hex::encode(v1.state_root()),
+            migration["v1_state_root"].as_str().unwrap()
+        );
+        assert_eq!(
+            hex::encode(migrated.channels_root().unwrap()),
+            migration["empty_channels_root"].as_str().unwrap()
+        );
+        assert_eq!(
+            hex::encode(migrated.state_root().unwrap()),
+            migration["v2_state_root"].as_str().unwrap()
+        );
+        assert_eq!(
+            hex::encode(migrated.canonical_bytes().unwrap()),
+            migration["v2_snapshot_hex"].as_str().unwrap()
+        );
+
+        let open = &vectors["one_open_channel"];
+        let public_key: [u8; 65] = hex::decode(open["channel_public_key"].as_str().unwrap())
+            .unwrap()
+            .try_into()
+            .unwrap();
+
+        let channel = ComputeChannelStateV1 {
+            channel_id: [0x33; 32],
+            funding_account: [0x11; 20],
+            worker_id: [0x44; 32],
+            operator_id: [0x55; 32],
+            channel_public_key: public_key,
+            worker_payment_account: [0x77; 20],
+            authorized_amount: 1_000,
+            settled_amount: 0,
+            opened_height: 10,
+            expiry_height: 20,
+            claim_deadline_height: 25,
+            refund_available_height: 26,
+            service_scope_commitment: [0x88; 32],
+            model_scope_commitment: [0x99; 32],
+            execution_profile_scope_commitment: [0xaa; 32],
+            settlement_policy: ComputeChannelSettlementPolicyV1::CumulativeReceipt,
+            state: ComputeChannelStatusV1::Open,
+        };
+
+        assert_eq!(
+            ComputeChannelStateV1::CANONICAL_LEN,
+            open["channel_record_length"].as_u64().unwrap() as usize
+        );
+        assert_eq!(
+            hex::encode(channel.record_hash().unwrap()),
+            open["channel_record_hash"].as_str().unwrap()
+        );
+
+        let mut with_channel = migrated;
+        with_channel.set_channel(channel).unwrap();
+
+        assert_eq!(
+            hex::encode(with_channel.channels_root().unwrap()),
+            open["channels_root"].as_str().unwrap()
+        );
+        assert_eq!(
+            hex::encode(with_channel.state_root().unwrap()),
+            open["v2_state_root"].as_str().unwrap()
+        );
+        assert_eq!(
+            hex::encode(with_channel.canonical_bytes().unwrap()),
+            open["v2_snapshot_hex"].as_str().unwrap()
+        );
+    }
+
+    #[test]
     fn rejects_invalid_channel_timeline() {
         let mut invalid = channel(0x22);
         invalid.refund_available_height = invalid.claim_deadline_height;
