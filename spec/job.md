@@ -2,44 +2,105 @@
 
 ## Status
 
-**CANDIDATE Protocol V1 object.**
+**Schema V1: SUPERSEDED candidate; field meanings remain reserved.**  
+**Schema V2: CURRENT CANDIDATE for the first decentralized AI milestone.**
 
 ## Purpose
 
-`Job` is the generic unit of requested work.
+`Job` is the canonical request for a unit of off-chain compute.
 
-The schema MUST NOT assume text-only inference or one execution/verification mechanism.
+A Job is normally transported directly between wallet/client and worker. It is not inherently an on-chain state object.
 
-## Canonical fields
+The schema MUST NOT assume text-only inference, one execution mechanism, one verification mechanism, or decentralized storage.
+
+## Versioning rule
+
+Job schema V1 was defined before the wallet-local/off-chain architecture redesign.
+
+Its assigned field IDs and meanings are not reused for different semantics.
+
+Schema V2 keeps the same NCE object type `0x0008`, reuses only V1 fields whose meaning remains unchanged, and appends new field IDs for the redesigned architecture.
+
+A V1 Job never silently acquires V2 semantics.
+
+## Job schema V1
+
+The original candidate fields remain reserved as:
 
 ```text
-Job
-- schema_version
-- job_id
-- requester
-- agent_id
-- agent_version
-- model_id
-- execution_profile_id
-- workload_type
-- input_manifest_hash
-- output_requirements_hash
-- verification_policy_id
-- payment_plan_id
-- resource_requirements
-- privacy_requirements
-- scheduling_policy
-- parent_job_id
-- root_job_id
-- created_block
-- deadline_block
-- status
-- accepted_result_id
+1   schema_version
+2   job_id
+3   requester
+4   agent_id
+5   agent_version
+6   model_id
+7   execution_profile_id
+8   workload_type
+9   input_manifest_hash
+10  output_requirements_hash
+11  verification_policy_id
+12  payment_plan_id
+13  resource_requirements
+14  privacy_requirements
+15  scheduling_policy
+16  parent_job_id
+17  root_job_id
+18  created_block
+19  deadline_block
+20  status
+21  accepted_result_id
 ```
+
+Schema V1 is superseded for the first AI implementation and SHOULD NOT be newly implemented as the primary Job format.
+
+## Job schema V2
+
+Schema V2 uses these unchanged V1 fields where applicable:
+
+```text
+1   schema_version
+2   job_id
+3   requester
+4   agent_id                 optional
+5   agent_version            optional
+6   model_id
+7   execution_profile_id
+8   workload_type
+10  output_requirements_hash optional
+11  verification_policy_id
+12  payment_plan_id          optional
+14  privacy_requirements     optional
+16  parent_job_id            optional
+17  root_job_id              optional
+```
+
+and appends:
+
+```text
+22  input_commitment
+23  encrypted_input_descriptor
+24  model_version
+25  payment_authorization_id
+26  price_offer_id
+27  quote_id
+28  max_price
+29  payment_risk_mode
+30  compute_session_id
+31  submitted_height
+32  assignment_deadline
+33  execution_deadline
+34  result_destination
+35  resource_limits
+36  requester_signature
+```
+
+Fields 9, 13, 15, 18, 19, 20, and 21 retain their V1 meanings but are not part of the normal V2 encoding.
+
+Exact required/optional encoding details and ID/signature derivation require canonical vectors before V2 is locked.
 
 ## Workload types
 
-Initial vocabulary:
+Initial vocabulary remains:
 
 ```text
 TEXT_INFERENCE
@@ -54,120 +115,183 @@ MULTI_AGENT
 CUSTOM
 ```
 
-## Requester identity privacy
+The first implementation focuses on bounded `TEXT_INFERENCE`.
 
-`requester` identifies the cryptographic identity authorized to create and control this Job. It MUST NOT be assumed to be the user's durable public wallet/payment address.
+## Requester
 
-For privacy-preserving operation, a requester MAY be a temporary or rotatable wallet-controlled session/job identity.
+`requester` is the cryptographic identity controlling the Job.
 
-Payment authorization is a separate concern. A Job may prove that valid bounded payment authority exists without making the worker-facing requester identity globally identical to the funding account.
+It MAY be a temporary or rotatable wallet-controlled session/job identity.
 
-Implementations MUST NOT infer that two Jobs belong to the same wallet merely because both are validly funded.
+It MUST NOT be assumed to equal the durable funding account.
 
-## Payment authorization
+`requester_signature` authenticates the complete canonical V2 Job signing payload.
 
-A chargeable Job SHOULD bind to a `PaymentAuthorizationV1` or another explicitly versioned payment authority.
+## Agent fields
 
-The authorization proves that the requester identity may incur charges within a hard maximum without requiring the Job requester to be the durable funding account.
+`agent_id` and `agent_version` are optional.
 
-For channel-backed payment:
+Ordinary wallet chat does not require a globally registered Agent object.
+
+When an Agent is explicitly invoked, exact Agent/AgentVersion identity may be bound to the Job.
+
+## Input
+
+`input_commitment` commits to the exact canonical logical input used for the Job.
+
+`encrypted_input_descriptor` describes how the selected worker obtains the encrypted input over AI Transport V1 or another explicitly compatible transport.
+
+The descriptor MUST NOT imply decentralized storage.
+
+The ordinary V2 path is direct encrypted wallet-to-worker delivery.
+
+## Model and execution
+
+`model_id`, `model_version`, and `execution_profile_id` identify what is requested to execute.
+
+The ExecutionProfile defines runtime/tokenizer/output representation and other execution-relevant behavior.
+
+## Verification
+
+`verification_policy_id` identifies the required assurance policy.
+
+STANDARD, VERIFIED, and HIGH_ASSURANCE behavior remains policy-driven.
+
+Verification strength is independent from payment-risk handling.
+
+## Payment
+
+A chargeable Job binds:
 
 ```text
-funding account
-  -> ComputeChannelV1
-      -> PaymentAuthorizationV1
-          -> Job
+payment_authorization_id
+price_offer_id
+quote_id (optional)
+max_price
+payment_risk_mode
 ```
 
-The Job's accepted price MUST NOT exceed either its own declared maximum or any applicable authorization/channel ceiling.
+The worker MUST accept or reject those terms before execution.
 
-## Payment risk
+No result may authorize settlement above `max_price` or the applicable PaymentAuthorization/ComputeChannel ceilings.
 
-A chargeable Job SHOULD declare or reference a ComputePaymentRiskV1 handling mode.
+`payment_plan_id` is optional for the simple first milestone when no multi-party allocation beyond the primary worker is required. More complex verification/creator/routing economics may reference a PaymentPlan.
 
-Payment risk is independent from VerificationPolicy.
+## ComputeSession
 
-Ordinary inexpensive interactive inference SHOULD use `SMALL`, with one completion-time usage receipt.
+`compute_session_id` binds the Job to the current selected worker session.
 
-Higher-value one-shot Jobs MAY use `RESERVED`.
+A replacement worker uses a new ComputeSession and ordinarily a new worker-bound ComputeChannel.
 
-Long-running staged workloads SHOULD be deferred until staged payment and checkpoint semantics are explicitly implemented.
+The wallet may reconstruct a replacement Job from local context without migrating durable memory from the previous worker.
 
-## Parent/child jobs
+## Timing
 
-Agent-to-agent calls and compound workloads use:
+`submitted_height` provides a chain-relative reference point without requiring the Job itself to be published on-chain.
 
-- `parent_job_id` — immediate caller job
-- `root_job_id` — top-level originating job
+`assignment_deadline` bounds worker acceptance/assignment.
 
-Budgets and recursion limits are enforced through policy objects rather than implicit conventions.
+`execution_deadline` bounds completion under the accepted Job.
+
+These values may use chain heights or another explicitly versioned deterministic time representation defined before V2 lock.
+
+## Result destination
+
+`result_destination` identifies the authenticated return path or encryption destination for the Job result.
+
+For the first milestone it may bind to the active AI Transport V1 ComputeSession.
+
+It MUST NOT be assumed to be a public wallet address.
+
+## Resource limits
+
+`resource_limits` commits the user-authorized execution ceiling required to bound cost and execution behavior.
+
+For token inference this should include at least the applicable maximum output-token limit when TOKEN_METERED pricing is used.
+
+A worker SHOULD stop before producing usage outside the authorized resource/max-price envelope.
+
+## Privacy
+
+`privacy_requirements` describes the requested execution privacy class.
+
+The Job contains commitments and delivery metadata, not the user's complete durable conversation or wallet-local memory.
+
+Only selected context required for the Job is delivered to the worker.
+
+## Parent/child Jobs
+
+`parent_job_id` and `root_job_id` remain available for future compound or Agent-to-Agent execution.
+
+The first chat milestone does not require recursive Jobs.
+
+Any future child Job must remain within explicit Capability and PaymentAuthorization delegation bounds.
+
+## Lifecycle boundary
+
+Job Lifecycle Boundary V1 controls publication behavior.
+
+For ordinary SMALL/STANDARD inference:
+
+```text
+create JobV2
+  -> send over AI Transport
+  -> worker accepts
+  -> execute/stream
+  -> ResultCommitment
+  -> wallet verifies
+  -> ComputeUsageReceipt
+```
+
+This entire sequence may remain off-chain.
+
+The base chain normally sees ComputeChannel funding and eventual settlement, not every Job.
 
 ## Job state
 
-User-facing lifecycle is intentionally compact:
+Schema V2 deliberately omits the V1 `status` and `accepted_result_id` fields.
 
-```text
-REQUESTED
-EXECUTING
-RESPONDED
-SETTLED
-```
+REQUESTED/EXECUTING/RESPONDED/FAILED/etc. are derived logical states from authenticated transport/evidence rather than mutable fields that require canonical Job mutation.
 
-Exceptional terminal/intermediate states include:
-
-```text
-FAILED
-DISPUTED
-EXPIRED
-CANCELLED
-```
-
-Implementations may track more internal states for eligibility, assignment, commitment, auditing, challenge, retries, or settlement.
+A JobV2 object is immutable after signing.
 
 ## Storage independence
 
-A Job MUST NOT require decentralized storage merely to perform ordinary inference.
+A JobV2 MUST NOT require decentralized storage merely to execute ordinary inference.
 
-The committed input may be delivered directly over an authenticated encrypted job channel, referenced through a transient descriptor, or retrieved from an explicitly selected external source. `input_manifest_hash` commits to the job input representation; it does not imply that a NIAHCIA storage provider hosts that input.
-
-Likewise, a result may be returned directly to the requester while `ResultCommitment` authenticates its integrity. Remote persistence is optional and belongs to a separate storage/service decision.
-
-## Fast response rule
-
-The job may reach `RESPONDED` before `SETTLED`.
-
-Streaming output is an AI P2P data-plane operation. Blockchain settlement is asynchronous.
+Inputs may be delivered directly over AI Transport V1 and results may return directly over the same logical ComputeSession.
 
 ## Invariants
 
-1. Large inputs/outputs must not be required on-chain.
-2. The job must commit to exact input and execution requirements.
-3. The accepted result must be bound to this `job_id`.
-4. Payment and verification semantics are explicit through referenced policy objects.
-5. Job deadlines use deterministic chain terms where on-chain enforcement is required.
-6. Scheduling/worker selection must not require a permanent trusted coordinator. Ordinary paid worker selection may be performed locally by the wallet from signed eligible WorkerAdvertisements and is not a chain-consensus decision.
-7. The Job schema does not assume a fixed verifier count or a network-wide 2-of-3 verification rule.
-8. Requester identity and funding identity are separable; valid payment authorization MUST NOT require exposing the wallet's durable public account as the Job requester.
-9. Ordinary Jobs do not require persistent Agent hosting or decentralized storage.
+1. JobV2 is immutable after requester signature.
+2. Requester identity and funding identity are separable.
+3. Ordinary JobV2 execution is off-chain by default.
+4. Input plaintext is not public chain data.
+5. JobV2 does not require decentralized storage.
+6. JobV2 binds exact model/version/profile requirements.
+7. Chargeable Jobs bind hard price/payment authorization.
+8. Payment-risk and VerificationPolicy are independent.
+9. Result delivery need not expose a wallet address.
+10. Mutable lifecycle status is derived externally rather than rewriting the signed Job.
+11. V1 field meanings remain reserved and are not silently repurposed.
+12. A fixed 2-of-3 verification assumption is not part of JobV2.
 
-## Prototype status
+## First milestone
 
-Prototype work may initially support `TEXT_INFERENCE` with pinned Agent/Model/ExecutionProfile objects, but the former fixed redundant 2-of-3 verification assumption is superseded. Development verification behavior must reference an explicit development `VerificationPolicy` until the replacement V1 verification design is locked.
+The first JobV2 implementation should support:
 
+```text
+TEXT_INFERENCE
+STANDARD verification
+SMALL payment risk
+direct AI Transport delivery
+one selected ComputeSession
+one worker-bound ComputeChannel
+TOKEN_METERED or FIXED signed pricing
+wallet-local context/memory
+off-chain ResultCommitment
+off-chain ComputeUsageReceipt
+eventual channel settlement
+```
 
-## Transport delivery
-
-Ordinary V1 Jobs MAY be delivered directly over AI Transport V1 rather than published individually on-chain.
-
-The transport carries the canonical Job plus the encrypted input/context required by the selected worker.
-
-Job transport does not alter Job identity, pricing, payment authorization, verification, or settlement semantics.
-
-
-## Chain/off-chain boundary
-
-Job Lifecycle Boundary V1 defines the default publication rule.
-
-Ordinary SMALL/STANDARD Jobs are off-chain execution objects. Job creation, acceptance, execution, streaming, response, and ordinary ResultCommitment exchange do not require native-chain transactions.
-
-The base chain is used for enforceable native state transitions such as ComputeChannel funding/settlement, disputes, and any stronger VerificationPolicy that explicitly requires chain anchoring.
+TRAINING, FINE_TUNING, recursive Agent execution, staged payment, and mandatory on-chain Job publication are outside the first milestone.
