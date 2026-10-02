@@ -1,109 +1,152 @@
 # ComputeWorker
 
+## Status
+
+**Schema V1: legacy candidate field layout retained.**  
+**Schema V2: CURRENT CANDIDATE stable worker identity.**
+
 ## Purpose
 
-`ComputeWorker` represents a network participant offering AI or other supported compute workloads.
+`ComputeWorker` is the durable identity of one compute-serving worker controlled by an Operator.
 
-The protocol intentionally avoids the term GPU miner.
+It is not the worker's live queue, model cache, price list, or network-presence record.
 
-## Canonical fields
+Fast-changing service state belongs in signed, expiring `WorkerAdvertisementV1` objects.
 
-```text
-ComputeWorker
-- schema_version
-- worker_id
-- operator_id
-- controller
-- payment_address
-- execution_profiles[]
-- hardware_capabilities[]
-- workload_types[]
-- capacity
-- queue_state
-- models_hot[]
-- models_warm[]
-- pricing_policy
-- bond
-- reputation_ref
-- availability_expiry
-- endpoint_descriptor
-- advertisement_signature
-- status
-```
-
-## Capabilities
-
-Workers advertise what they can execute, including:
-
-- execution profiles
-- workload classes
-- available capacity
-- currently hot/warm models
-- optional performance claims
-- standing pricing information
-
-Claims are not automatically trusted. Observed signed job history SHOULD feed reputation and scheduling.
-
-## Model state
+## Identity model
 
 ```text
-HOT   model ready in accelerator memory
-WARM  model cached locally and loadable
-COLD  model not cached but retrievable
+Operator
+   |
+   +-- ComputeWorker A
+   |      +-- WorkerAdvertisement epoch/sequence ...
+   |
+   +-- ComputeWorker B
+          +-- WorkerAdvertisement epoch/sequence ...
 ```
 
-Scheduling policies may prefer HOT/WARM workers for interactive jobs.
+Worker identity and operator identity are different.
 
-## Availability
+Two worker IDs controlled by one operator do not become independent operators merely because they are separate workers.
 
-`availability_expiry` makes worker advertisements self-expiring.
+## Schema V1
 
-A worker must refresh availability to remain eligible.
+V1 assigned these fields:
+
+```text
+1   schema_version
+2   worker_id
+3   operator_id
+4   controller
+5   payment_address
+6   execution_profiles
+7   hardware_capabilities
+8   workload_types
+9   capacity
+10  queue_state
+11  models_hot
+12  models_warm
+13  pricing_policy
+14  bond
+15  reputation_ref
+16  availability_expiry
+17  endpoint_descriptor
+18  advertisement_signature
+19  status
+```
+
+Those field meanings remain reserved.
+
+V1 mixed durable identity with dynamic advertisement state and is superseded for new implementation work.
+
+## Schema V2 stable identity
+
+V2 reuses unchanged stable fields:
+
+```text
+1   schema_version
+2   worker_id
+3   operator_id
+4   controller
+5   payment_address
+14  bond
+15  reputation_ref
+19  status
+```
+
+and appends:
+
+```text
+20  worker_signing_key
+21  created_height
+22  metadata_commitment
+```
+
+Dynamic capability/availability information is not part of the normal V2 identity encoding.
+
+## Stable fields
+
+`worker_id` identifies the worker across many advertisement refreshes.
+
+`operator_id` identifies the operator controlling the worker.
+
+`controller` authorizes durable worker identity changes according to the applicable authority rules.
+
+`payment_address` is the default durable payment destination or settlement reference where applicable. Worker-bound ComputeChannels may bind more specific payment terms.
+
+`worker_signing_key` authenticates WorkerAdvertisement and other worker-originated protocol objects.
+
+## Bond/accountability
+
+A service bond may be associated with a worker/operator for economic accountability.
+
+Bond size does not grant PoW consensus authority and does not automatically increase worker-selection probability.
+
+Exact production bond requirements remain policy-specific.
 
 ## Status
 
+Durable identity status may include:
+
 ```text
 ACTIVE
-DRAINING
 SUSPENDED
 EXITED
+REVOKED
 ```
+
+This is distinct from temporary availability such as queue-full, draining, endpoint-down, or model-cold states, which belong in WorkerAdvertisement.
+
+## Dynamic state belongs elsewhere
+
+The following are advertisement data, not durable worker identity:
+
+- supported ExecutionProfiles;
+- hardware capability claims;
+- workload types;
+- current capacity/concurrency;
+- queue state;
+- HOT/WARM/COLD model state;
+- pricing offers;
+- verification capabilities;
+- endpoint descriptor;
+- advertisement validity/expiry;
+- temporary DRAINING state.
+
+A worker updates those by signing a new WorkerAdvertisementV1.
 
 ## Invariants
 
-1. Worker identity is distinct from operator identity.
-2. A worker MUST NOT be eligible for an execution profile it has not advertised/satisfied.
-3. Worker advertisements MUST be signed.
-4. Queue/capacity advertisements expire and MUST NOT be treated as permanent state.
-5. Base-chain mining eligibility is unrelated to ComputeWorker registration.
+1. Worker identity is distinct from Operator identity.
+2. Durable identity does not expire merely because an advertisement expires.
+3. An expired advertisement makes the worker unavailable for new selection, not nonexistent.
+4. Queue/model/pricing changes do not require rewriting the durable worker identity.
+5. Worker advertisements are authenticated by the worker authority.
+6. Base-chain mining eligibility is unrelated to ComputeWorker registration.
+7. Bond does not grant consensus authority.
+8. Same-operator workers do not satisfy operator-independence requirements.
+9. V1 field meanings remain reserved and are not silently repurposed.
 
-## Prototype 0
+## First milestone
 
-Prototype 0 workers advertise one vLLM/NVIDIA execution profile, model state, queue availability, payment address, and operator identity.
-
-
-## Pricing offers
-
-`pricing_policy` SHOULD reference signed, expiring `ComputePriceOfferV1` records defined by ComputePricingV1.
-
-A standing advertisement may expose multiple offers for different model/profile/service combinations.
-
-Workers MUST NOT rely on mutable unsigned pricing that can change after Job acceptance.
-
-A worker MAY reject future Jobs when an offer expires or capacity changes, but already accepted Jobs remain bounded by their accepted `offer_id` and `max_price`.
-
-
-## Transport endpoint
-
-`endpoint_descriptor` SHOULD follow AI Transport V1 and commit an authenticated, expiring transport endpoint plus worker transport public key/protocol version.
-
-The worker's advertised identity/transport key authenticates the endpoint. Fresh per-ComputeSession traffic keys are derived during transport establishment; long-lived worker identity keys are not direct chat-content encryption keys.
-
-
-## Discovery propagation
-
-Workers publish signed, expiring advertisements for relay under Worker Discovery V1.
-
-A discovery relay may distribute a worker's advertisement but cannot modify its signed contents or become authoritative for the worker.
-
-The worker SHOULD refresh its advertisement before expiry while it wishes to remain discoverable/eligible.
+Register or configure a durable ComputeWorker identity, then publish repeatedly refreshed WorkerAdvertisementV1 records for discovery and selection.
