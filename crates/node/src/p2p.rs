@@ -214,10 +214,7 @@ fn admit_transactions_v3(
     Ok(())
 }
 
-fn sync_mempool_v3(
-    stream: &mut TcpStream,
-    mempool: &SharedNativeMempoolV1,
-) -> Result<(), String> {
+fn sync_mempool_v3(stream: &mut TcpStream, mempool: &SharedNativeMempoolV1) -> Result<(), String> {
     let local_inventory = local_inventory_v3(mempool)?;
     write_message_v3(&mut *stream, &MessageV3::TxInv(local_inventory))?;
 
@@ -353,11 +350,7 @@ fn find_sync_start_v3(
         )?;
         let blocks = match read_message_v3(&mut *stream)? {
             MessageV3::Blocks(blocks) => blocks,
-            _ => {
-                return Err(
-                    "P2P V3 peer did not answer common-ancestor probe with Blocks".into(),
-                )
-            }
+            _ => return Err("P2P V3 peer did not answer common-ancestor probe with Blocks".into()),
         };
         let Some(remote_block) = blocks.first() else {
             return Err("P2P V3 peer returned no block for common-ancestor probe".into());
