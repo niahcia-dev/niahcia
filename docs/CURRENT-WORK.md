@@ -199,6 +199,19 @@ NativeStateV2 inactive foundation is now implemented and green. Current implemen
 
 Inactive compute-settlement codec/signing foundation is now implemented and green. This layer remains **inactive at runtime** and includes:
 
+Inactive compute-settlement validation foundation is fully green on current main. The integrated stack now has one canonical receipt decoder/signature implementation used by Settle payload parsing, and CI passes formatting, Cargo check, the full test suite, and Clippy.
+
+The runtime boundary remains unchanged:
+
+- NativeStateV2 is inactive;
+- NativeTransaction V2 is inactive;
+- no compute action is accepted by the active mempool/P2P/mining path;
+- no V2 activation height/network parameter is set;
+- no compute intrinsic gas constants are assigned;
+- no compute payment state transition executes yet.
+
+The next implementation step is intentionally non-mutating: build and test a validated ComputeChannelOpen transition plan before defining fee-bearing execution.
+
 - NativeTransaction schema V2 body/signed canonical codecs;
 - explicit V2 action values for Transfer/ContractCall/ContractCreate plus ComputeChannelOpen/Settle/Refund;
 - V2-only signing domain `SIGN/NATIVE_TRANSACTION/V2` and transaction-ID domain `NIAHCIA/TX-ID/V2`;
