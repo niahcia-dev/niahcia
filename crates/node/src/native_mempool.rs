@@ -139,9 +139,7 @@ mod tests {
         NativeActionV1, NativeTransactionBodyV1, DEVNET_CHAIN_ID, DEVNET_NETWORK_ID,
         NATIVE_TRANSFER_GAS_V1,
     };
-    use k256::ecdsa::{
-        signature::hazmat::PrehashSigner, Signature, SigningKey,
-    };
+    use k256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey};
 
     fn signed_transfer(nonce: u64, signing_byte: u8) -> SignedNativeTransactionV1 {
         let signing_key = SigningKey::from_slice(&[signing_byte; 32]).unwrap();
@@ -186,7 +184,10 @@ mod tests {
         assert_eq!(tx_id, expected_id);
         assert_eq!(mempool.len(), 1);
         assert!(mempool.contains(&expected_id));
-        assert_eq!(mempool.get(&expected_id).unwrap().canonical_bytes, canonical);
+        assert_eq!(
+            mempool.get(&expected_id).unwrap().canonical_bytes,
+            canonical
+        );
     }
 
     #[test]
