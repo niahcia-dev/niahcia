@@ -156,11 +156,24 @@ Implemented on `main`:
 - Address V1 account derivation/interoperability work;
 - wallet-native encrypted chat protocol specification (specified only; not runtime implementation).
 
-Relevant completed checkpoints include native transaction signing, native Transfer execution, native block execution commitments, deterministic state snapshots, atomic native block/execution/state persistence, native mining migration, P2P Version 2 header-only native block validation, startup/restart migration, and complete removal of the legacy Reth execution path. The full node suite passed 175/175 tests at this handoff.
+Relevant completed checkpoints include native transaction signing, native Transfer execution, native block execution commitments, deterministic state snapshots, atomic native block/execution/state persistence, native mining migration, P2P Version 2 header-only native block validation, startup/restart migration, and complete removal of the legacy Reth execution path. The native node suite has advanced substantially beyond the earlier 175-test checkpoint. As of current main commit `49a09ad282a020c72d7ac6e96454c9e367725e88`, Rust CI is fully green: formatting, Cargo check, full tests, and Clippy all pass.
 
-P2P Version 2 currently transports canonical BlockHeaderV1 values only and independently reconstructs the canonical empty native transaction set from locally trusted parent state. This is a deliberate development limitation, not the final transaction-block protocol. Before non-empty or fee-bearing transaction blocks are networked, the protocol must add canonical transaction/body transport and make the CPU producer fee recipient derivable or verifiable by every validating peer.
+P2P Version 3 is now the active devnet implementation path for native blocks and transactions. The completed V3 baseline includes:
 
-NativeMempoolV1 and native RPC transaction submission are now implemented. The next implementation milestone is transaction propagation and non-empty block transport: add P2P transaction relay, canonical NativeBlockBodyV1 persistence, non-empty mining-template construction, and P2P V3 full-body validation so miners can include ordinary native transactions safely.
+- TxInv/GetTx/Tx relay using exact canonical SignedNativeTransaction bytes;
+- canonical NativeBlockBodyV1 encoding/persistence with exact ordered transaction bytes and producer fee recipient;
+- atomic header + body + execution + NativeStateV1 persistence in one redb transaction;
+- independent full-body validation from locally trusted parent state;
+- non-empty mining templates built from the shared NativeMempoolV1 using a deliberately simple local txid-order policy;
+- exact body binding to mining template generation, so nonce/extra_nonce may change but transactions/fee recipient may not change under the same template;
+- canonical zero producer-fee recipient when aggregate priority fee is zero;
+- solved non-empty block persistence and canonical mempool eviction;
+- shared mempool template refresh after RPC admission, P2P relay, canonical attachment, and solved block submission;
+- restart-safe exact body re-serving/replay;
+- reorg handling that removes winning-branch transactions and best-effort reconsiders detached-only transactions without affecting consensus validity;
+- focused tests covering body codec, V3 framing, atomic persistence, non-empty template selection, solved-body persistence, and detached/winning-branch transaction distinction.
+
+P2P Version 2 remains protocol history/specification only; the active reference-node runtime is V3.
 
 Do not implement ContractCall/ContractCreate runtime semantics until their native runtime behavior is explicitly specified. Do not invent a base-fee adjustment algorithm; Native Execution V1 currently consumes an explicit base fee and the evolution rule remains separate protocol work.
 
@@ -180,18 +193,22 @@ RandomX remains PoW direction. Ordinary/common RandomX miner/pool compatibility 
 
 The previous handoff's `#266` blocker is stale: the referenced issue is not currently retrievable from `niahcia/niahcia`. Do not treat it as an active blocker without fresh GitHub evidence.
 
-Current priority is native transaction propagation and non-empty block transport, in small validated milestones:
+Current priority has moved past transaction propagation/non-empty block transport: that V3 baseline is green.
 
-1. Preserve the existing green NativeMempoolV1 + `niah_sendRawTransaction` / mempool RPC path; do not rebuild it.
-2. Add P2P V3 transaction inventory/request/body relay using exact canonical SignedNativeTransaction bytes.
-3. Add NativeBlockBodyV1 persistence so non-empty blocks can be re-served/replayed byte-for-byte after restart.
-4. Build non-empty mining templates from mempool transactions using a deliberately simple local policy; transaction ordering policy is not consensus.
-5. Bind one canonical producer-fee-recipient to each template body. Zero aggregate priority fee requires the zero recipient; fee-bearing execution commits the selected recipient through deterministic resulting state/execution commitments.
-6. Relay/validate full P2P V3 blocks from parent state + producer recipient + exact ordered transactions. Never trust peer-supplied post-state.
-7. On canonical attach, remove included transactions from mempool; on detach, optionally reconsider still-valid transactions against the winning branch.
-8. Preserve the 164-byte BlockHeaderV1, CPU-PoW cumulative-work fork choice, deterministic equal-work tie-break, ancestry/reorg behavior, and existing V1 execution/state vectors.
-9. Only after this path is green should implementation begin on NativeTransaction V2 / NativeStateV2 compute-channel open, settle, and refund.
-10. Keep wallet/AI transport, JobV2, ResultCommitmentV2, worker discovery, pricing, and compute-channel objects protocol-only until the base-chain transaction path can actually carry non-empty blocks reliably.
+Next implementation priority is to prepare the **explicit NativeStateV2 / NativeTransactionV2 activation boundary** for compute-channel settlement without modifying or invalidating NativeStateV1/NativeTransactionV1 behavior.
+
+Proceed in small validated milestones:
+
+1. Preserve the now-green P2P V3 + NativeBlockBodyV1 + NativeMempoolV1 path unchanged.
+2. Implement NativeStateV2 data structures/serialization/root calculation behind an explicit inactive/versioned boundary first; do not activate compute actions yet.
+3. Add canonical migration vectors/tests proving V1 accounts -> V2 accounts + empty channel map at activation.
+4. Add ComputeChannelStateV1 canonical encoding/decoding and state-root participation with restart/reorg tests.
+5. Only after StateV2 persistence/vectors are green, implement NativeTransaction schema V2 signing/ID decoding and the three explicit compute actions.
+6. Implement ComputeChannelOpen first, then Settle, then Refund, each with atomic execution/persistence and negative-path tests.
+7. Keep gas constants deliberately unset until the action payload sizes/signature-verification costs are reviewed; do not invent consensus gas values locally.
+8. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
+9. Do not add worker/operator on-chain registration or bonds to the first ordinary paid-compute milestone.
+10. Preserve the 164-byte BlockHeaderV1, CPU-PoW cumulative-work fork choice, and all locked V1 transaction/execution/state vectors.
 
 Deliberate consensus review still needed for RandomX stock miner/pool interoperability, public-testnet RandomX epoch/seed parameters, remaining monetary constants, genesis/network parameters, and chain-ID finalization.
 
