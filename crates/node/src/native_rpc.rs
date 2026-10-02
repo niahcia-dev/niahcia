@@ -1,5 +1,7 @@
 use crate::address::{AddressKind, AddressNetwork, NiahciaAddressV1};
+use crate::native_mempool::NativeMempoolV1;
 use serde::Serialize;
+use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +49,31 @@ pub fn get_network_info(network: AddressNetwork) -> NetworkInfo {
     }
 }
 
+pub type SharedNativeMempoolV1 = Arc<RwLock<NativeMempoolV1>>;
+
+pub fn submit_raw_transaction_hex(
+    transaction_hex: &str,
+    mempool: &SharedNativeMempoolV1,
+) -> Result<String, String> {
+    let raw = transaction_hex.strip_prefix("0x").unwrap_or(transaction_hex);
+    let bytes = hex::decode(raw)
+        .map_err(|e| format!("invalid canonical native transaction hex: {e}"))?;
+
+    let tx_id = mempool
+        .write()
+        .map_err(|_| "native mempool lock poisoned".to_string())?
+        .admit_canonical_bytes(&bytes)?;
+
+    Ok(hex::encode(tx_id))
+}
+
+pub fn mempool_size(mempool: &SharedNativeMempoolV1) -> Result<usize, String> {
+    mempool
+        .read()
+        .map(|pool| pool.len())
+        .map_err(|_| "native mempool lock poisoned".to_string())
+}
+
 pub fn validate_address(text: &str, expected_network: AddressNetwork) -> AddressValidation {
     match NiahciaAddressV1::decode(text) {
         Ok(address) => AddressValidation {
@@ -75,6 +102,71 @@ pub fn validate_address(text: &str, expected_network: AddressNetwork) -> Address
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn signed_transfer_hex() -> String {
+        use crate::native_transaction::{
+            NativeActionV1, NativeTransactionBodyV1, SignedNativeTransactionV1,
+            DEVNET_CHAIN_ID, DEVNET_NETWORK_ID, NATIVE_TRANSFER_GAS_V1,
+        };
+        use k256::ecdsa::{
+            signature::hazmat::PrehashSigner, Signature, SigningKey,
+        };
+
+        let signing_key = SigningKey::from_slice(&[0x01; 32]).unwrap();
+        let public_key = signing_key
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec();
+
+        let mut transaction = SignedNativeTransactionV1 {
+            body: NativeTransactionBodyV1 {
+                network_id: DEVNET_NETWORK_ID,
+                chain_id: DEVNET_CHAIN_ID,
+                nonce: 0,
+                action: NativeActionV1::Transfer,
+                target_payload: vec![0x22; 20],
+                value: 1,
+                gas_limit: NATIVE_TRANSFER_GAS_V1,
+                max_fee_per_gas: 0,
+                max_priority_fee_per_gas: 0,
+                data: Vec::new(),
+            },
+            public_key,
+            signature: vec![0; 64],
+        };
+
+        let digest = transaction.signing_digest().unwrap();
+        let signature: Signature = signing_key.sign_prehash(&digest).unwrap();
+        transaction.signature = signature.to_bytes().to_vec();
+
+        hex::encode(transaction.canonical_bytes().unwrap())
+    }
+
+    #[test]
+    fn submits_canonical_transaction_hex_to_shared_mempool() {
+        let mempool = Arc::new(RwLock::new(NativeMempoolV1::new(
+            AddressNetwork::Devnet,
+        )));
+
+        let tx_id = submit_raw_transaction_hex(&signed_transfer_hex(), &mempool).unwrap();
+
+        assert_eq!(tx_id.len(), 64);
+        assert_eq!(mempool_size(&mempool).unwrap(), 1);
+    }
+
+    #[test]
+    fn raw_transaction_submission_rejects_bad_hex_and_duplicates() {
+        let mempool = Arc::new(RwLock::new(NativeMempoolV1::new(
+            AddressNetwork::Devnet,
+        )));
+
+        assert!(submit_raw_transaction_hex("zz", &mempool).is_err());
+
+        let raw = signed_transfer_hex();
+        submit_raw_transaction_hex(&raw, &mempool).unwrap();
+        assert!(submit_raw_transaction_hex(&raw, &mempool).is_err());
+    }
 
     #[test]
     fn reports_devnet_native_network_info() {
