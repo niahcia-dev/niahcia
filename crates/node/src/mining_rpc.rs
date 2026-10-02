@@ -413,6 +413,25 @@ fn submit_work_with_mempool(
     submit_work_internal(request, work, state, Some(mempool), Some(fee_recipient))
 }
 
+fn remove_body_transactions_from_mempool(
+    mempool: &SharedNativeMempoolV1,
+    body: &NativeBlockBodyV1,
+) -> Result<(), String> {
+    let tx_ids = body
+        .decoded_transactions()?
+        .into_iter()
+        .map(|transaction| transaction.tx_id())
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut pool = mempool
+        .write()
+        .map_err(|_| "native mempool lock poisoned".to_string())?;
+    for tx_id in tx_ids {
+        pool.remove(&tx_id);
+    }
+    Ok(())
+}
+
 fn submit_work_internal(
     request: &Value,
     work: &WorkManager,
@@ -455,6 +474,10 @@ fn submit_work_internal(
     )?;
 
     if outcome.current_best == outcome.block.block_id() {
+        if let Some(mempool) = mempool {
+            remove_body_transactions_from_mempool(mempool, &body)?;
+        }
+
         match (mempool, fee_recipient) {
             (Some(mempool), Some(fee_recipient)) => {
                 install_next_native_work_from_mempool(work, state, mempool, fee_recipient)?;
