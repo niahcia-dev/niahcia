@@ -80,3 +80,14 @@ EXITED
 ## Prototype 0
 
 Prototype 0 workers advertise one vLLM/NVIDIA execution profile, model state, queue availability, payment address, and operator identity.
+
+
+## Pricing offers
+
+`pricing_policy` SHOULD reference signed, expiring `ComputePriceOfferV1` records defined by ComputePricingV1.
+
+A standing advertisement may expose multiple offers for different model/profile/service combinations.
+
+Workers MUST NOT rely on mutable unsigned pricing that can change after Job acceptance.
+
+A worker MAY reject future Jobs when an offer expires or capacity changes, but already accepted Jobs remain bounded by their accepted `offer_id` and `max_price`.
