@@ -646,7 +646,8 @@ mod tests {
             transfer["body_canonical_hex"].as_str().unwrap()
         );
 
-        let signing_key_bytes = hex::decode(transfer["test_private_key"].as_str().unwrap()).unwrap();
+        let signing_key_bytes =
+            hex::decode(transfer["test_private_key"].as_str().unwrap()).unwrap();
         let signing_key = SigningKey::from_slice(&signing_key_bytes).unwrap();
         let public_key = signing_key
             .verifying_key()
