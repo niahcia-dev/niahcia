@@ -85,6 +85,14 @@ CANCELLED
 
 Implementations may track more internal states for eligibility, assignment, commitment, auditing, challenge, retries, or settlement.
 
+## Storage independence
+
+A Job MUST NOT require decentralized storage merely to perform ordinary inference.
+
+The committed input may be delivered directly over an authenticated encrypted job channel, referenced through a transient descriptor, or retrieved from an explicitly selected external source. `input_manifest_hash` commits to the job input representation; it does not imply that a NIAHCIA storage provider hosts that input.
+
+Likewise, a result may be returned directly to the requester while `ResultCommitment` authenticates its integrity. Remote persistence is optional and belongs to a separate storage/service decision.
+
 ## Fast response rule
 
 The job may reach `RESPONDED` before `SETTLED`.
