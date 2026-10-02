@@ -1,5 +1,5 @@
-use crate::nce::{decode_envelope, encode_array, encode_bytes, encode_envelope, encode_map};
 use crate::native_transaction::SignedNativeTransactionV1;
+use crate::nce::{decode_envelope, encode_array, encode_bytes, encode_envelope, encode_map};
 use crate::work::Address20;
 
 pub const NATIVE_BLOCK_BODY_OBJECT_TYPE: u64 = 0x0017;
@@ -227,8 +227,8 @@ mod tests {
             vec![first_bytes.clone(), second_bytes.clone()]
         );
 
-        let decoded = NativeBlockBodyV1::from_canonical_bytes(&body.canonical_bytes().unwrap())
-            .unwrap();
+        let decoded =
+            NativeBlockBodyV1::from_canonical_bytes(&body.canonical_bytes().unwrap()).unwrap();
         assert_eq!(decoded.transactions, vec![first_bytes, second_bytes]);
     }
 
