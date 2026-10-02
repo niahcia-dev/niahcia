@@ -67,7 +67,7 @@ channel_id =
   )
 ```
 
-The exact 32-byte native open transaction ID is the canonical SignedNativeTransactionV2 transaction identifier.
+The exact 32-byte native open transaction ID is the canonical SignedNativeTransactionV2 identifier under the `NIAHCIA/TX-ID/V2` domain.
 
 This guarantees channel uniqueness without a separate user-chosen channel nonce.
 
