@@ -305,6 +305,8 @@ V1 IDs 9, 13, 15, 18, 19, 20, and 21 remain permanently reserved with their V1 m
 
 ## ResultCommitment — object type 0x000D
 
+### Schema V1 — legacy candidate fields
+
 ```text
 1   schema_version
 2   commitment_id
@@ -325,6 +327,22 @@ V1 IDs 9, 13, 15, 18, 19, 20, and 21 remain permanently reserved with their V1 m
 17  nonce_or_salt_commitment
 18  signature
 ```
+
+### Schema V2 — off-chain result additions
+
+V2 may reuse V1 fields only with unchanged meanings and appends:
+
+```text
+19  model_version
+20  input_commitment
+21  canonical_output_commitment
+22  metering_evidence_hash
+23  verification_evidence_root
+24  compute_session_id
+25  completion_sequence
+```
+
+V1 IDs 8, 12, 13, and 16 remain permanently reserved even when omitted from normal V2 encoding.
 
 ## Derived-field rule
 
