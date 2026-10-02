@@ -154,7 +154,10 @@ fn admit_transactions_v3(
     Ok(admitted)
 }
 
-fn sync_mempool_v3(stream: &mut TcpStream, mempool: &SharedNativeMempoolV1) -> Result<bool, String> {
+fn sync_mempool_v3(
+    stream: &mut TcpStream,
+    mempool: &SharedNativeMempoolV1,
+) -> Result<bool, String> {
     let local_inventory = local_inventory_v3(mempool)?;
     write_message_v3(&mut *stream, &MessageV3::TxInv(local_inventory))?;
 
