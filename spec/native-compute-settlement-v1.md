@@ -33,10 +33,13 @@ ComputeChannelStateV1
 - worker_id
 - operator_id
 - channel_public_key
+- worker_payment_account
 - authorized_amount
 - settled_amount
 - opened_height
 - expiry_height
+- claim_deadline_height
+- refund_available_height
 - service_scope_commitment
 - model_scope_commitment
 - execution_profile_scope_commitment
@@ -86,17 +89,27 @@ It validates at least:
 The transition then:
 
 ```text
-worker payment = cumulative_spent
-wallet refund  = authorized_amount - cumulative_spent
+worker payment = cumulative_spent -> worker_payment_account
+wallet refund  = authorized_amount - cumulative_spent -> funding_account
 ```
 
 and moves the channel to SETTLED.
 
 A settled channel cannot be settled again.
 
+## Claim/refund race prevention
+
+`expiry_height` stops new Job use but does not immediately unlock funds.
+
+The worker may submit the latest valid receipt through `claim_deadline_height`.
+
+Refund is not valid before `refund_available_height`.
+
+This prevents a funding wallet from waiting for the Job/session to end and racing a worker's already signed final receipt with an immediate refund.
+
 ## Expiry refund
 
-If an OPEN channel reaches its expiry without a valid settlement claim, the funding authority may reclaim the unused locked value according to the settlement policy.
+If an OPEN channel reaches `refund_available_height` without a valid settlement claim, the funding authority may reclaim the unused locked value according to the settlement policy.
 
 The simple first-milestone policy is:
 
