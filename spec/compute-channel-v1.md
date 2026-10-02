@@ -205,3 +205,12 @@ The first implementation should support:
 A V1 channel MUST NOT represent a shared spend pool claimable by multiple unrelated workers. Binding the channel to one worker/operator avoids multi-party settlement races and keeps cumulative receipts sufficient for safe settlement.
 
 That is sufficient to prove low-overhead AI micropayments without turning the compute milestone into a generalized payment-network project.
+
+
+## Aggregation boundary
+
+ComputeChannel settlement is the normal chain aggregation point for many ordinary Jobs.
+
+The chain does not need individual Job creation, stream, response, or usage-receipt transactions.
+
+The newest valid cumulative usage receipt summarizes the maximum acknowledged channel spend at settlement time.
