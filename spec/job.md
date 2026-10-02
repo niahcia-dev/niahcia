@@ -81,6 +81,18 @@ funding account
 
 The Job's accepted price MUST NOT exceed either its own declared maximum or any applicable authorization/channel ceiling.
 
+## Payment risk
+
+A chargeable Job SHOULD declare or reference a ComputePaymentRiskV1 handling mode.
+
+Payment risk is independent from VerificationPolicy.
+
+Ordinary inexpensive interactive inference SHOULD use `SMALL`, with one completion-time usage receipt.
+
+Higher-value one-shot Jobs MAY use `RESERVED`.
+
+Long-running staged workloads SHOULD be deferred until staged payment and checkpoint semantics are explicitly implemented.
+
 ## Parent/child jobs
 
 Agent-to-agent calls and compound workloads use:
