@@ -155,9 +155,7 @@ mod tests {
 
     #[test]
     fn raw_transaction_submission_rejects_bad_hex_and_duplicates() {
-        let mempool = Arc::new(RwLock::new(NativeMempoolV1::new(
-            AddressNetwork::Devnet,
-        )));
+        let mempool = Arc::new(RwLock::new(NativeMempoolV1::new(AddressNetwork::Devnet)));
 
         assert!(submit_raw_transaction_hex("zz", &mempool).is_err());
 
