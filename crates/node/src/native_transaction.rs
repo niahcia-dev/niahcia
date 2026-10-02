@@ -1,5 +1,5 @@
 use crate::address::{AddressNetwork, NiahciaAddressV1, ADDRESS_PAYLOAD_LEN};
-use crate::nce::{encode_bytes, encode_envelope, encode_map, encode_unsigned};
+use crate::nce::{decode_envelope, encode_bytes, encode_envelope, encode_map, encode_unsigned};
 use crate::work::{keccak256, transaction_merkle_root, Hash32};
 use k256::ecdsa::{signature::hazmat::PrehashVerifier, Signature, VerifyingKey};
 
@@ -158,6 +158,99 @@ impl NativeTransactionBodyV1 {
             self.canonical_payload()?,
         )
     }
+
+    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let mut reader = decode_envelope(
+            bytes,
+            NATIVE_TRANSACTION_BODY_OBJECT_TYPE,
+            NATIVE_TRANSACTION_SCHEMA_VERSION,
+        )?;
+
+        if reader.map_len()? != 10 {
+            return Err("native transaction body must contain exactly ten fields".into());
+        }
+
+        if reader.unsigned()? != 1 {
+            return Err("invalid native transaction network_id field".into());
+        }
+        let network_id = reader.unsigned()?;
+
+        if reader.unsigned()? != 2 {
+            return Err("invalid native transaction chain_id field".into());
+        }
+        let chain_id = reader.unsigned()?;
+
+        if reader.unsigned()? != 3 {
+            return Err("invalid native transaction nonce field".into());
+        }
+        let nonce = reader.unsigned()?;
+
+        if reader.unsigned()? != 4 {
+            return Err("invalid native transaction action field".into());
+        }
+        let action = NativeActionV1::try_from(reader.unsigned()?)?;
+
+        if reader.unsigned()? != 5 {
+            return Err("invalid native transaction target field".into());
+        }
+        let target_payload = reader.bytes()?.to_vec();
+
+        if reader.unsigned()? != 6 {
+            return Err("invalid native transaction value field".into());
+        }
+        let value_bytes = reader.bytes()?;
+        if value_bytes.len() != 16 {
+            return Err("native transaction value must be exactly 16 bytes".into());
+        }
+        let value = u128::from_be_bytes(value_bytes.try_into().unwrap());
+
+        if reader.unsigned()? != 7 {
+            return Err("invalid native transaction gas_limit field".into());
+        }
+        let gas_limit = reader.unsigned()?;
+
+        if reader.unsigned()? != 8 {
+            return Err("invalid native transaction max_fee_per_gas field".into());
+        }
+        let max_fee_bytes = reader.bytes()?;
+        if max_fee_bytes.len() != 16 {
+            return Err("native transaction max_fee_per_gas must be exactly 16 bytes".into());
+        }
+        let max_fee_per_gas = u128::from_be_bytes(max_fee_bytes.try_into().unwrap());
+
+        if reader.unsigned()? != 9 {
+            return Err("invalid native transaction max_priority_fee_per_gas field".into());
+        }
+        let priority_fee_bytes = reader.bytes()?;
+        if priority_fee_bytes.len() != 16 {
+            return Err(
+                "native transaction max_priority_fee_per_gas must be exactly 16 bytes".into(),
+            );
+        }
+        let max_priority_fee_per_gas = u128::from_be_bytes(priority_fee_bytes.try_into().unwrap());
+
+        if reader.unsigned()? != 10 {
+            return Err("invalid native transaction data field".into());
+        }
+        let data = reader.bytes()?.to_vec();
+
+        if !reader.finished() {
+            return Err("trailing bytes after native transaction body".into());
+        }
+
+        Ok(Self {
+            network_id,
+            chain_id,
+            nonce,
+            action,
+            target_payload,
+            value,
+            gas_limit,
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+            data,
+        })
+    }
 }
 
 pub const SIGNED_NATIVE_TRANSACTION_OBJECT_TYPE: u64 = 0x0011;
@@ -298,6 +391,52 @@ impl SignedNativeTransactionV1 {
         preimage.extend_from_slice(&canonical);
 
         Ok(keccak256(&preimage))
+    }
+
+    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, String> {
+        let mut reader = decode_envelope(
+            bytes,
+            SIGNED_NATIVE_TRANSACTION_OBJECT_TYPE,
+            SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION,
+        )?;
+
+        if reader.map_len()? != 3 {
+            return Err("signed native transaction must contain exactly three fields".into());
+        }
+
+        if reader.unsigned()? != 1 {
+            return Err("invalid signed native transaction body field".into());
+        }
+        let body = NativeTransactionBodyV1::from_canonical_bytes(reader.bytes()?)?;
+
+        if reader.unsigned()? != 2 {
+            return Err("invalid signed native transaction public_key field".into());
+        }
+        let public_key = reader.bytes()?.to_vec();
+
+        if reader.unsigned()? != 3 {
+            return Err("invalid signed native transaction signature field".into());
+        }
+        let signature = reader.bytes()?.to_vec();
+
+        if !reader.finished() {
+            return Err("trailing bytes after signed native transaction".into());
+        }
+
+        let transaction = Self {
+            body,
+            public_key,
+            signature,
+        };
+
+        transaction.canonical_verifying_key()?;
+        transaction.canonical_signature()?;
+
+        if transaction.canonical_bytes()? != bytes {
+            return Err("signed native transaction is not canonically encoded".into());
+        }
+
+        Ok(transaction)
     }
 }
 
@@ -446,6 +585,35 @@ mod tests {
 
         assert!(payload.windows(one.len()).any(|w| w == one.as_slice()));
         assert!(payload.windows(two.len()).any(|w| w == two.as_slice()));
+    }
+
+    #[test]
+    fn native_transaction_body_canonical_round_trip_is_exact() {
+        let body = transfer();
+        let encoded = body.canonical_bytes().unwrap();
+        let decoded = NativeTransactionBodyV1::from_canonical_bytes(&encoded).unwrap();
+
+        assert_eq!(decoded, body);
+        assert_eq!(decoded.canonical_bytes().unwrap(), encoded);
+
+        let mut trailing = encoded.clone();
+        trailing.push(0);
+        assert!(NativeTransactionBodyV1::from_canonical_bytes(&trailing).is_err());
+    }
+
+    #[test]
+    fn signed_native_transaction_canonical_round_trip_is_exact() {
+        let tx = signed_transfer();
+        let encoded = tx.canonical_bytes().unwrap();
+        let decoded = SignedNativeTransactionV1::from_canonical_bytes(&encoded).unwrap();
+
+        assert_eq!(decoded, tx);
+        assert_eq!(decoded.canonical_bytes().unwrap(), encoded);
+        decoded.verify_signature(AddressNetwork::Devnet).unwrap();
+
+        let mut trailing = encoded.clone();
+        trailing.push(0);
+        assert!(SignedNativeTransactionV1::from_canonical_bytes(&trailing).is_err());
     }
 
     #[test]

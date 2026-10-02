@@ -92,6 +92,129 @@ pub fn encode_envelope(
     ])
 }
 
+#[derive(Clone, Copy)]
+pub struct NceReader<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> NceReader<'a> {
+    pub fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+
+    pub fn finished(&self) -> bool {
+        self.offset == self.bytes.len()
+    }
+
+    fn take(&mut self, len: usize) -> Result<&'a [u8], String> {
+        let end = self
+            .offset
+            .checked_add(len)
+            .ok_or_else(|| "NCE/1 length overflow".to_string())?;
+        if end > self.bytes.len() {
+            return Err("truncated NCE/1 value".into());
+        }
+        let out = &self.bytes[self.offset..end];
+        self.offset = end;
+        Ok(out)
+    }
+
+    fn head(&mut self) -> Result<(u8, u64), String> {
+        let first = self.take(1)?[0];
+        let major = first >> 5;
+        let add = first & 0x1f;
+
+        let value = match add {
+            0..=23 => add as u64,
+            24 => {
+                let v = self.take(1)?[0] as u64;
+                if v < 24 {
+                    return Err("non-canonical NCE/1 integer/length encoding".into());
+                }
+                v
+            }
+            25 => {
+                let v = u16::from_be_bytes(self.take(2)?.try_into().unwrap()) as u64;
+                if v <= 0xff {
+                    return Err("non-canonical NCE/1 integer/length encoding".into());
+                }
+                v
+            }
+            26 => {
+                let v = u32::from_be_bytes(self.take(4)?.try_into().unwrap()) as u64;
+                if v <= 0xffff {
+                    return Err("non-canonical NCE/1 integer/length encoding".into());
+                }
+                v
+            }
+            27 => {
+                let v = u64::from_be_bytes(self.take(8)?.try_into().unwrap());
+                if v <= 0xffff_ffff {
+                    return Err("non-canonical NCE/1 integer/length encoding".into());
+                }
+                v
+            }
+            _ => return Err("indefinite or reserved NCE/1 additional information".into()),
+        };
+
+        Ok((major, value))
+    }
+
+    pub fn unsigned(&mut self) -> Result<u64, String> {
+        let (major, value) = self.head()?;
+        if major != 0 {
+            return Err("expected NCE/1 unsigned integer".into());
+        }
+        Ok(value)
+    }
+
+    pub fn bytes(&mut self) -> Result<&'a [u8], String> {
+        let (major, len) = self.head()?;
+        if major != 2 {
+            return Err("expected NCE/1 byte string".into());
+        }
+        let len = usize::try_from(len)
+            .map_err(|_| "NCE/1 byte string length exceeds platform limits".to_string())?;
+        self.take(len)
+    }
+
+    pub fn map_len(&mut self) -> Result<usize, String> {
+        let (major, len) = self.head()?;
+        if major != 5 {
+            return Err("expected NCE/1 map".into());
+        }
+        usize::try_from(len).map_err(|_| "NCE/1 map length exceeds platform limits".to_string())
+    }
+}
+
+pub fn decode_envelope<'a>(
+    bytes: &'a [u8],
+    expected_object_type: u64,
+    expected_schema_version: u64,
+) -> Result<NceReader<'a>, String> {
+    let mut reader = NceReader::new(bytes);
+    let len = reader.map_len()?;
+    if len != 4 {
+        return Err("NCE/1 envelope must contain exactly four fields".into());
+    }
+
+    if reader.unsigned()? != 1 || reader.unsigned()? != NCE_VERSION {
+        return Err("invalid NCE/1 envelope version field".into());
+    }
+    if reader.unsigned()? != 2 || reader.unsigned()? != expected_object_type {
+        return Err("unexpected NCE/1 envelope object type".into());
+    }
+    if reader.unsigned()? != 3 || reader.unsigned()? != expected_schema_version {
+        return Err("unexpected NCE/1 envelope schema version".into());
+    }
+    if reader.unsigned()? != 4 {
+        return Err("invalid NCE/1 envelope payload field".into());
+    }
+
+    Ok(reader)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,6 +265,44 @@ mod tests {
         let encoded = encode_map(&[(1, encode_unsigned(10)), (2, encode_bytes(&[0xaa]))]).unwrap();
 
         assert_eq!(encoded, vec![0xa2, 0x01, 0x0a, 0x02, 0x41, 0xaa]);
+    }
+
+    #[test]
+    fn decoder_rejects_noncanonical_unsigned_encodings() {
+        let mut r = NceReader::new(&[0x18, 0x17]);
+        assert!(r.unsigned().is_err());
+
+        let mut r = NceReader::new(&[0x19, 0x00, 0xff]);
+        assert!(r.unsigned().is_err());
+
+        let mut r = NceReader::new(&[0x1a, 0x00, 0x00, 0xff, 0xff]);
+        assert!(r.unsigned().is_err());
+    }
+
+    #[test]
+    fn decoder_reads_definite_bytes_and_rejects_truncation() {
+        let encoded = encode_bytes(&[0xaa, 0xbb]);
+        let mut r = NceReader::new(&encoded);
+        assert_eq!(r.bytes().unwrap(), &[0xaa, 0xbb]);
+        assert!(r.finished());
+
+        let mut r = NceReader::new(&[0x42, 0xaa]);
+        assert!(r.bytes().is_err());
+    }
+
+    #[test]
+    fn envelope_decoder_validates_identity_and_leaves_payload_reader() {
+        let payload = encode_map(&[(1, encode_unsigned(42))]).unwrap();
+        let encoded = encode_envelope(0x0010, 1, payload).unwrap();
+
+        let mut r = decode_envelope(&encoded, 0x0010, 1).unwrap();
+        assert_eq!(r.map_len().unwrap(), 1);
+        assert_eq!(r.unsigned().unwrap(), 1);
+        assert_eq!(r.unsigned().unwrap(), 42);
+        assert!(r.finished());
+
+        assert!(decode_envelope(&encoded, 0x0011, 1).is_err());
+        assert!(decode_envelope(&encoded, 0x0010, 2).is_err());
     }
 
     #[test]
