@@ -564,3 +564,25 @@ Each `range_proof` and `manifest_proof` is an array of:
 ```
 
 These positions are permanent within schema version 1 and do not consume global field-registry numbers.
+
+
+## ComputeSession — object type 0x0012
+
+```text
+1   schema_version
+2   session_id
+3   requester_identity
+4   worker_id
+5   operator_id
+6   model_id
+7   execution_profile_id
+8   verification_policy_id
+9   compute_channel_id
+10  started_height
+11  expiry_height
+12  max_jobs
+13  max_total_spend
+14  max_idle_blocks
+15  sequence
+16  status
+```
