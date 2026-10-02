@@ -1,6 +1,6 @@
 use crate::address::{AddressNetwork, NiahciaAddressV1, ADDRESS_PAYLOAD_LEN};
 use crate::nce::{encode_bytes, encode_envelope, encode_map, encode_unsigned};
-use crate::work::{keccak256, Hash32};
+use crate::work::{keccak256, transaction_merkle_root, Hash32};
 use k256::ecdsa::{signature::hazmat::PrehashVerifier, Signature, VerifyingKey};
 
 pub const NATIVE_TRANSACTION_BODY_OBJECT_TYPE: u64 = 0x0010;
@@ -13,6 +13,8 @@ pub const DEVNET_NETWORK_ID: u64 = 0x02;
 pub const MAINNET_CHAIN_ID: u64 = 0x0000_0000_4E49_4148;
 pub const TESTNET_CHAIN_ID: u64 = 0x0000_0001_5449_4148;
 pub const DEVNET_CHAIN_ID: u64 = 0x0000_0002_4449_4148;
+
+pub const NATIVE_TRANSFER_GAS_V1: u64 = 1_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u64)]
@@ -45,6 +47,7 @@ pub struct NativeTransactionBodyV1 {
     pub value: u128,
     pub gas_limit: u64,
     pub max_fee_per_gas: u128,
+    pub max_priority_fee_per_gas: u128,
     pub data: Vec<u8>,
 }
 
@@ -90,6 +93,20 @@ impl NativeTransactionBodyV1 {
                 if !self.data.is_empty() {
                     return Err("Transfer data must be empty".into());
                 }
+
+                if self.gas_limit < NATIVE_TRANSFER_GAS_V1 {
+                    return Err(format!(
+                        "Transfer gas_limit must be at least {}",
+                        NATIVE_TRANSFER_GAS_V1
+                    ));
+                }
+
+                if self.gas_limit < NATIVE_TRANSFER_GAS_V1 {
+                    return Err(format!(
+                        "Transfer gas_limit must be at least {}",
+                        NATIVE_TRANSFER_GAS_V1
+                    ));
+                }
             }
 
             NativeActionV1::ContractCall => {
@@ -126,7 +143,11 @@ impl NativeTransactionBodyV1 {
             (6, encode_bytes(&self.value.to_be_bytes())),
             (7, encode_unsigned(self.gas_limit)),
             (8, encode_bytes(&self.max_fee_per_gas.to_be_bytes())),
-            (9, encode_bytes(&self.data)),
+            (
+                9,
+                encode_bytes(&self.max_priority_fee_per_gas.to_be_bytes()),
+            ),
+            (10, encode_bytes(&self.data)),
         ])
     }
 
@@ -280,6 +301,17 @@ impl SignedNativeTransactionV1 {
     }
 }
 
+pub fn native_transactions_root_v1(
+    transactions: &[SignedNativeTransactionV1],
+) -> Result<Hash32, String> {
+    let canonical = transactions
+        .iter()
+        .map(SignedNativeTransactionV1::canonical_bytes)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(transaction_merkle_root(&canonical))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -293,8 +325,9 @@ mod tests {
             action: NativeActionV1::Transfer,
             target_payload: vec![0x22; ADDRESS_PAYLOAD_LEN],
             value: 100_000_000,
-            gas_limit: 21_000,
+            gas_limit: 1_000,
             max_fee_per_gas: 25,
+            max_priority_fee_per_gas: 5,
             data: Vec::new(),
         }
     }
@@ -355,6 +388,20 @@ mod tests {
         let mut with_data = tx;
         with_data.data.push(1);
         assert!(with_data.validate_action().is_err());
+    }
+
+    #[test]
+    fn transfer_gas_limit_boundary_is_exact() {
+        let mut body = transfer();
+
+        body.gas_limit = NATIVE_TRANSFER_GAS_V1 - 1;
+        assert!(body.validate(AddressNetwork::Devnet).is_err());
+
+        body.gas_limit = NATIVE_TRANSFER_GAS_V1;
+        assert!(body.validate(AddressNetwork::Devnet).is_ok());
+
+        body.gas_limit = NATIVE_TRANSFER_GAS_V1 + 1;
+        assert!(body.validate(AddressNetwork::Devnet).is_ok());
     }
 
     #[test]
@@ -505,17 +552,57 @@ mod tests {
     }
 
     #[test]
+    fn native_transaction_root_uses_canonical_signed_bytes() {
+        let tx = signed_transfer();
+        let canonical = tx.canonical_bytes().unwrap();
+
+        assert_eq!(
+            native_transactions_root_v1(&[tx]).unwrap(),
+            transaction_merkle_root(&[canonical])
+        );
+    }
+
+    #[test]
+    fn native_transaction_root_is_order_sensitive() {
+        let first = signed_transfer();
+
+        let mut second = signed_transfer();
+        second.body.nonce = 8;
+
+        let signing_key = SigningKey::from_slice(&[0x01; 32]).unwrap();
+        let digest = second.signing_digest().unwrap();
+        let signature: Signature = signing_key.sign_prehash(&digest).unwrap();
+        second.signature = signature.to_bytes().to_vec();
+
+        assert_ne!(
+            native_transactions_root_v1(&[first.clone(), second.clone()]).unwrap(),
+            native_transactions_root_v1(&[second, first]).unwrap()
+        );
+    }
+
+    #[test]
+    fn native_transaction_empty_root_matches_consensus_merkle_root() {
+        let transactions: Vec<SignedNativeTransactionV1> = Vec::new();
+        let canonical: Vec<Vec<u8>> = Vec::new();
+
+        assert_eq!(
+            native_transactions_root_v1(&transactions).unwrap(),
+            transaction_merkle_root(&canonical)
+        );
+    }
+
+    #[test]
     fn native_transaction_v1_interoperability_vector_is_exact() {
         let tx = signed_transfer();
 
         assert_eq!(
             hex::encode(tx.canonical_body_bytes().unwrap()),
-            "a401010210030104a90102021b00000002444941480307040005542222222222222222222222222222222222222222065000000000000000000000000005f5e100071952080850000000000000000000000000000000190940"
+            "a401010210030104aa0102021b00000002444941480307040005542222222222222222222222222222222222222222065000000000000000000000000005f5e100071903e80850000000000000000000000000000000190950000000000000000000000000000000050a40"
         );
 
         assert_eq!(
             hex::encode(tx.signing_digest().unwrap()),
-            "826dfcd3d1a94b70d3d3d300289561f727e30aa74fd367325dc1a1346ea995bc"
+            "b0fec0ccd597a7dcec8ae2482c343f25d4544c2de50707de5b60fcabe11ea0e9"
         );
 
         assert_eq!(
@@ -525,17 +612,17 @@ mod tests {
 
         assert_eq!(
             hex::encode(&tx.signature),
-            "c8499c41816006f930d757b88c248cecd8a349c412308f5345fd5c93ce6942b41ea32d1719c27b8f5c80d8476b9b10296c4d1c1361f0b1adf123f8e4fb314841"
+            "0100451edd692c4d46f69344a2591c7469d565b590bbdaf12e2917f29fe7ab9907b801fb67b1fddc2132fa8184fde5d51d3e3447a44ac11fe6f8cb86f6c920e3"
         );
 
         assert_eq!(
             hex::encode(tx.canonical_bytes().unwrap()),
-            "a401010211030104a3015859a401010210030104a90102021b00000002444941480307040005542222222222222222222222222222222222222222065000000000000000000000000005f5e100071952080850000000000000000000000000000000190940025841041b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f70beaf8f588b541507fed6a642c5ab42dfdf8120a7f639de5122d47a69a8e8d1035840c8499c41816006f930d757b88c248cecd8a349c412308f5345fd5c93ce6942b41ea32d1719c27b8f5c80d8476b9b10296c4d1c1361f0b1adf123f8e4fb314841"
+            "a401010211030104a301586ba401010210030104aa0102021b00000002444941480307040005542222222222222222222222222222222222222222065000000000000000000000000005f5e100071903e80850000000000000000000000000000000190950000000000000000000000000000000050a40025841041b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f70beaf8f588b541507fed6a642c5ab42dfdf8120a7f639de5122d47a69a8e8d10358400100451edd692c4d46f69344a2591c7469d565b590bbdaf12e2917f29fe7ab9907b801fb67b1fddc2132fa8184fde5d51d3e3447a44ac11fe6f8cb86f6c920e3"
         );
 
         assert_eq!(
             hex::encode(tx.tx_id().unwrap()),
-            "964132b74a2a14fdc75ebc7755960ca46ec0b042d8628e8dd0c85b56b605a664"
+            "2991cce095921c230b2e9f284546da0a06bb173beff6168e9410800f2f58d01e"
         );
 
         let sender = tx.authenticated_sender(AddressNetwork::Devnet).unwrap();

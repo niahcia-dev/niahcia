@@ -1,4 +1,7 @@
-use crate::work::{keccak256, Address20, ExecutionPayloadCommitments, Hash32};
+use crate::work::{
+    transaction_merkle_root as native_transaction_merkle_root, Address20,
+    ExecutionPayloadCommitments, Hash32,
+};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -500,58 +503,23 @@ impl EngineClient {
 }
 
 fn transaction_merkle_root(payload: &Value) -> Result<Hash32, String> {
-    const TX_DOMAIN: &[u8] = b"NIAHCIA/TX/V1";
-    const EMPTY_DOMAIN: &[u8] = b"NIAHCIA/MERKLE-EMPTY/V1";
-    const LEAF_DOMAIN: &[u8] = b"NIAHCIA/MERKLE-LEAF/V1";
-    const NODE_DOMAIN: &[u8] = b"NIAHCIA/MERKLE-NODE/V1";
-
     let transactions = payload
         .get("transactions")
         .and_then(Value::as_array)
         .ok_or_else(|| format!("execution payload missing transactions array: {payload}"))?;
 
-    if transactions.is_empty() {
-        return Ok(keccak256(EMPTY_DOMAIN));
-    }
+    let decoded = transactions
+        .iter()
+        .map(|transaction| {
+            let raw = transaction
+                .as_str()
+                .ok_or_else(|| "execution transaction must be a hex string".to_string())?;
 
-    let mut level = Vec::with_capacity(transactions.len());
+            hex::decode(strip_hex(raw)).map_err(|e| format!("invalid transaction hex: {e}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
-    for transaction in transactions {
-        let raw = transaction
-            .as_str()
-            .ok_or_else(|| "execution transaction must be a hex string".to_string())?;
-        let decoded =
-            hex::decode(strip_hex(raw)).map_err(|e| format!("invalid transaction hex: {e}"))?;
-
-        let mut tx_preimage = Vec::with_capacity(TX_DOMAIN.len() + decoded.len());
-        tx_preimage.extend_from_slice(TX_DOMAIN);
-        tx_preimage.extend_from_slice(&decoded);
-        let tx_digest = keccak256(&tx_preimage);
-
-        let mut leaf_preimage = Vec::with_capacity(LEAF_DOMAIN.len() + 32);
-        leaf_preimage.extend_from_slice(LEAF_DOMAIN);
-        leaf_preimage.extend_from_slice(&tx_digest);
-        level.push(keccak256(&leaf_preimage));
-    }
-
-    while level.len() > 1 {
-        let mut next = Vec::with_capacity(level.len().div_ceil(2));
-
-        for pair in level.chunks(2) {
-            let left = pair[0];
-            let right = if pair.len() == 2 { pair[1] } else { pair[0] };
-
-            let mut node_preimage = Vec::with_capacity(NODE_DOMAIN.len() + 64);
-            node_preimage.extend_from_slice(NODE_DOMAIN);
-            node_preimage.extend_from_slice(&left);
-            node_preimage.extend_from_slice(&right);
-            next.push(keccak256(&node_preimage));
-        }
-
-        level = next;
-    }
-
-    Ok(level[0])
+    Ok(native_transaction_merkle_root(&decoded))
 }
 
 fn field_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {

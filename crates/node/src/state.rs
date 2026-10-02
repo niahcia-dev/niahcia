@@ -1,4 +1,5 @@
 use crate::consensus::block_work;
+use crate::native_execution::{NativeBlockExecutionResultV1, NativeStateV1};
 use crate::work::{BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
 use num_bigint::BigUint;
 use redb::{Database, ReadableTable, TableDefinition};
@@ -7,6 +8,10 @@ use std::path::Path;
 const SERVICE_EVIDENCE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("service_evidence_v1");
 const SERVICE_EPOCHS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("service_epochs_v1");
 const CHAIN_BLOCKS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_blocks_v1");
+const NATIVE_STATE_SNAPSHOTS: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("native_state_snapshots_v1");
+const NATIVE_BLOCK_EXECUTION: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("native_block_execution_v1");
 const CHAIN_EXECUTION: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_execution_v1");
 const EXECUTION_PAYLOADS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("execution_payloads_v1");
@@ -122,6 +127,64 @@ impl PersistedServiceSuccess {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersistedNativeExecutionV1 {
+    pub transactions_root: Hash32,
+    pub state_root: Hash32,
+    pub receipts_root: Hash32,
+    pub execution_root: Hash32,
+    pub gas_used: u64,
+    pub base_fee_burned: u128,
+    pub producer_priority_fee: u128,
+}
+
+impl PersistedNativeExecutionV1 {
+    const VALUE_LEN: usize = 168;
+
+    fn from_result(result: &NativeBlockExecutionResultV1) -> Self {
+        Self {
+            transactions_root: result.transactions_root,
+            state_root: result.state_root,
+            receipts_root: result.receipts_root,
+            execution_root: result.execution_root,
+            gas_used: result.gas_used,
+            base_fee_burned: result.base_fee_burned,
+            producer_priority_fee: result.producer_priority_fee,
+        }
+    }
+
+    fn encode_value(&self) -> [u8; Self::VALUE_LEN] {
+        let mut out = [0_u8; Self::VALUE_LEN];
+        out[0..32].copy_from_slice(&self.transactions_root);
+        out[32..64].copy_from_slice(&self.state_root);
+        out[64..96].copy_from_slice(&self.receipts_root);
+        out[96..128].copy_from_slice(&self.execution_root);
+        out[128..136].copy_from_slice(&self.gas_used.to_be_bytes());
+        out[136..152].copy_from_slice(&self.base_fee_burned.to_be_bytes());
+        out[152..168].copy_from_slice(&self.producer_priority_fee.to_be_bytes());
+        out
+    }
+
+    fn decode(value: &[u8]) -> Result<Self, String> {
+        if value.len() != Self::VALUE_LEN {
+            return Err(format!(
+                "invalid persisted native execution length: {}",
+                value.len()
+            ));
+        }
+
+        Ok(Self {
+            transactions_root: value[0..32].try_into().unwrap(),
+            state_root: value[32..64].try_into().unwrap(),
+            receipts_root: value[64..96].try_into().unwrap(),
+            execution_root: value[96..128].try_into().unwrap(),
+            gas_used: u64::from_be_bytes(value[128..136].try_into().unwrap()),
+            base_fee_burned: u128::from_be_bytes(value[136..152].try_into().unwrap()),
+            producer_priority_fee: u128::from_be_bytes(value[152..168].try_into().unwrap()),
+        })
+    }
+}
+
 pub struct StateStore {
     db: Database,
 }
@@ -151,6 +214,12 @@ impl StateStore {
             write
                 .open_table(CHAIN_BLOCKS)
                 .map_err(|e| format!("failed to initialize chain block table: {e}"))?;
+            write
+                .open_table(NATIVE_STATE_SNAPSHOTS)
+                .map_err(|e| format!("failed to initialize native state snapshot table: {e}"))?;
+            write
+                .open_table(NATIVE_BLOCK_EXECUTION)
+                .map_err(|e| format!("failed to initialize native block execution table: {e}"))?;
             write
                 .open_table(CHAIN_EXECUTION)
                 .map_err(|e| format!("failed to initialize chain execution table: {e}"))?;
@@ -187,6 +256,107 @@ impl StateStore {
             Some(value) => PersistedChainBlock::decode(value.value()).map(Some),
             None => Ok(None),
         }
+    }
+
+    pub fn native_block_execution(
+        &self,
+        block_id: Hash32,
+    ) -> Result<Option<PersistedNativeExecutionV1>, String> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("failed to begin native execution read: {e}"))?;
+        let table = read
+            .open_table(NATIVE_BLOCK_EXECUTION)
+            .map_err(|e| format!("failed to open native block execution table: {e}"))?;
+
+        match table
+            .get(block_id.as_slice())
+            .map_err(|e| format!("failed to read native block execution: {e}"))?
+        {
+            Some(value) => PersistedNativeExecutionV1::decode(value.value()).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    pub fn store_native_state_snapshot(
+        &self,
+        block_id: Hash32,
+        state: &NativeStateV1,
+    ) -> Result<(), String> {
+        if self.load_chain_block(block_id)?.is_none() {
+            return Err("cannot persist native state for an unpersisted NIAHCIA block".into());
+        }
+
+        let state_root = state.state_root();
+        let snapshot = state.canonical_bytes()?;
+        let mut value = Vec::with_capacity(32 + snapshot.len());
+        value.extend_from_slice(&state_root);
+        value.extend_from_slice(&snapshot);
+
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("failed to begin native state snapshot write: {e}"))?;
+        {
+            let mut table = write
+                .open_table(NATIVE_STATE_SNAPSHOTS)
+                .map_err(|e| format!("failed to open native state snapshot table: {e}"))?;
+
+            if let Some(existing) = table
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to inspect native state snapshot: {e}"))?
+            {
+                if existing.value() != value.as_slice() {
+                    return Err(
+                        "NIAHCIA block already has a different native state snapshot".into(),
+                    );
+                }
+                return Ok(());
+            }
+
+            table
+                .insert(block_id.as_slice(), value.as_slice())
+                .map_err(|e| format!("failed to persist native state snapshot: {e}"))?;
+        }
+
+        write
+            .commit()
+            .map_err(|e| format!("failed to commit native state snapshot: {e}"))
+    }
+
+    pub fn native_state_snapshot(&self, block_id: Hash32) -> Result<Option<NativeStateV1>, String> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("failed to begin native state snapshot read: {e}"))?;
+        let table = read
+            .open_table(NATIVE_STATE_SNAPSHOTS)
+            .map_err(|e| format!("failed to open native state snapshot table: {e}"))?;
+
+        let Some(value) = table
+            .get(block_id.as_slice())
+            .map_err(|e| format!("failed to read native state snapshot: {e}"))?
+        else {
+            return Ok(None);
+        };
+
+        let value = value.value();
+        if value.len() < 32 {
+            return Err("persisted native state snapshot is truncated".into());
+        }
+
+        let expected_root: Hash32 = value[..32]
+            .try_into()
+            .map_err(|_| "invalid persisted native state root length".to_string())?;
+        let state = NativeStateV1::from_canonical_bytes(&value[32..])?;
+        let actual_root = state.state_root();
+
+        if actual_root != expected_root {
+            return Err("persisted native state snapshot root mismatch".into());
+        }
+
+        Ok(Some(state))
     }
 
     pub fn store_execution_payload(&self, hash: Hash32, payload: &[u8]) -> Result<(), String> {
@@ -434,6 +604,193 @@ impl StateStore {
                 .load_chain_block(cursor.header.parent_hash)?
                 .ok_or_else(|| "best-chain ancestry references missing parent".to_string())?;
         }
+    }
+
+    pub fn insert_native_block_with_execution_outcome(
+        &self,
+        header: BlockHeaderV1,
+        execution: &NativeBlockExecutionResultV1,
+        state: &NativeStateV1,
+    ) -> Result<ChainInsertOutcome, String> {
+        if header.transactions_root != execution.transactions_root {
+            return Err("native block transactions root does not match execution result".into());
+        }
+        if header.execution_root != execution.execution_root {
+            return Err("native block execution root does not match execution result".into());
+        }
+        if state.state_root() != execution.state_root {
+            return Err("native state root does not match execution result".into());
+        }
+
+        let previous_best = self.best_chain_head()?.map(|block| block.block_id());
+
+        let parent_work = if header.height == 0 {
+            if header.parent_hash != [0_u8; 32] {
+                return Err("genesis block must have a zero parent hash".into());
+            }
+            BigUint::default()
+        } else {
+            let parent = self
+                .load_chain_block(header.parent_hash)?
+                .ok_or_else(|| "chain block parent is not persisted".to_string())?;
+            if parent.header.height.checked_add(1) != Some(header.height) {
+                return Err("chain block height does not follow persisted parent".into());
+            }
+            parent.chain_work
+        };
+
+        let record = PersistedChainBlock {
+            chain_work: parent_work + block_work(header.target),
+            header,
+        };
+        let block_id = record.block_id();
+        let encoded_block = record.encode_value()?;
+
+        let persisted_execution = PersistedNativeExecutionV1::from_result(execution);
+        let encoded_execution = persisted_execution.encode_value();
+
+        let snapshot = state.canonical_bytes()?;
+        let mut encoded_state = Vec::with_capacity(32 + snapshot.len());
+        encoded_state.extend_from_slice(&execution.state_root);
+        encoded_state.extend_from_slice(&snapshot);
+
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("failed to begin native block transaction: {e}"))?;
+
+        {
+            let mut blocks = write
+                .open_table(CHAIN_BLOCKS)
+                .map_err(|e| format!("failed to open chain block table: {e}"))?;
+
+            let existing = blocks
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to check existing chain block: {e}"))?
+                .map(|value| value.value().to_vec());
+
+            if let Some(existing) = existing {
+                let existing = PersistedChainBlock::decode(&existing)?;
+                if existing != record {
+                    return Err("block ID collision with different persisted record".into());
+                }
+            } else {
+                blocks
+                    .insert(block_id.as_slice(), encoded_block.as_slice())
+                    .map_err(|e| format!("failed to persist chain block: {e}"))?;
+            }
+        }
+
+        {
+            let mut executions = write
+                .open_table(NATIVE_BLOCK_EXECUTION)
+                .map_err(|e| format!("failed to open native block execution table: {e}"))?;
+
+            let existing = executions
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to inspect native block execution: {e}"))?
+                .map(|value| value.value().to_vec());
+
+            if let Some(existing) = existing {
+                if existing.as_slice() != encoded_execution.as_slice() {
+                    return Err(
+                        "NIAHCIA block already has a different native execution result".into(),
+                    );
+                }
+            } else {
+                executions
+                    .insert(block_id.as_slice(), encoded_execution.as_slice())
+                    .map_err(|e| format!("failed to persist native block execution: {e}"))?;
+            }
+        }
+
+        {
+            let mut snapshots = write
+                .open_table(NATIVE_STATE_SNAPSHOTS)
+                .map_err(|e| format!("failed to open native state snapshot table: {e}"))?;
+
+            let existing = snapshots
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to inspect native state snapshot: {e}"))?
+                .map(|value| value.value().to_vec());
+
+            if let Some(existing) = existing {
+                if existing.as_slice() != encoded_state.as_slice() {
+                    return Err(
+                        "NIAHCIA block already has a different native state snapshot".into(),
+                    );
+                }
+            } else {
+                snapshots
+                    .insert(block_id.as_slice(), encoded_state.as_slice())
+                    .map_err(|e| format!("failed to persist native state snapshot: {e}"))?;
+            }
+        }
+
+        let current_best_id: Option<Hash32> = {
+            let meta = write
+                .open_table(CHAIN_META)
+                .map_err(|e| format!("failed to open chain metadata table: {e}"))?;
+            let current = meta
+                .get(BEST_HEAD_KEY)
+                .map_err(|e| format!("failed to read current best head: {e}"))?
+                .map(|best_id| {
+                    best_id
+                        .value()
+                        .try_into()
+                        .map_err(|_| "invalid persisted best-head ID length".to_string())
+                })
+                .transpose()?;
+            current
+        };
+
+        let should_promote = match current_best_id {
+            Some(best_id) => {
+                let blocks = write
+                    .open_table(CHAIN_BLOCKS)
+                    .map_err(|e| format!("failed to open chain block table: {e}"))?;
+                let best = blocks
+                    .get(best_id.as_slice())
+                    .map_err(|e| format!("failed to read current best block: {e}"))?
+                    .ok_or_else(|| "best-head metadata references missing block".to_string())?;
+                let best = PersistedChainBlock::decode(best.value())?;
+
+                record.chain_work > best.chain_work
+                    || (record.chain_work == best.chain_work && block_id < best_id)
+            }
+            None => true,
+        };
+
+        if should_promote {
+            let mut meta = write
+                .open_table(CHAIN_META)
+                .map_err(|e| format!("failed to open chain metadata table: {e}"))?;
+            meta.insert(BEST_HEAD_KEY, block_id.as_slice())
+                .map_err(|e| format!("failed to persist best-head ID: {e}"))?;
+        }
+
+        write
+            .commit()
+            .map_err(|e| format!("failed to commit native block transaction: {e}"))?;
+
+        let current_best = self
+            .best_chain_head()?
+            .ok_or_else(|| "native block transaction committed without a best head".to_string())?
+            .block_id();
+
+        let reorg = match previous_best {
+            Some(old_head) if old_head != current_best => {
+                self.canonical_reorg(old_head, current_best)?
+            }
+            _ => None,
+        };
+
+        Ok(ChainInsertOutcome {
+            block: record,
+            previous_best,
+            current_best,
+            reorg,
+        })
     }
 
     pub fn insert_mined_block_with_execution_outcome(
@@ -838,6 +1195,241 @@ mod tests {
             nonce: marker as u64,
             extra_nonce: 0,
         }
+    }
+
+    #[test]
+    fn native_block_commit_atomically_persists_execution_and_state() {
+        use crate::address::AddressNetwork;
+        use crate::native_execution::{execute_block_v1, NativeExecutionContextV1, NativeStateV1};
+
+        let path = temp_state_path("native-block-atomic");
+        let mut state = NativeStateV1::default();
+        let execution = execute_block_v1(
+            &mut state,
+            &[],
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 3,
+                cpu_producer: [0x09; 20],
+            },
+        )
+        .unwrap();
+
+        let mut block = header([0_u8; 32], 0, [0xff; 32], 1);
+        block.transactions_root = execution.transactions_root;
+        block.execution_root = execution.execution_root;
+        let block_id = block.block_id();
+
+        {
+            let store = StateStore::open(&path).unwrap();
+            let outcome = store
+                .insert_native_block_with_execution_outcome(block.clone(), &execution, &state)
+                .unwrap();
+
+            assert_eq!(outcome.block.block_id(), block_id);
+            assert_eq!(outcome.current_best, block_id);
+            assert_eq!(
+                store.native_block_execution(block_id).unwrap(),
+                Some(super::PersistedNativeExecutionV1::from_result(&execution))
+            );
+            assert_eq!(
+                store.native_state_snapshot(block_id).unwrap(),
+                Some(state.clone())
+            );
+
+            let repeated = store
+                .insert_native_block_with_execution_outcome(block, &execution, &state)
+                .unwrap();
+            assert_eq!(repeated.block.block_id(), block_id);
+        }
+
+        {
+            let reopened = StateStore::open(&path).unwrap();
+            assert_eq!(
+                reopened.native_block_execution(block_id).unwrap(),
+                Some(super::PersistedNativeExecutionV1::from_result(&execution))
+            );
+            assert_eq!(
+                reopened.native_state_snapshot(block_id).unwrap(),
+                Some(state)
+            );
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn native_block_commit_rejects_commitment_mismatches_without_persisting() {
+        use crate::address::AddressNetwork;
+        use crate::native_execution::{
+            execute_block_v1, AccountStateV1, NativeExecutionContextV1, NativeStateV1,
+        };
+
+        let context = NativeExecutionContextV1 {
+            base_fee_per_gas: 3,
+            cpu_producer: [0x09; 20],
+        };
+
+        for case in 0..3 {
+            let path = temp_state_path(&format!("native-block-mismatch-{case}"));
+            let store = StateStore::open(&path).unwrap();
+
+            let mut state = NativeStateV1::default();
+            let execution =
+                execute_block_v1(&mut state, &[], AddressNetwork::Devnet, context).unwrap();
+
+            let mut block = header([0_u8; 32], 0, [0xff; 32], case + 10);
+            block.transactions_root = execution.transactions_root;
+            block.execution_root = execution.execution_root;
+
+            let block_id = block.block_id();
+
+            let result = match case {
+                0 => {
+                    block.transactions_root[0] ^= 0x01;
+                    store.insert_native_block_with_execution_outcome(block, &execution, &state)
+                }
+                1 => {
+                    block.execution_root[0] ^= 0x01;
+                    store.insert_native_block_with_execution_outcome(block, &execution, &state)
+                }
+                _ => {
+                    let mut wrong_state = state.clone();
+                    wrong_state.set_account(
+                        [0x44; 20],
+                        AccountStateV1 {
+                            balance: 1,
+                            nonce: 0,
+                        },
+                    );
+                    store.insert_native_block_with_execution_outcome(
+                        block,
+                        &execution,
+                        &wrong_state,
+                    )
+                }
+            };
+
+            assert!(result.is_err());
+            assert!(store.best_chain_head().unwrap().is_none());
+
+            assert!(store.load_chain_block(block_id).unwrap().is_none());
+            assert!(store.native_block_execution(block_id).unwrap().is_none());
+            assert!(store.native_state_snapshot(block_id).unwrap().is_none());
+
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    #[test]
+    fn native_state_snapshot_requires_persisted_block() {
+        use crate::native_execution::NativeStateV1;
+
+        let path = temp_state_path("native-state-requires-block");
+        let store = StateStore::open(&path).unwrap();
+        let state = NativeStateV1::default();
+
+        let err = store
+            .store_native_state_snapshot([0x91; 32], &state)
+            .unwrap_err();
+        assert!(err.contains("unpersisted NIAHCIA block"));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn native_state_snapshot_survives_restart() {
+        use crate::native_execution::{AccountStateV1, NativeStateV1};
+
+        let path = temp_state_path("native-state-restart");
+        let genesis = header([0_u8; 32], 0, [0xff; 32], 1);
+        let genesis_id = genesis.block_id();
+
+        let mut expected = NativeStateV1::default();
+        expected.set_account(
+            [0x11; 20],
+            AccountStateV1 {
+                balance: 123_456_789,
+                nonce: 4,
+            },
+        );
+        expected.set_account(
+            [0x22; 20],
+            AccountStateV1 {
+                balance: 987_654_321,
+                nonce: 9,
+            },
+        );
+
+        {
+            let store = StateStore::open(&path).unwrap();
+            store.insert_chain_block(genesis).unwrap();
+            store
+                .store_native_state_snapshot(genesis_id, &expected)
+                .unwrap();
+
+            let loaded = store.native_state_snapshot(genesis_id).unwrap().unwrap();
+            assert_eq!(loaded, expected);
+            assert_eq!(loaded.state_root(), expected.state_root());
+        }
+
+        {
+            let reopened = StateStore::open(&path).unwrap();
+            let loaded = reopened.native_state_snapshot(genesis_id).unwrap().unwrap();
+            assert_eq!(loaded, expected);
+            assert_eq!(loaded.state_root(), expected.state_root());
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn native_state_snapshot_is_idempotent_but_rejects_change() {
+        use crate::native_execution::{AccountStateV1, NativeStateV1};
+
+        let path = temp_state_path("native-state-idempotent");
+        let store = StateStore::open(&path).unwrap();
+
+        let genesis = header([0_u8; 32], 0, [0xff; 32], 1);
+        let genesis_id = genesis.block_id();
+        store.insert_chain_block(genesis).unwrap();
+
+        let mut first = NativeStateV1::default();
+        first.set_account(
+            [0x11; 20],
+            AccountStateV1 {
+                balance: 100,
+                nonce: 1,
+            },
+        );
+
+        store
+            .store_native_state_snapshot(genesis_id, &first)
+            .unwrap();
+        store
+            .store_native_state_snapshot(genesis_id, &first)
+            .unwrap();
+
+        let mut conflicting = first.clone();
+        conflicting.set_account(
+            [0x11; 20],
+            AccountStateV1 {
+                balance: 101,
+                nonce: 1,
+            },
+        );
+
+        let err = store
+            .store_native_state_snapshot(genesis_id, &conflicting)
+            .unwrap_err();
+        assert!(err.contains("different native state snapshot"));
+
+        assert_eq!(
+            store.native_state_snapshot(genesis_id).unwrap(),
+            Some(first)
+        );
+
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

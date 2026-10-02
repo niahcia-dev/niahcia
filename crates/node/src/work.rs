@@ -9,6 +9,52 @@ const MINING_TEMPLATE_DOMAIN: &[u8] = b"NIAHCIA/MINING-TEMPLATE/V1";
 
 pub const BLOCK_HEADER_V1_LEN: usize = 164;
 
+const TX_DOMAIN: &[u8] = b"NIAHCIA/TX/V1";
+const MERKLE_EMPTY_DOMAIN: &[u8] = b"NIAHCIA/MERKLE-EMPTY/V1";
+const MERKLE_LEAF_DOMAIN: &[u8] = b"NIAHCIA/MERKLE-LEAF/V1";
+const MERKLE_NODE_DOMAIN: &[u8] = b"NIAHCIA/MERKLE-NODE/V1";
+
+pub fn transaction_merkle_root<T: AsRef<[u8]>>(transactions: &[T]) -> Hash32 {
+    if transactions.is_empty() {
+        return keccak256(MERKLE_EMPTY_DOMAIN);
+    }
+
+    let mut level = Vec::with_capacity(transactions.len());
+
+    for transaction in transactions {
+        let bytes = transaction.as_ref();
+
+        let mut tx_preimage = Vec::with_capacity(TX_DOMAIN.len() + bytes.len());
+        tx_preimage.extend_from_slice(TX_DOMAIN);
+        tx_preimage.extend_from_slice(bytes);
+        let tx_digest = keccak256(&tx_preimage);
+
+        let mut leaf_preimage = Vec::with_capacity(MERKLE_LEAF_DOMAIN.len() + 32);
+        leaf_preimage.extend_from_slice(MERKLE_LEAF_DOMAIN);
+        leaf_preimage.extend_from_slice(&tx_digest);
+        level.push(keccak256(&leaf_preimage));
+    }
+
+    while level.len() > 1 {
+        let mut next = Vec::with_capacity(level.len().div_ceil(2));
+
+        for pair in level.chunks(2) {
+            let left = pair[0];
+            let right = if pair.len() == 2 { pair[1] } else { pair[0] };
+
+            let mut node_preimage = Vec::with_capacity(MERKLE_NODE_DOMAIN.len() + 64);
+            node_preimage.extend_from_slice(MERKLE_NODE_DOMAIN);
+            node_preimage.extend_from_slice(&left);
+            node_preimage.extend_from_slice(&right);
+            next.push(keccak256(&node_preimage));
+        }
+
+        level = next;
+    }
+
+    level[0]
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionPayloadCommitments {
     pub execution_parent_hash: Hash32,
@@ -139,7 +185,73 @@ pub fn keccak256(bytes: &[u8]) -> Hash32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{BlockHeaderV1, ExecutionPayloadCommitments, BLOCK_HEADER_V1_LEN};
+    use super::{
+        transaction_merkle_root, BlockHeaderV1, ExecutionPayloadCommitments, BLOCK_HEADER_V1_LEN,
+    };
+
+    #[test]
+    fn transaction_merkle_empty_root_is_exact() {
+        let transactions: Vec<Vec<u8>> = Vec::new();
+
+        assert_eq!(
+            transaction_merkle_root(&transactions),
+            super::keccak256(b"NIAHCIA/MERKLE-EMPTY/V1")
+        );
+    }
+
+    #[test]
+    fn transaction_merkle_single_leaf_has_no_synthetic_sibling() {
+        let tx = b"native transaction".to_vec();
+
+        let mut tx_preimage = b"NIAHCIA/TX/V1".to_vec();
+        tx_preimage.extend_from_slice(&tx);
+        let tx_digest = super::keccak256(&tx_preimage);
+
+        let mut leaf_preimage = b"NIAHCIA/MERKLE-LEAF/V1".to_vec();
+        leaf_preimage.extend_from_slice(&tx_digest);
+        let expected = super::keccak256(&leaf_preimage);
+
+        assert_eq!(transaction_merkle_root(&[tx]), expected);
+    }
+
+    #[test]
+    fn transaction_merkle_order_is_consensus_significant() {
+        let first = vec![b"tx-a".to_vec(), b"tx-b".to_vec()];
+        let second = vec![b"tx-b".to_vec(), b"tx-a".to_vec()];
+
+        assert_ne!(
+            transaction_merkle_root(&first),
+            transaction_merkle_root(&second)
+        );
+    }
+
+    #[test]
+    fn transaction_merkle_odd_leaf_is_duplicated() {
+        fn leaf(tx: &[u8]) -> [u8; 32] {
+            let mut tx_preimage = b"NIAHCIA/TX/V1".to_vec();
+            tx_preimage.extend_from_slice(tx);
+            let tx_digest = super::keccak256(&tx_preimage);
+
+            let mut leaf_preimage = b"NIAHCIA/MERKLE-LEAF/V1".to_vec();
+            leaf_preimage.extend_from_slice(&tx_digest);
+            super::keccak256(&leaf_preimage)
+        }
+
+        fn node(left: [u8; 32], right: [u8; 32]) -> [u8; 32] {
+            let mut preimage = b"NIAHCIA/MERKLE-NODE/V1".to_vec();
+            preimage.extend_from_slice(&left);
+            preimage.extend_from_slice(&right);
+            super::keccak256(&preimage)
+        }
+
+        let transactions = vec![b"tx-a".to_vec(), b"tx-b".to_vec(), b"tx-c".to_vec()];
+
+        let left = node(leaf(b"tx-a"), leaf(b"tx-b"));
+        let right = node(leaf(b"tx-c"), leaf(b"tx-c"));
+        let expected = node(left, right);
+
+        assert_eq!(transaction_merkle_root(&transactions), expected);
+    }
 
     fn sample_execution() -> ExecutionPayloadCommitments {
         ExecutionPayloadCommitments {

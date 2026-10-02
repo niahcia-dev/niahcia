@@ -467,7 +467,8 @@ Exclusion is a preimage rule, not a renumbering rule.
 6   value
 7   gas_limit
 8   max_fee_per_gas
-9   data
+9   max_priority_fee_per_gas
+10  data
 ```
 
 ## SignedNativeTransaction — object type 0x0011

@@ -42,7 +42,8 @@ Its NCE/1 payload fields are permanently assigned:
     6   value
     7   gas_limit
     8   max_fee_per_gas
-    9   data
+    9   max_priority_fee_per_gas
+    10  data
 
 The envelope carries `schema_version = 1`; schema version is not duplicated in
 the payload.
@@ -52,8 +53,9 @@ NCE/1 unsigned-integer encoding.
 
 `target_payload` and `data` use definite-length CBOR byte strings.
 
-`value` and `max_fee_per_gas` are integer `aniah` quantities represented as
-exactly 16 unsigned big-endian bytes inside NCE/1 CBOR byte strings.
+`value`, `max_fee_per_gas`, and `max_priority_fee_per_gas` are integer
+`aniah` quantities represented as exactly 16 unsigned big-endian bytes inside
+NCE/1 CBOR byte strings.
 
 ## Actions
 
@@ -168,7 +170,13 @@ to that operation according to the active contract-runtime rules.
 
 `gas_limit` is the maximum execution gas authorized by the sender.
 
-`max_fee_per_gas` is an integer `aniah` quantity.
+`max_fee_per_gas` and `max_priority_fee_per_gas` are integer `aniah`
+quantities.
+
+`max_fee_per_gas` caps the sender's total fee per gas unit.
+
+`max_priority_fee_per_gas` caps the sender-authorized priority fee per gas unit
+paid to the canonical CPU-PoW block producer under the active V1 fee policy.
 
 The maximum authorized execution charge is:
 
@@ -442,3 +450,24 @@ vectors MUST cover at least:
 
 Until those vectors and the dependent native state-transition rules are locked,
 this specification remains Candidate.
+
+## Native Transfer V1 gas schedule
+
+A successful `Transfer` action consumes exactly `1,000` gas.
+
+This is a NIAHCIA-native consensus accounting unit. It is not inherited from
+Ethereum, EVM, Reth, CPU instruction counts, elapsed execution time, or host
+performance.
+
+For V1, `gas_limit >= 1,000` is required for a successful native transfer.
+
+A transfer with `gas_limit < 1,000` is invalid and MUST NOT mutate native
+state, consume the sender nonce, transfer value, charge a fee, credit a
+producer, or record a protocol burn.
+
+A successful native transfer always reports exactly `1,000` gas used.
+Unused gas capacity is not charged.
+
+Contract calls and contract creation do not inherit this fixed transfer cost.
+Their metering is defined separately by the applicable native contract
+execution protocol.
