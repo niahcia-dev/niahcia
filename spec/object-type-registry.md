@@ -31,6 +31,7 @@ NCE/1 top-level envelopes include a permanent numeric `object_type`.
 0x0014  ComputeChannelOpenPayload
 0x0015  ComputeChannelSettlePayload
 0x0016  ComputeChannelRefundPayload
+0x0017  NativeBlockBody
 
 0x0100  ModelManifest
 0x0101  MemoryManifest
