@@ -5,6 +5,7 @@ mod engine;
 mod mining_rpc;
 pub mod monetary;
 pub mod monetary_state;
+pub mod native_execution;
 pub mod native_rpc;
 mod p2p;
 pub mod pow;
