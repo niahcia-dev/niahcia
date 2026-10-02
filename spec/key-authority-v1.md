@@ -203,3 +203,24 @@ Succession may change governance/controller relationships; key recovery/rotation
 - succession state machine;
 - key escrow (no default escrow is intended);
 - exact on-chain authority storage/commitment mechanism.
+
+
+## Wallet-local authority tree
+
+A V1 AI-capable wallet SHOULD be able to derive or manage distinct authority roles without requiring their common ownership to be publicly visible.
+
+Conceptually:
+
+```text
+wallet root authority
+  +-- payment authority
+  +-- chat/session authority
+  +-- job authority
+  +-- Agent capability authority
+  +-- content/memory encryption authority
+  +-- recovery authority
+```
+
+The wallet may know these roles share one local owner. The protocol MUST NOT require that every worker, storage provider, portal, or observer can prove that relationship.
+
+A temporary session/job authority may hold only the capability necessary to authenticate a Job and receive its result. It MUST NOT thereby gain unrestricted spending or wallet-control authority.
