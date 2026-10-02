@@ -153,7 +153,7 @@ fn admit_transactions_v3(
     Ok(admitted)
 }
 
-fn sync_mempool_v3(stream: &mut TcpStream, mempool: &SharedNativeMempoolV1) -> Result<(), String> {
+fn sync_mempool_v3(stream: &mut TcpStream, mempool: &SharedNativeMempoolV1) -> Result<bool, String> {
     let local_inventory = local_inventory_v3(mempool)?;
     write_message_v3(&mut *stream, &MessageV3::TxInv(local_inventory))?;
 
@@ -182,7 +182,7 @@ fn sync_mempool_v3(stream: &mut TcpStream, mempool: &SharedNativeMempoolV1) -> R
         MessageV3::Tx(transactions) => transactions,
         _ => return Err("P2P V3 peer did not answer GetTx with Tx".into()),
     };
-    admit_transactions_v3(mempool, &remote_transactions).map(|_| ())
+    admit_transactions_v3(mempool, &remote_transactions)
 }
 
 fn serve_peer_v3(
@@ -193,7 +193,9 @@ fn serve_peer_v3(
     fee_recipient: Address20,
 ) -> Result<(), String> {
     exchange_hello_v3(stream.try_clone().map_err(io_error)?, state)?;
-    sync_mempool_v3(&mut stream, mempool)?;
+    if sync_mempool_v3(&mut stream, mempool)? && state.best_chain_head()?.is_some() {
+        install_next_native_work_from_mempool(work, state, mempool, fee_recipient)?;
+    }
 
     loop {
         match read_message_v3(&mut stream) {
@@ -240,7 +242,9 @@ fn sync_peer_v3(
     fee_recipient: Address20,
 ) -> Result<(), String> {
     let remote = exchange_hello_v3(stream.try_clone().map_err(io_error)?, state)?;
-    sync_mempool_v3(&mut stream, mempool)?;
+    if sync_mempool_v3(&mut stream, mempool)? && state.best_chain_head()?.is_some() {
+        install_next_native_work_from_mempool(work, state, mempool, fee_recipient)?;
+    }
 
     let Some(remote_height) = remote.best_height else {
         return Ok(());
