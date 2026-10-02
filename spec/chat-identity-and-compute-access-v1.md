@@ -17,6 +17,8 @@ Niahcia Chat is a wallet capability. Websites such as niahcia.com are portals to
 6. Conversation plaintext MUST NOT be committed to the public blockchain by this protocol.
 7. Wallet spending keys MUST NOT be used directly as chat-content encryption keys.
 8. Pricing, model names, free-tier limits, storage providers, and user interfaces MUST NOT be hard-coded into consensus.
+9. Ordinary chat/inference MUST NOT require a decentralized storage network.
+10. V1 private conversation history and Agent memory are wallet/client-local by default unless the user explicitly selects remote persistence.
 
 ## Wallet identity and portal access
 
@@ -49,17 +51,32 @@ ChatSessionV1
 
 The descriptor contains only information required for identity, discovery, authorization, synchronization, and integrity. Conversation plaintext is not part of it. A session MAY remain entirely local and need not be registered on-chain.
 
+`storage_descriptor` is optional. Its absence means the session relies on wallet/client-local persistence and does not require a NIAHCIA storage provider.
+
+## Local-first conversation and memory state
+
+V1 defaults to wallet/client-local encrypted persistence. The wallet owns the durable conversation history and private Agent memory, chooses what context is relevant to a job, and sends only that selected context to the chosen compute worker.
+
+A normal inference flow therefore does not require storage/service nodes:
+
+```text
+wallet-local encrypted history/memory
+  -> select required context
+  -> encrypted job transport
+  -> compute worker
+  -> encrypted result return
+  -> wallet updates local encrypted state
+```
+
+Remote or decentralized persistence is an optional extension for cross-device synchronization, replicated durability, large artifacts, backups, model distribution, or long-lived autonomous Agents.
+
 ## Encrypted conversation state
 
 Persistent private chat content MUST be encrypted by default, including prompts, responses, conversation titles, attachments, persistent memories, agent state, private tool results, and private conversation indexes and metadata where practical.
 
-Encryption and user key ownership are foundational storage properties, not features to retrofit after plaintext histories exist. Implementations MUST NOT introduce a persistent plaintext conversation-storage phase, including during prototypes or early deployments. Persistent representations of private conversation content MUST be designed around encrypted envelopes and explicit key ownership from their first implementation.
-
-This requirement applies to secondary persistence paths as well as the primary conversation store. Implementations MUST NOT intentionally persist private conversation plaintext in backups, database journals or WAL files, search indexes, caches, telemetry, analytics, crash reports, attachment stores, memory stores, agent checkpoints, synchronization replicas, or similar durable artifacts. Where temporary plaintext is required for authorized inference or local processing, it MUST remain ephemeral and subject to the inference privacy boundary below.
-
 Each conversation SHOULD use an independent random content-encryption key rather than one permanent wallet-wide chat key. Conversation keys MAY be wrapped for authorized devices or identities.
 
-The design SHOULD support key rotation, device authorization/revocation, selective sharing, export, migration, and recovery without exposing spending keys. Remote storage providers SHOULD receive ciphertext and the minimum metadata necessary for storage/synchronization. No consensus rule SHALL require a single conversation storage provider.
+The design SHOULD support key rotation, device authorization/revocation, selective sharing, export, migration, and recovery without exposing spending keys. When remote storage is explicitly selected, storage providers SHOULD receive ciphertext and the minimum metadata necessary for storage/synchronization. No consensus rule SHALL require any conversation storage provider.
 
 ## On-chain privacy boundary
 
