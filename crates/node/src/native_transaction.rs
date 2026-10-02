@@ -277,7 +277,7 @@ impl SignedNativeTransactionV1 {
         let network_id = u8::try_from(self.body.network_id)
             .map_err(|_| "native transaction network_id does not fit one byte".to_string())?;
 
-        if !matches!(network_id, 0x00 | 0x01 | 0x02) {
+        if !matches!(network_id, 0x00..=0x02) {
             return Err(format!(
                 "unsupported native transaction network_id: {}",
                 self.body.network_id
