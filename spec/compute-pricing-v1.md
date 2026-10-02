@@ -210,3 +210,14 @@ hard max_price
 ```
 
 Prefer TOKEN_METERED once canonical tokenizer/output accounting is available. Avoid time billing until trustworthy runtime metering is specified.
+
+
+## Exposure policy
+
+ComputePricingV1 defines the price; ComputePaymentRiskV1 defines how much unpaid/unfinished exposure a worker is expected to accept.
+
+A worker MAY advertise or enforce a local one-shot exposure ceiling.
+
+A Job above that ceiling may require RESERVED or, in the future, STAGED payment handling.
+
+This does not permit a worker to increase the Job price; it only determines whether the worker accepts the Job under the proposed payment-risk mode.
