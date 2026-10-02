@@ -3,7 +3,6 @@ use crate::consensus::{
     devnet_next_target, randomx_seed, randomx_seed_height, validate_timestamp,
     DEVNET_GENESIS_TARGET, MEDIAN_TIME_WINDOW,
 };
-use crate::engine::EngineClient;
 use crate::native_execution::{
     execute_block_v1, NativeBlockExecutionResultV1, NativeExecutionContextV1, NativeStateV1,
 };
@@ -158,7 +157,6 @@ pub fn spawn(
     bind: SocketAddr,
     work: WorkManager,
     state: Arc<StateStore>,
-    engine: Arc<EngineClient>,
     fee_recipient: Address20,
     running: Arc<AtomicBool>,
 ) -> Result<thread::JoinHandle<()>, String> {
@@ -174,8 +172,7 @@ pub fn spawn(
         while running.load(Ordering::SeqCst) {
             match listener.accept() {
                 Ok((stream, peer)) => {
-                    if let Err(e) = handle_connection(stream, &work, &state, &engine, fee_recipient)
-                    {
+                    if let Err(e) = handle_connection(stream, &work, &state, fee_recipient) {
                         warn!(%peer, error = %e, "mining RPC request failed");
                     }
                 }
@@ -195,7 +192,6 @@ fn handle_connection(
     mut stream: TcpStream,
     work: &WorkManager,
     state: &StateStore,
-    engine: &EngineClient,
     fee_recipient: Address20,
 ) -> Result<(), String> {
     stream
@@ -263,8 +259,7 @@ fn handle_connection(
                 })
             }
         }
-        "pow_submitWork" => match submit_work(&request, work, state, Some((engine, fee_recipient)))
-        {
+        "pow_submitWork" => match submit_work(&request, work, state, Some(fee_recipient)) {
             Ok(result) => json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -307,7 +302,7 @@ fn submit_work(
     request: &Value,
     work: &WorkManager,
     state: &StateStore,
-    engine: Option<(&EngineClient, Address20)>,
+    fee_recipient: Option<Address20>,
 ) -> Result<Value, String> {
     let params = request
         .get("params")
@@ -340,7 +335,7 @@ fn submit_work(
         state.insert_native_block_with_execution_outcome(header, &execution, &native_state)?;
 
     if outcome.current_best == outcome.block.block_id() {
-        if let Some((_engine, fee_recipient)) = engine {
+        if let Some(fee_recipient) = fee_recipient {
             install_next_native_work(work, state, fee_recipient)?;
         } else {
             work.mark_solved(generation, template_id)?;

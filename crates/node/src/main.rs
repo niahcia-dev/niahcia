@@ -300,7 +300,6 @@ fn main() -> ExitCode {
         config.mining_rpc_bind,
         work_manager.clone(),
         state.clone(),
-        engine.clone(),
         fee_recipient,
         running.clone(),
     ) {
