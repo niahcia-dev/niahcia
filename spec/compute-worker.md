@@ -98,3 +98,12 @@ A worker MAY reject future Jobs when an offer expires or capacity changes, but a
 `endpoint_descriptor` SHOULD follow AI Transport V1 and commit an authenticated, expiring transport endpoint plus worker transport public key/protocol version.
 
 The worker's advertised identity/transport key authenticates the endpoint. Fresh per-ComputeSession traffic keys are derived during transport establishment; long-lived worker identity keys are not direct chat-content encryption keys.
+
+
+## Discovery propagation
+
+Workers publish signed, expiring advertisements for relay under Worker Discovery V1.
+
+A discovery relay may distribute a worker's advertisement but cannot modify its signed contents or become authoritative for the worker.
+
+The worker SHOULD refresh its advertisement before expiry while it wishes to remain discoverable/eligible.
