@@ -13,6 +13,7 @@ pub mod nce;
 mod p2p;
 pub mod p2p_transaction_relay;
 pub mod p2p_v3_codec;
+pub mod p2p_v3_frame;
 pub mod pow;
 pub mod service;
 pub mod state;
