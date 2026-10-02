@@ -18,6 +18,14 @@ It answers the higher-level questions that storage challenges alone do not answe
 
 A StorageAgreement is an economic/service contract. It is **not** chain-consensus authority and does not give storage providers fork-choice or finality power.
 
+## Optional-service boundary
+
+A StorageAgreement is never required merely to submit or execute an AI Job.
+
+The minimum NIAHCIA compute path uses wallet/client-local private state and direct encrypted job/result transport. This specification applies only when a user, Agent, application, or protocol component explicitly requests remote durability, replication, retrieval guarantees, or another storage service.
+
+Loss or complete absence of storage providers MUST NOT prevent base-chain validation, native value transfer, or ordinary direct wallet-to-worker inference where the required model/input is otherwise available.
+
 ## Candidate canonical fields
 
 ```text
