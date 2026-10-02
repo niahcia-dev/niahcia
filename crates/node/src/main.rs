@@ -10,6 +10,7 @@ pub mod native_mempool;
 pub mod native_rpc;
 pub mod native_state_v2;
 pub mod native_transaction;
+pub mod native_transaction_v2;
 pub mod nce;
 mod p2p;
 pub mod p2p_transaction_relay;
