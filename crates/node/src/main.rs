@@ -4,8 +4,8 @@ pub mod consensus;
 mod mining_rpc;
 pub mod monetary;
 pub mod monetary_state;
-pub mod native_mempool;
 pub mod native_execution;
+pub mod native_mempool;
 pub mod native_rpc;
 pub mod native_transaction;
 pub mod nce;
@@ -257,9 +257,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let native_mempool = Arc::new(RwLock::new(NativeMempoolV1::new(
-        AddressNetwork::Devnet,
-    )));
+    let native_mempool = Arc::new(RwLock::new(NativeMempoolV1::new(AddressNetwork::Devnet)));
 
     let running = Arc::new(AtomicBool::new(true));
 
