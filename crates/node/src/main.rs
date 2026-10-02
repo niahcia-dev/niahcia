@@ -5,6 +5,7 @@ mod mining_rpc;
 pub mod monetary;
 pub mod monetary_state;
 pub mod native_block_body;
+pub mod native_compute_payloads;
 pub mod native_execution;
 pub mod native_mempool;
 pub mod native_rpc;
