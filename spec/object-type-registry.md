@@ -22,6 +22,8 @@ NCE/1 top-level envelopes include a permanent numeric `object_type`.
 0x000B  MemoryDescriptor
 0x000C  PaymentPlan
 0x000D  ResultCommitment
+0x000E  ComputeChannel
+0x000F  PaymentAuthorization
 0x0010  NativeTransactionBody
 0x0011  SignedNativeTransaction
 
