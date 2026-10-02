@@ -81,6 +81,7 @@ It validates at least:
 - receipt channel_id matches;
 - worker/operator match the channel;
 - channel signature is valid;
+- authenticated Settle transaction sender equals the committed worker_payment_account;
 - receipt sequence/finality rules are satisfied;
 - cumulative_spent <= authorized_amount;
 - cumulative_spent is not below any already accepted settlement state;
@@ -96,6 +97,12 @@ wallet refund  = authorized_amount - cumulative_spent -> funding_account
 and moves the channel to SETTLED.
 
 A settled channel cannot be settled again.
+
+### Older-receipt front-running
+
+A funding wallet necessarily possesses the receipts it signed. If arbitrary accounts could submit Settle, the wallet could submit an older, lower cumulative receipt before the worker submits the newest receipt and terminally underpay the worker.
+
+For V1, Settle is therefore worker-authenticated: the native transaction sender MUST equal the channel's committed `worker_payment_account`.
 
 ## Claim/refund race prevention
 
