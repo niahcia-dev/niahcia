@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 pub struct NodeConfig {
     pub network: String,
     pub data_dir: PathBuf,
-    pub reth_engine_api: String,
     pub reth_http_rpc: String,
     pub fee_recipient: String,
     pub reth_jwt_path: PathBuf,
@@ -25,7 +24,6 @@ impl Default for NodeConfig {
         Self {
             network: "devnet".to_string(),
             data_dir: PathBuf::from("./data"),
-            reth_engine_api: "http://127.0.0.1:8551".to_string(),
             reth_http_rpc: "http://127.0.0.1:8545".to_string(),
             fee_recipient: "0x0000000000000000000000000000000000000000".to_string(),
             reth_jwt_path: PathBuf::from("./jwt.hex"),
@@ -54,9 +52,6 @@ impl NodeConfig {
         }
         if let Ok(v) = env::var("NIAHCIA_DATA_DIR") {
             cfg.data_dir = PathBuf::from(v);
-        }
-        if let Ok(v) = env::var("NIAHCIA_RETH_ENGINE_API") {
-            cfg.reth_engine_api = v;
         }
         if let Ok(v) = env::var("NIAHCIA_RETH_HTTP_RPC") {
             cfg.reth_http_rpc = v;
@@ -151,12 +146,6 @@ impl NodeConfig {
                 "unsupported network '{}'; this pre-alpha node currently defines consensus parameters only for devnet",
                 self.network
             ));
-        }
-
-        if !(self.reth_engine_api.starts_with("http://")
-            || self.reth_engine_api.starts_with("https://"))
-        {
-            return Err("reth_engine_api must start with http:// or https://".into());
         }
 
         if !(self.reth_http_rpc.starts_with("http://")

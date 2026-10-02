@@ -1,7 +1,6 @@
 pub mod address;
 mod config;
 pub mod consensus;
-mod engine;
 mod mining_rpc;
 pub mod monetary;
 pub mod monetary_state;
@@ -18,7 +17,6 @@ pub mod work;
 use address::AddressNetwork;
 use config::NodeConfig;
 use consensus::{randomx_seed, randomx_seed_height, DEVNET_GENESIS_TARGET};
-use engine::EngineClient;
 use mining_rpc::WorkManager;
 use native_execution::{execute_block_v1, NativeExecutionContextV1, NativeStateV1};
 use state::StateStore;
@@ -74,7 +72,6 @@ fn main() -> ExitCode {
 
     info!(version = VERSION, network = %config.network, "starting NIAHCIA");
     info!(data_dir = %config.data_dir.display(), "data directory");
-    info!(reth_engine_api = %config.reth_engine_api, "Reth Engine API");
     info!(reth_http_rpc = %config.reth_http_rpc, "Reth public RPC");
     info!(reth_jwt_path = %config.reth_jwt_path.display(), "Reth JWT path");
     info!(mining_rpc_bind = %config.mining_rpc_bind, "mining RPC bind");
@@ -103,31 +100,6 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-
-    let engine = match EngineClient::new(
-        config.reth_engine_api.clone(),
-        config.reth_http_rpc.clone(),
-        &config.reth_jwt_path,
-    ) {
-        Ok(engine) => Arc::new(engine),
-        Err(error) => {
-            error!(%error, "failed to initialize Reth Engine API client");
-            return ExitCode::FAILURE;
-        }
-    };
-
-    match engine.exchange_capabilities() {
-        Ok(capabilities) => {
-            info!(
-                capabilities = ?capabilities,
-                "Reth Engine API capability exchange complete"
-            );
-        }
-        Err(error) => {
-            error!(%error, "Reth Engine API capability exchange failed");
-            return ExitCode::FAILURE;
-        }
-    }
 
     let state_path = config.data_dir.join("state.redb");
     let state = match StateStore::open(&state_path) {
