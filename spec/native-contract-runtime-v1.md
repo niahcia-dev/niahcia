@@ -91,6 +91,8 @@ The candidate contract-capable successor state is NativeStateV3, which commits t
 
 Contract storage is fixed-width 32-byte keys and 32-byte values in canonical ascending-key order. Contract code remains opaque at this layer so VM selection remains a separate decision.
 
+Native Contract State V1 is vectored by `test-vectors/native-contract-state-v1.json`; the vector locks contract-record bytes/hash, contracts root, NativeStateV3 root, and NativeStateV3 snapshot bytes without selecting a VM.
+
 ## State atomicity
 
 Contract execution must use deterministic transactional semantics.

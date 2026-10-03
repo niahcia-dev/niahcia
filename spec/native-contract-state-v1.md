@@ -1,6 +1,6 @@
 # NIAHCIA Native Contract State V1
 
-Status: **CANDIDATE / REVIEW REQUIRED / INACTIVE**
+Status: **CANDIDATE / VECTORED / REVIEW REQUIRED / INACTIVE**
 
 ## Purpose
 
@@ -152,6 +152,24 @@ Trailing bytes are invalid.
 Insertion of a contract whose derived Contract Address V1 payload already has persistent contract state is invalid.
 
 The existing contract record is never overwritten or merged by ContractCreate.
+
+## Locked interoperability vector
+
+The canonical fixture is:
+
+`test-vectors/native-contract-state-v1.json`
+
+and is enforced by the Rust `locked_contract_state_vector_matches_json` test.
+
+It locks:
+
+- ContractStateV1 canonical bytes;
+- ContractStateV1 record hash;
+- ordered contracts root;
+- NativeStateV3 root;
+- NativeStateV3 canonical snapshot bytes.
+
+The fixture's `runtime_id = 1` is only a state-format test value. It does not select, define, or activate a VM.
 
 ## Runtime boundary
 
