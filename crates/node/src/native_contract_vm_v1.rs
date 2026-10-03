@@ -180,7 +180,15 @@ pub enum Nvm1Value {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Nvm1Halt {
     Stop,
+    Return(Vec<u8>),
+    Revert(Vec<u8>),
     Trap(String),
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Nvm1ExecutionContext {
+    pub input: Vec<u8>,
+    pub call_value: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -197,6 +205,13 @@ struct DecodedInstruction {
 }
 
 pub fn execute_nvm1_core(code: &[u8]) -> Result<Nvm1ExecutionResult, String> {
+    execute_nvm1_core_with_context(code, &Nvm1ExecutionContext::default())
+}
+
+pub fn execute_nvm1_core_with_context(
+    code: &[u8],
+    context: &Nvm1ExecutionContext,
+) -> Result<Nvm1ExecutionResult, String> {
     let validated = validate_nvm1_code(code)?;
     validate_nvm1_jump_targets(code)?;
     let instructions = decode_instructions(&validated.instruction_bytes)?;
@@ -342,7 +357,31 @@ pub fn execute_nvm1_core(code: &[u8]) -> Result<Nvm1ExecutionResult, String> {
                     pc += 1;
                 }
             }
-            0x10..=0x41 => {
+            0x10 => {
+                let input_len = u64::try_from(context.input.len())
+                    .map_err(|_| "NVM1 input length does not fit U64".to_string())?;
+                if let Some(result) = push_value(
+                    &mut stack,
+                    validated.header.max_stack_items,
+                    Nvm1Value::U64(input_len),
+                    executed,
+                ) {
+                    return Ok(result);
+                }
+                pc += 1;
+            }
+            0x13 => {
+                if let Some(result) = push_value(
+                    &mut stack,
+                    validated.header.max_stack_items,
+                    Nvm1Value::U64(context.call_value),
+                    executed,
+                ) {
+                    return Ok(result);
+                }
+                pc += 1;
+            }
+            0x11 | 0x12 | 0x20..=0x41 => {
                 return Ok(trap_result(
                     stack,
                     executed,
@@ -479,6 +518,21 @@ mod tests {
         assert_eq!(
             deferred.halt,
             Nvm1Halt::Trap("NVM1 opcode 0x10 execution semantics are not active".to_string())
+        );
+    }
+
+    #[test]
+    fn context_exposes_input_length_and_call_value() {
+        let code = module(3, 2, &[0x10, 0x13, 0x00]);
+        let context = Nvm1ExecutionContext {
+            input: vec![1, 2, 3, 4, 5],
+            call_value: 42,
+        };
+        let result = execute_nvm1_core_with_context(&code, &context).unwrap();
+        assert_eq!(result.halt, Nvm1Halt::Stop);
+        assert_eq!(
+            result.stack,
+            vec![Nvm1Value::U64(5), Nvm1Value::U64(42)]
         );
     }
 
