@@ -114,7 +114,9 @@ pub fn execute_inactive_versioned_block_v3(
         let transition = match transaction {
             VersionedSignedNativeTransaction::V1(transaction) => {
                 if transaction.body.action != NativeActionV1::Transfer {
-                    return Err("inactive V3 block executor does not execute V1 contract actions".into());
+                    return Err(
+                        "inactive V3 block executor does not execute V1 contract actions".into(),
+                    );
                 }
                 let outcome = execute_transfer_v1(
                     next.base_mut().accounts_mut(),
@@ -136,12 +138,13 @@ pub fn execute_inactive_versioned_block_v3(
             }
             VersionedSignedNativeTransaction::V2(transaction) => match transaction.body.action {
                 NativeActionV2::Transfer => {
-                    let outcome = execute_transfer_v2(next.base_mut(), &transaction, network, context)?;
+                    let outcome =
+                        execute_transfer_v2(next.base_mut(), &transaction, network, context)?;
                     producer_priority_fee = producer_priority_fee
-                    .checked_add(outcome.producer_priority_fee)
-                    .ok_or_else(|| {
-                        "inactive V3 block producer priority fee overflow".to_string()
-                    })?;
+                        .checked_add(outcome.producer_priority_fee)
+                        .ok_or_else(|| {
+                            "inactive V3 block producer priority fee overflow".to_string()
+                        })?;
                     InactiveVersionedTransactionTransitionV3::V2Transfer {
                         transaction_id: transaction.tx_id()?,
                         state_root_before: before,
@@ -149,7 +152,9 @@ pub fn execute_inactive_versioned_block_v3(
                         outcome,
                     }
                 }
-                NativeActionV2::ComputeChannelOpen | NativeActionV2::ComputeChannelSettle | NativeActionV2::ComputeChannelRefund => {
+                NativeActionV2::ComputeChannelOpen
+                | NativeActionV2::ComputeChannelSettle
+                | NativeActionV2::ComputeChannelRefund => {
                     let result = execute_inactive_compute_transaction_with_fee_v2(
                         next.base_mut(),
                         &transaction,
