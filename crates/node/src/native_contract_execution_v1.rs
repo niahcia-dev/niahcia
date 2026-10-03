@@ -219,18 +219,15 @@ pub fn execute_inactive_accepted_contract_create_v1(
             sender_before.nonce, transaction.body.nonce
         ));
     }
-    if transaction.body.max_fee_per_gas < context.base_fee_per_gas {
-        return Err(format!(
-            "native transaction V2 max_fee_per_gas {} is below base_fee_per_gas {}",
-            transaction.body.max_fee_per_gas, context.base_fee_per_gas
-        ));
-    }
-
-    let max_execution_charge = transaction
-        .body
-        .max_fee_per_gas
-        .checked_mul(transaction.body.gas_limit as u128)
-        .ok_or_else(|| "ContractCreate maximum execution charge overflow".to_string())?;
+    let preflight_fee = contract_fee_accounting_v1(
+        transaction.body.gas_limit,
+        0,
+        transaction.body.max_fee_per_gas,
+        transaction.body.max_priority_fee_per_gas,
+        context.base_fee_per_gas,
+        "ContractCreate",
+    )?;
+    let max_execution_charge = preflight_fee.max_execution_charge;
     let required_balance = transaction
         .body
         .value
@@ -267,32 +264,19 @@ pub fn execute_inactive_accepted_contract_create_v1(
     } else {
         transition.execution.gas_used
     };
-    let priority_headroom = transaction
-        .body
-        .max_fee_per_gas
-        .checked_sub(context.base_fee_per_gas)
-        .ok_or_else(|| "ContractCreate priority fee headroom underflow".to_string())?;
-    let priority_fee_per_gas = transaction
-        .body
-        .max_priority_fee_per_gas
-        .min(priority_headroom);
-    let effective_fee_per_gas = context
-        .base_fee_per_gas
-        .checked_add(priority_fee_per_gas)
-        .ok_or_else(|| "ContractCreate effective fee overflow".to_string())?;
-    let base_fee_burned = context
-        .base_fee_per_gas
-        .checked_mul(gas_used as u128)
-        .ok_or_else(|| "ContractCreate base fee burn overflow".to_string())?;
-    let producer_priority_fee = priority_fee_per_gas
-        .checked_mul(gas_used as u128)
-        .ok_or_else(|| "ContractCreate producer priority fee overflow".to_string())?;
-    let actual_fee = base_fee_burned
-        .checked_add(producer_priority_fee)
-        .ok_or_else(|| "ContractCreate actual fee overflow".to_string())?;
-    let unused_fee_reserve = max_execution_charge
-        .checked_sub(actual_fee)
-        .ok_or_else(|| "ContractCreate actual fee exceeds maximum reserve".to_string())?;
+    let fee = contract_fee_accounting_v1(
+        transaction.body.gas_limit,
+        gas_used,
+        transaction.body.max_fee_per_gas,
+        transaction.body.max_priority_fee_per_gas,
+        context.base_fee_per_gas,
+        "ContractCreate",
+    )?;
+    let effective_fee_per_gas = fee.effective_fee_per_gas;
+    let base_fee_burned = fee.base_fee_burned;
+    let producer_priority_fee = fee.producer_priority_fee;
+    let actual_fee = fee.actual_fee;
+    let unused_fee_reserve = fee.unused_fee_reserve;
 
     let contract_created = transition.contract_created;
     let mut next = if contract_created {
@@ -403,17 +387,15 @@ pub fn execute_inactive_accepted_contract_call_v1(
             sender_before.nonce, transaction.body.nonce
         ));
     }
-    if transaction.body.max_fee_per_gas < context.base_fee_per_gas {
-        return Err(format!(
-            "native transaction V2 max_fee_per_gas {} is below base_fee_per_gas {}",
-            transaction.body.max_fee_per_gas, context.base_fee_per_gas
-        ));
-    }
-    let max_execution_charge = transaction
-        .body
-        .max_fee_per_gas
-        .checked_mul(transaction.body.gas_limit as u128)
-        .ok_or_else(|| "ContractCall maximum execution charge overflow".to_string())?;
+    let preflight_fee = contract_fee_accounting_v1(
+        transaction.body.gas_limit,
+        0,
+        transaction.body.max_fee_per_gas,
+        transaction.body.max_priority_fee_per_gas,
+        context.base_fee_per_gas,
+        "ContractCall",
+    )?;
+    let max_execution_charge = preflight_fee.max_execution_charge;
     let required_balance = transaction
         .body
         .value
@@ -453,32 +435,19 @@ pub fn execute_inactive_accepted_contract_call_v1(
         execution.gas_used
     };
 
-    let priority_headroom = transaction
-        .body
-        .max_fee_per_gas
-        .checked_sub(context.base_fee_per_gas)
-        .ok_or_else(|| "ContractCall priority fee headroom underflow".to_string())?;
-    let priority_fee_per_gas = transaction
-        .body
-        .max_priority_fee_per_gas
-        .min(priority_headroom);
-    let effective_fee_per_gas = context
-        .base_fee_per_gas
-        .checked_add(priority_fee_per_gas)
-        .ok_or_else(|| "ContractCall effective fee overflow".to_string())?;
-    let base_fee_burned = context
-        .base_fee_per_gas
-        .checked_mul(gas_used as u128)
-        .ok_or_else(|| "ContractCall base fee burn overflow".to_string())?;
-    let producer_priority_fee = priority_fee_per_gas
-        .checked_mul(gas_used as u128)
-        .ok_or_else(|| "ContractCall producer priority fee overflow".to_string())?;
-    let actual_fee = base_fee_burned
-        .checked_add(producer_priority_fee)
-        .ok_or_else(|| "ContractCall actual fee overflow".to_string())?;
-    let unused_fee_reserve = max_execution_charge
-        .checked_sub(actual_fee)
-        .ok_or_else(|| "ContractCall actual fee exceeds maximum reserve".to_string())?;
+    let fee = contract_fee_accounting_v1(
+        transaction.body.gas_limit,
+        gas_used,
+        transaction.body.max_fee_per_gas,
+        transaction.body.max_priority_fee_per_gas,
+        context.base_fee_per_gas,
+        "ContractCall",
+    )?;
+    let effective_fee_per_gas = fee.effective_fee_per_gas;
+    let base_fee_burned = fee.base_fee_burned;
+    let producer_priority_fee = fee.producer_priority_fee;
+    let actual_fee = fee.actual_fee;
+    let unused_fee_reserve = fee.unused_fee_reserve;
 
     let mut next = state.clone();
     if call_succeeded {
