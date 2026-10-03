@@ -1,7 +1,7 @@
 use crate::address::AddressNetwork;
 use crate::native_block_body_v2::{NativeBlockBodyV2, VersionedSignedNativeTransaction};
-use crate::native_compute_execution::{
-    execute_inactive_compute_transaction_v2, InactiveComputeExecutionResultV1,
+use crate::native_compute_fee_v1::{
+    execute_inactive_compute_transaction_with_fee_v2, InactiveComputeFeeExecutionResultV1,
 };
 use crate::native_execution::{
     execute_transfer_v1, NativeExecutionContextV1, NativeTransferOutcomeV1,
@@ -26,7 +26,7 @@ pub enum InactiveVersionedTransactionTransitionV2 {
         state_root_after: Hash32,
         outcome: NativeTransferOutcomeV2,
     },
-    Compute(Box<InactiveComputeExecutionResultV1>),
+    Compute(Box<InactiveComputeFeeExecutionResultV1>),
 }
 
 impl InactiveVersionedTransactionTransitionV2 {
@@ -35,7 +35,7 @@ impl InactiveVersionedTransactionTransitionV2 {
             Self::V1Transfer { transaction_id, .. } | Self::V2Transfer { transaction_id, .. } => {
                 *transaction_id
             }
-            Self::Compute(result) => result.transition.transaction_id(),
+            Self::Compute(result) => result.execution.transition.transaction_id(),
         }
     }
 
@@ -47,7 +47,7 @@ impl InactiveVersionedTransactionTransitionV2 {
             | Self::V2Transfer {
                 state_root_before, ..
             } => *state_root_before,
-            Self::Compute(result) => result.state_root_before,
+            Self::Compute(result) => result.execution.state_root_before,
         }
     }
 
@@ -59,7 +59,7 @@ impl InactiveVersionedTransactionTransitionV2 {
             | Self::V2Transfer {
                 state_root_after, ..
             } => *state_root_after,
-            Self::Compute(result) => result.state_root_after,
+            Self::Compute(result) => result.execution.state_root_after,
         }
     }
 }
@@ -77,10 +77,11 @@ pub struct InactiveVersionedBlockTransitionV2 {
 /// proof. This is not the final V2 execution commitment and is deliberately
 /// disconnected from active mempool/P2P/mining.
 ///
-/// V1/V2 Transfer retain the active V1 fee rules. Compute-channel actions are
-/// accepted only with zero placeholder gas/fee fields until compute intrinsic
-/// gas is explicitly specified. ContractCall/ContractCreate remain rejected
-/// until the native smart-contract runtime is specified and activated.
+/// V1/V2 Transfer retain the active V1 fee rules. Compute-channel actions use
+/// the candidate deterministic ComputeChannel intrinsic-gas schedule and the
+/// same base-fee/priority-fee accounting shape as native transfers.
+/// ContractCall/ContractCreate remain rejected until the required native
+/// smart-contract runtime is specified and activated.
 pub fn execute_inactive_versioned_block_v2(
     state: &mut NativeStateV2,
     body: &NativeBlockBodyV2,
@@ -155,24 +156,23 @@ pub fn execute_inactive_versioned_block_v2(
                     NativeActionV2::ComputeChannelOpen
                     | NativeActionV2::ComputeChannelSettle
                     | NativeActionV2::ComputeChannelRefund => {
-                        if transaction.body.gas_limit != 0
-                            || transaction.body.max_fee_per_gas != 0
-                            || transaction.body.max_priority_fee_per_gas != 0
-                        {
-                            return Err(
-                                "inactive compute execution requires zero placeholder gas/fee fields until the compute gas schedule is specified"
-                                    .into(),
-                            );
-                        }
+                        let result = execute_inactive_compute_transaction_with_fee_v2(
+                            &mut next,
+                            &transaction,
+                            network,
+                            current_height,
+                            NativeExecutionContextV1 {
+                                base_fee_per_gas,
+                                cpu_producer: body.producer_fee_recipient,
+                            },
+                        )?;
+                        producer_priority_fee = producer_priority_fee
+                            .checked_add(result.fee.producer_priority_fee)
+                            .ok_or_else(|| {
+                                "inactive V2 block producer priority fee overflow".to_string()
+                            })?;
 
-                        InactiveVersionedTransactionTransitionV2::Compute(Box::new(
-                            execute_inactive_compute_transaction_v2(
-                                &mut next,
-                                &transaction,
-                                network,
-                                current_height,
-                            )?,
-                        ))
+                        InactiveVersionedTransactionTransitionV2::Compute(Box::new(result))
                     }
                     NativeActionV2::ContractCall | NativeActionV2::ContractCreate => return Err(
                         "inactive V2 block executor does not yet execute smart-contract actions"
@@ -221,6 +221,7 @@ pub fn execute_inactive_versioned_block_v2(
 mod tests {
     use super::*;
     use crate::native_block_body_v2::VersionedSignedNativeTransaction;
+    use crate::native_compute_fee_v1::NATIVE_COMPUTE_CHANNEL_OPEN_GAS_V1;
     use crate::native_compute_payloads::ComputeChannelOpenPayloadV1;
     use crate::native_execution::{AccountStateV1, NativeStateV1};
     use crate::native_state_v2::ComputeChannelSettlementPolicyV1;
@@ -504,8 +505,8 @@ mod tests {
                 action: NativeActionV2::ComputeChannelOpen,
                 target_payload: Vec::new(),
                 value: 1_000,
-                gas_limit: 0,
-                max_fee_per_gas: 0,
+                gas_limit: NATIVE_COMPUTE_CHANNEL_OPEN_GAS_V1,
+                max_fee_per_gas: 2,
                 max_priority_fee_per_gas: 0,
                 data: open_payload.canonical_bytes().unwrap(),
             },
@@ -569,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    fn compute_nonzero_placeholder_fee_fields_are_rejected_atomically() {
+    fn compute_intrinsic_gas_underflow_is_rejected_atomically() {
         let funding_key = SigningKey::from_slice(&[0x45; 32]).unwrap();
         let channel_key = SigningKey::from_slice(&[0x46; 32]).unwrap();
         let funding = sign_v2(
@@ -632,8 +633,8 @@ mod tests {
                 action: NativeActionV2::ComputeChannelOpen,
                 target_payload: Vec::new(),
                 value: 1_000,
-                gas_limit: 1,
-                max_fee_per_gas: 1,
+                gas_limit: NATIVE_COMPUTE_CHANNEL_OPEN_GAS_V1 - 1,
+                max_fee_per_gas: 2,
                 max_priority_fee_per_gas: 0,
                 data: open_payload.canonical_bytes().unwrap(),
             },
@@ -649,7 +650,7 @@ mod tests {
             execute_inactive_versioned_block_v2(&mut state, &body, AddressNetwork::Devnet, 10, 2)
                 .unwrap_err();
 
-        assert!(error.contains("zero placeholder gas/fee"));
+        assert!(error.contains("gas_limit must be at least 3000"));
         assert_eq!(state, before);
     }
 }

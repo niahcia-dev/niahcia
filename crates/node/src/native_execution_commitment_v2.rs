@@ -306,7 +306,12 @@ pub fn build_inactive_execution_result_v2(
                 outcome.base_fee_burned,
                 outcome.producer_priority_fee,
             ),
-            InactiveVersionedTransactionTransitionV2::Compute(_) => (0, 0, 0, 0),
+            InactiveVersionedTransactionTransitionV2::Compute(result) => (
+                result.fee.gas_used,
+                result.fee.effective_fee_per_gas,
+                result.fee.base_fee_burned,
+                result.fee.producer_priority_fee,
+            ),
         };
 
         gas_used = gas_used

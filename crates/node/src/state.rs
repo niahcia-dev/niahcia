@@ -1681,6 +1681,7 @@ mod tests {
         use crate::address::AddressNetwork;
         use crate::native_block_body_v2::{NativeBlockBodyV2, VersionedSignedNativeTransaction};
         use crate::native_block_execution_v2::execute_inactive_versioned_block_v2;
+        use crate::native_compute_fee_v1::NATIVE_COMPUTE_CHANNEL_OPEN_GAS_V1;
         use crate::native_compute_payloads::ComputeChannelOpenPayloadV1;
         use crate::native_execution_commitment_v2::build_inactive_execution_result_v2;
         use crate::native_state_v2::ComputeChannelSettlementPolicyV1;
@@ -1768,8 +1769,8 @@ mod tests {
                 action: NativeActionV2::ComputeChannelOpen,
                 target_payload: Vec::new(),
                 value: 1_000,
-                gas_limit: 0,
-                max_fee_per_gas: 0,
+                gas_limit: NATIVE_COMPUTE_CHANNEL_OPEN_GAS_V1,
+                max_fee_per_gas: 1,
                 max_priority_fee_per_gas: 0,
                 data: open_payload.canonical_bytes().unwrap(),
             },
