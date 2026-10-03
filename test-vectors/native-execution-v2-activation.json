@@ -1,0 +1,84 @@
+{
+  "schema": "niahcia-native-execution-v2-activation-v1",
+  "status": "locked",
+  "description": "Locked interoperability vector for the inactive Native Execution V1 -> V2 activation and migration boundary. This fixture does not assign a real network activation height.",
+  "fixture_activation_height": 100,
+  "height_rules": [
+    {
+      "height": 99,
+      "relative_height": "H-1",
+      "expected_execution_version": 1
+    },
+    {
+      "height": 100,
+      "relative_height": "H",
+      "expected_execution_version": 2
+    },
+    {
+      "height": 101,
+      "relative_height": "H+1",
+      "expected_execution_version": 2
+    }
+  ],
+  "migration_parent": {
+    "height": 99,
+    "accounts": [
+      {
+        "account_id": "1111111111111111111111111111111111111111",
+        "balance_aniah": "123",
+        "nonce": 7
+      },
+      {
+        "account_id": "2222222222222222222222222222222222222222",
+        "balance_aniah": "456",
+        "nonce": 9
+      }
+    ],
+    "v1_snapshot_hex": "01000000000000000211111111111111111111111111111111111111110000000000000000000000000000007b00000000000000072222222222222222222222222222222222222222000000000000000000000000000001c80000000000000009",
+    "v1_state_root": "7272574bef2b02d69e8431f0550486d8bcf25e7da320de899fc67bee013c5356"
+  },
+  "migrated_activation_state": {
+    "height": 100,
+    "account_count": 2,
+    "channel_count": 0,
+    "empty_channels_root": "eb41b47c5d86515b8a196eb2ae2d208edaf9074b124163983260d0285f1bde06",
+    "v2_state_root": "5910b485bc87ecf07bc358dcd7df55671cfc1d494aee1a3dce8804016703d850",
+    "v2_snapshot_hex": "02000000000000000211111111111111111111111111111111111111110000000000000000000000000000007b00000000000000072222222222222222222222222222222222222222000000000000000000000000000001c800000000000000090000000000000000"
+  },
+  "rejection_cases": [
+    {
+      "height": 99,
+      "proposed_execution_version": 2,
+      "expected": "reject"
+    },
+    {
+      "height": 100,
+      "proposed_execution_version": 1,
+      "expected": "reject"
+    }
+  ],
+  "restart_cases": [
+    {
+      "height": 99,
+      "expected_execution_version": 1
+    },
+    {
+      "height": 100,
+      "expected_execution_version": 2
+    },
+    {
+      "height": 101,
+      "expected_execution_version": 2
+    }
+  ],
+  "reorg_across_activation": {
+    "common_ancestor_height": 98,
+    "detached_heights": [99, 100],
+    "detached_execution_versions": [1, 2],
+    "attached_heights": [99, 100],
+    "attached_execution_versions": [1, 2],
+    "migration_parent_height": 99,
+    "rule": "Execution version is determined by block height relative to H on every branch; the canonical V1 parent at H-1 is migrated independently for the winning branch."
+  },
+  "non_activation_statement": "H=100 is a test-vector fixture only. No devnet, testnet, or mainnet activation height is assigned."
+}

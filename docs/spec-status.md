@@ -37,7 +37,7 @@ This file is a living audit of protocol status. Implementation alone does not ma
 | NativeBlockBody V1 | IMPLEMENTED | Active canonical non-empty block-body path. |
 | NativeBlockBody V2 | IMPLEMENTED (DEV) + INACTIVE | Versioned canonical body for ordered V1/V2 signed transactions; not admitted to active runtime. |
 | Native Execution Commitment V2 | IMPLEMENTED (DEV) + VECTOR LOCKED + REVIEW REQUIRED + INACTIVE | Domain-separated ReceiptV2/ExecutionResultV2 commits transaction schema/action, per-transaction post-state roots, aggregate state/gas/fees. `test-vectors/native-execution-v2.json` locks canonical receipt/result bytes and commitments; activation remains open. |
-| Native Execution V2 activation boundary | IMPLEMENTED (DEV) + CANDIDATE + REVIEW REQUIRED + INACTIVE | Explicit V1-before / V2-at-and-after height rule plus deterministic V1 -> V2 parent-state migration helper. No real activation height is assigned or wired into active runtime. |
+| Native Execution V2 activation boundary | IMPLEMENTED (DEV) + VECTORED + CANDIDATE + REVIEW REQUIRED + INACTIVE | Explicit V1-before / V2-at-and-after height rule plus deterministic V1 -> V2 parent-state migration helper. Locked fixture covers H-1/H/H+1, rejection, restart, and reorg classification. No real activation height is assigned or wired into active runtime. |
 | Native smart-contract runtime | REQUIRED + REVIEW REQUIRED + INACTIVE | Smart contracts are a core protocol requirement. ContractCall/ContractCreate are reserved in NativeTransaction V1, but runtime/state/storage/gas/revert/receipt semantics are not yet implemented. |
 | NativeState V2 | IMPLEMENTED (DEV) + VECTORED + INACTIVE | Accounts + ComputeChannel state; no activation height set. |
 | NativeTransaction V2 | IMPLEMENTED (DEV) + VECTORED + INACTIVE | Explicit ComputeChannel actions; not admitted to active mempool/P2P/mining. |
@@ -124,7 +124,7 @@ The active reference node is native-execution only.
 ## Highest-priority open protocol work
 
 1. Preserve the now-locked NativeReceiptV2 / NativeBlockExecutionResultV2 vectors; incompatible changes require an explicit successor version.
-2. Lock activation/migration vectors and only then choose a concrete network activation parameter; the inactive boundary helper is implemented but intentionally not wired into runtime.
+2. Preserve the locked activation/migration fixture in `test-vectors/native-execution-v2-activation.json`; only after remaining fee/gas and runtime review should a concrete network activation parameter be selected.
 3. Specify the native smart-contract runtime boundary (code format, contract state/storage, deterministic call/create/revert, gas, receipts, persistence, activation) without reintroducing an external EVM dependency.
 4. Review and assign compute intrinsic gas/fee rules before any activation.
 5. Resolve stock miner/pool RandomX interoperability.

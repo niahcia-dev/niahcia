@@ -39,6 +39,20 @@ impl NativeExecutionActivationV2 {
         Ok(height == self.activation_height)
     }
 
+    pub fn validate_execution_version_at_height(
+        self,
+        height: u64,
+        proposed: NativeExecutionVersion,
+    ) -> Result<(), String> {
+        let expected = self.execution_version_at_height(height)?;
+        if proposed != expected {
+            return Err(format!(
+                "native execution version mismatch at height {height}: expected {expected:?}, found {proposed:?}"
+            ));
+        }
+        Ok(())
+    }
+
     pub fn migrate_parent_state(
         self,
         parent_height: u64,
@@ -113,6 +127,110 @@ mod tests {
 
         assert_eq!(v2.accounts(), &v1);
         assert_eq!(v2.channel_count(), 0);
+    }
+
+    #[test]
+    fn locked_activation_migration_interoperability_vector() {
+        let activation = NativeExecutionActivationV2 {
+            activation_height: 100,
+        };
+
+        assert_eq!(
+            activation.execution_version_at_height(99).unwrap(),
+            NativeExecutionVersion::V1
+        );
+        assert_eq!(
+            activation.execution_version_at_height(100).unwrap(),
+            NativeExecutionVersion::V2
+        );
+        assert_eq!(
+            activation.execution_version_at_height(101).unwrap(),
+            NativeExecutionVersion::V2
+        );
+
+        activation
+            .validate_execution_version_at_height(99, NativeExecutionVersion::V1)
+            .unwrap();
+        activation
+            .validate_execution_version_at_height(100, NativeExecutionVersion::V2)
+            .unwrap();
+        assert!(activation
+            .validate_execution_version_at_height(99, NativeExecutionVersion::V2)
+            .unwrap_err()
+            .contains("expected V1"));
+        assert!(activation
+            .validate_execution_version_at_height(100, NativeExecutionVersion::V1)
+            .unwrap_err()
+            .contains("expected V2"));
+
+        let mut parent = NativeStateV1::default();
+        parent.set_account(
+            [0x11; 20],
+            AccountStateV1 {
+                balance: 123,
+                nonce: 7,
+            },
+        );
+        parent.set_account(
+            [0x22; 20],
+            AccountStateV1 {
+                balance: 456,
+                nonce: 9,
+            },
+        );
+
+        assert_eq!(
+            hex::encode(parent.canonical_bytes().unwrap()),
+            "01000000000000000211111111111111111111111111111111111111110000000000000000000000000000007b00000000000000072222222222222222222222222222222222222222000000000000000000000000000001c80000000000000009"
+        );
+        assert_eq!(
+            hex::encode(parent.state_root()),
+            "7272574bef2b02d69e8431f0550486d8bcf25e7da320de899fc67bee013c5356"
+        );
+
+        let migrated = activation.migrate_parent_state(99, parent.clone()).unwrap();
+        assert_eq!(migrated.accounts(), &parent);
+        assert_eq!(migrated.channel_count(), 0);
+        assert_eq!(
+            hex::encode(migrated.channels_root().unwrap()),
+            "eb41b47c5d86515b8a196eb2ae2d208edaf9074b124163983260d0285f1bde06"
+        );
+        assert_eq!(
+            hex::encode(migrated.state_root().unwrap()),
+            "5910b485bc87ecf07bc358dcd7df55671cfc1d494aee1a3dce8804016703d850"
+        );
+        assert_eq!(
+            hex::encode(migrated.canonical_bytes().unwrap()),
+            "02000000000000000211111111111111111111111111111111111111110000000000000000000000000000007b00000000000000072222222222222222222222222222222222222222000000000000000000000000000001c800000000000000090000000000000000"
+        );
+
+        // Restart classification is purely height/network-parameter derived.
+        let restarted = NativeExecutionActivationV2 {
+            activation_height: 100,
+        };
+        assert_eq!(
+            restarted.execution_version_at_height(99).unwrap(),
+            NativeExecutionVersion::V1
+        );
+        assert_eq!(
+            restarted.execution_version_at_height(100).unwrap(),
+            NativeExecutionVersion::V2
+        );
+        assert_eq!(
+            restarted.execution_version_at_height(101).unwrap(),
+            NativeExecutionVersion::V2
+        );
+
+        // Reorgs across the boundary must preserve the same version-by-height rule:
+        // detached 99/100 and attached 99/100 are V1/V2 respectively.
+        for height in [99_u64, 100] {
+            let expected = if height < 100 {
+                NativeExecutionVersion::V1
+            } else {
+                NativeExecutionVersion::V2
+            };
+            assert_eq!(activation.execution_version_at_height(height).unwrap(), expected);
+        }
     }
 
     #[test]

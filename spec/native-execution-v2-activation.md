@@ -86,6 +86,25 @@ Before activation, interoperability fixtures must cover at least:
 9. preservation of locked V1 vectors;
 10. preservation of locked NativeReceiptV2 / NativeBlockExecutionResultV2 vectors.
 
+## Locked activation/migration vector
+
+The canonical fixture is:
+
+`test-vectors/native-execution-v2-activation.json`
+
+The Rust test `locked_activation_migration_interoperability_vector` locks:
+
+- execution-family selection at `H - 1`, `H`, and `H + 1`;
+- rejection of V2 before `H`;
+- rejection of V1 at/after `H`;
+- the exact V1 parent snapshot/root;
+- the exact migrated NativeStateV2 snapshot/root;
+- empty ComputeChannel state at migration;
+- restart classification at `H - 1`, `H`, and `H + 1`;
+- branch/reorg classification across `H`.
+
+The fixture uses `H = 100` only to lock behavior. It is not a network parameter.
+
 ## Non-activation statement
 
 The Rust `NativeExecutionActivationV2` helper is an inactive protocol-boundary utility only.
