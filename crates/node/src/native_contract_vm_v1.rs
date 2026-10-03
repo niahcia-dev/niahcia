@@ -486,7 +486,10 @@ mod tests {
     fn core_traps_on_infinite_jump_at_inactive_step_limit() {
         let code = module(1, 1, &[0x08, 0, 0, 0, 0]);
         let result = execute_nvm1_core(&code).unwrap();
-        assert_eq!(result.instructions_executed, NVM1_INACTIVE_EXECUTION_STEP_LIMIT);
+        assert_eq!(
+            result.instructions_executed,
+            NVM1_INACTIVE_EXECUTION_STEP_LIMIT
+        );
         assert_eq!(
             result.halt,
             Nvm1Halt::Trap("NVM1 inactive execution step limit exceeded".to_string())
