@@ -233,8 +233,7 @@ fn nvm1_gas_cost(instruction: &DecodedInstruction) -> Result<u64, String> {
         0x01 | 0x02 | 0x10 | 0x12 | 0x13 => 2,
         0x05 | 0x06 | 0x07 | 0x08 | 0x09 => 3,
         0x11 => {
-            let length =
-                u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as u64;
+            let length = u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as u64;
             3 + length.div_ceil(32)
         }
         0x20 => 50,
