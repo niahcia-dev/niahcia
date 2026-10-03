@@ -70,6 +70,6 @@ Disabling a model prevents new protocol use where enforced but does not erase hi
 3. Workers MUST verify required artifacts before execution.
 4. Service nodes MUST serve content that validates against the registered manifest.
 
-## Prototype 0
+## first implementation milestone
 
-Prototype 0 registers one pinned Qwen3-class model and exact tokenizer/config artifacts.
+first implementation milestone registers one pinned Qwen3-class model and exact tokenizer/config artifacts.
