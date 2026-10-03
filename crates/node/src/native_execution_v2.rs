@@ -127,7 +127,8 @@ pub fn execute_transfer_v2(
     next.accounts_mut()
         .consume_nonce(sender, transaction.body.nonce)?;
     next.accounts_mut().debit(sender, sender_actual_debit)?;
-    next.accounts_mut().credit(recipient, transaction.body.value)?;
+    next.accounts_mut()
+        .credit(recipient, transaction.body.value)?;
     next.accounts_mut()
         .credit(context.cpu_producer, producer_priority_fee)?;
 
