@@ -351,7 +351,11 @@ mod tests {
         };
         let mut tx = SignedNativeTransactionV2 {
             body,
-            public_key: key.verifying_key().to_encoded_point(false).as_bytes().to_vec(),
+            public_key: key
+                .verifying_key()
+                .to_encoded_point(false)
+                .as_bytes()
+                .to_vec(),
             signature: vec![0; 64],
         };
         let digest = tx.signing_digest().unwrap();
@@ -370,14 +374,25 @@ mod tests {
     fn accepted_create_success_consumes_nonce_value_and_exact_fee() {
         let key = SigningKey::from_slice(&[0x21; 32]).unwrap();
         let tx = signed_create(&key, 0, 500, 10, 5, module(1, 1, &[0x00]));
-        let sender = tx.authenticated_sender(AddressNetwork::Devnet).unwrap().payload;
+        let sender = tx
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload;
         let producer = [0x90; 20];
         let mut state = funded_v3(sender, 10_000, 0);
 
         let result = execute_inactive_accepted_contract_create_v1(
-            &mut state, &registry(), &tx, AddressNetwork::Devnet, 10,
-            NativeExecutionContextV1 { base_fee_per_gas: 2, cpu_producer: producer },
-        ).unwrap();
+            &mut state,
+            &registry(),
+            &tx,
+            AddressNetwork::Devnet,
+            10,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 2,
+                cpu_producer: producer,
+            },
+        )
+        .unwrap();
 
         assert!(result.contract_created);
         assert_eq!(result.gas_used, 1);
@@ -395,14 +410,25 @@ mod tests {
     fn accepted_create_revert_consumes_nonce_and_used_gas_but_refunds_value() {
         let key = SigningKey::from_slice(&[0x22; 32]).unwrap();
         let tx = signed_create(&key, 0, 500, 10, 5, module(1, 1, &[0x41]));
-        let sender = tx.authenticated_sender(AddressNetwork::Devnet).unwrap().payload;
+        let sender = tx
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload;
         let producer = [0x91; 20];
         let mut state = funded_v3(sender, 10_000, 0);
 
         let result = execute_inactive_accepted_contract_create_v1(
-            &mut state, &registry(), &tx, AddressNetwork::Devnet, 10,
-            NativeExecutionContextV1 { base_fee_per_gas: 2, cpu_producer: producer },
-        ).unwrap();
+            &mut state,
+            &registry(),
+            &tx,
+            AddressNetwork::Devnet,
+            10,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 2,
+                cpu_producer: producer,
+            },
+        )
+        .unwrap();
 
         assert!(!result.contract_created);
         assert!(matches!(result.execution.halt, Nvm1Halt::Revert(_)));
@@ -416,15 +442,40 @@ mod tests {
     #[test]
     fn accepted_create_out_of_gas_consumes_full_limit_and_refunds_value() {
         let key = SigningKey::from_slice(&[0x23; 32]).unwrap();
-        let tx = signed_create(&key, 0, 500, 1, 5, module(1, 1, &[0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]));
-        let sender = tx.authenticated_sender(AddressNetwork::Devnet).unwrap().payload;
+        let tx = signed_create(
+            &key,
+            0,
+            500,
+            1,
+            5,
+            module(
+                1,
+                1,
+                &[
+                    0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0,
+                ],
+            ),
+        );
+        let sender = tx
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload;
         let producer = [0x92; 20];
         let mut state = funded_v3(sender, 10_000, 0);
 
         let result = execute_inactive_accepted_contract_create_v1(
-            &mut state, &registry(), &tx, AddressNetwork::Devnet, 10,
-            NativeExecutionContextV1 { base_fee_per_gas: 2, cpu_producer: producer },
-        ).unwrap();
+            &mut state,
+            &registry(),
+            &tx,
+            AddressNetwork::Devnet,
+            10,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 2,
+                cpu_producer: producer,
+            },
+        )
+        .unwrap();
 
         assert!(!result.contract_created);
         assert!(matches!(result.execution.halt, Nvm1Halt::Trap(_)));
