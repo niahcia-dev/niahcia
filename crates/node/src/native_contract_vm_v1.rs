@@ -667,7 +667,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn storage_get_set_delete_and_missing_zero_are_transactional() {
         let key = [0x11u8; 32];
@@ -700,10 +699,7 @@ mod tests {
         assert_eq!(result.halt, Nvm1Halt::Stop);
         assert_eq!(
             result.stack,
-            vec![
-                Nvm1Value::Bytes32(old_value),
-                Nvm1Value::Bytes32([0u8; 32])
-            ]
+            vec![Nvm1Value::Bytes32(old_value), Nvm1Value::Bytes32([0u8; 32])]
         );
         assert_eq!(result.committed_storage, Some(BTreeMap::new()));
         assert_eq!(context.storage.get(&key), Some(&old_value));
