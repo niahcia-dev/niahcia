@@ -1,0 +1,38 @@
+{
+  "schema": "niahcia-contract-address-v1",
+  "status": "locked",
+  "hash": "Keccak-256",
+  "domain": "NIAHCIA/CONTRACT/V1",
+  "creator_payload": "1a642f0e3c3af545e7acbd38b07251b3990914f1",
+  "creator_nonce": 7,
+  "vectors": [
+    {
+      "network": "mainnet",
+      "network_id": 0,
+      "chain_id": "0x000000004E494148",
+      "preimage_hex": "4e4941484349412f434f4e54524143542f5631000000000000004e494148001a642f0e3c3af545e7acbd38b07251b3990914f1000000000000000007",
+      "digest": "768e6c1359d8692abbe125801508350cddc8a39443c7957fbd0e667ef04dfe42",
+      "contract_payload": "1508350cddc8a39443c7957fbd0e667ef04dfe42",
+      "address": "niah1qyq32zp4pnwu3gu5g0re2laapen8auzdlepq2x9wz7"
+    },
+    {
+      "network": "testnet",
+      "network_id": 1,
+      "chain_id": "0x0000000154494148",
+      "preimage_hex": "4e4941484349412f434f4e54524143542f56310001000000000154494148001a642f0e3c3af545e7acbd38b07251b3990914f1000000000000000007",
+      "digest": "3761ebf18dac628efc46e8227829f303530b6bbf75282f5f8c8f19dcdca0c651",
+      "contract_payload": "7829f303530b6bbf75282f5f8c8f19dcdca0c651",
+      "address": "tniah1qyqhs20nqdfsk6alw55z7huv3uvaeh9qcegst5axuu"
+    },
+    {
+      "network": "devnet",
+      "network_id": 2,
+      "chain_id": "0x0000000244494148",
+      "preimage_hex": "4e4941484349412f434f4e54524143542f56310002000000000244494148001a642f0e3c3af545e7acbd38b07251b3990914f1000000000000000007",
+      "digest": "863a97b921a2179025f45d64aeeeb31d0d11c1f819b79f8a39ccbc790f4f2516",
+      "contract_payload": "aeeeb31d0d11c1f819b79f8a39ccbc790f4f2516",
+      "address": "dniah1qyq6am4nr5x3rs0crxmelz3eej78jr60y5tqzdp2wa"
+    }
+  ],
+  "compatibility": "Any incompatible derivation change requires an explicitly versioned successor."
+}

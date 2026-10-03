@@ -160,17 +160,17 @@ Address V1 text.
 The existing locked Address V1 container and Account derivation vectors remain
 unchanged.
 
-Before native ContractCreate derivation is interoperability-locked, canonical
-vectors MUST additionally cover:
+Native ContractCreate derivation is now interoperability-locked by
+`test-vectors/contract-address-v1.json` and the Rust
+`locked_contract_derivation_vector` test.
 
-1. the complete contract-derivation preimage;
-2. the 32-byte contract digest;
-3. the resulting 20-byte contract payload;
-4. the resulting Bech32m Contract Address V1;
-5. mainnet, testnet, and devnet;
-6. multiple creator payloads;
-7. multiple creator nonces;
-8. multiple native chain IDs.
+The locked fixture covers the complete derivation preimage, 32-byte digest,
+20-byte contract payload, and Bech32m Contract Address V1 for mainnet, testnet,
+and devnet using the locked native chain IDs.
+
+Additional vectors MAY expand creator payload/nonce coverage without changing
+the locked derivation rule. Any incompatible derivation change requires an
+explicitly versioned successor.
 
 ## Compatibility rule
 

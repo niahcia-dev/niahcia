@@ -81,7 +81,7 @@ A successful ContractCreate MUST install contract state only at the exact derive
 
 Address derivation itself does not mutate state.
 
-Canonical derivation vectors are required before contract execution activation.
+Canonical derivation is locked by `test-vectors/contract-address-v1.json` and the reference implementation's `locked_contract_derivation_vector` test.
 
 ## State atomicity
 

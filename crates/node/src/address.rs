@@ -253,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn contract_derivation_probe_vector() {
+    fn locked_contract_derivation_vector() {
         let creator = hex::decode("1a642f0e3c3af545e7acbd38b07251b3990914f1").unwrap();
         let creator: [u8; ADDRESS_PAYLOAD_LEN] = creator.try_into().unwrap();
 
@@ -286,19 +286,19 @@ mod tests {
             vec![
                 (
                     "4e4941484349412f434f4e54524143542f5631000000000000004e494148001a642f0e3c3af545e7acbd38b07251b3990914f1000000000000000007".to_string(),
-                    "TODO".to_string(),
+                    "768e6c1359d8692abbe125801508350cddc8a39443c7957fbd0e667ef04dfe42".to_string(),
                     "1508350cddc8a39443c7957fbd0e667ef04dfe42".to_string(),
                     "niah1qyq32zp4pnwu3gu5g0re2laapen8auzdlepq2x9wz7".to_string(),
                 ),
                 (
                     "4e4941484349412f434f4e54524143542f56310001000000000154494148001a642f0e3c3af545e7acbd38b07251b3990914f1000000000000000007".to_string(),
-                    "TODO".to_string(),
+                    "3761ebf18dac628efc46e8227829f303530b6bbf75282f5f8c8f19dcdca0c651".to_string(),
                     "7829f303530b6bbf75282f5f8c8f19dcdca0c651".to_string(),
                     "tniah1qyqhs20nqdfsk6alw55z7huv3uvaeh9qcegst5axuu".to_string(),
                 ),
                 (
                     "4e4941484349412f434f4e54524143542f56310002000000000244494148001a642f0e3c3af545e7acbd38b07251b3990914f1000000000000000007".to_string(),
-                    "TODO".to_string(),
+                    "863a97b921a2179025f45d64aeeeb31d0d11c1f819b79f8a39ccbc790f4f2516".to_string(),
                     "aeeeb31d0d11c1f819b79f8a39ccbc790f4f2516".to_string(),
                     "dniah1qyq6am4nr5x3rs0crxmelz3eej78jr60y5tqzdp2wa".to_string(),
                 ),
