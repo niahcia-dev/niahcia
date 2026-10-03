@@ -1140,13 +1140,10 @@ mod tests {
     fn inactive_dispatcher_rejects_noncompute_v2_action_without_mutation() {
         let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
         let mut transaction = signed_open(&signing_key, 3, 1_000, 100);
-        transaction.body.action = NativeActionV2::Transfer;
-        transaction.body.data.clear();
-        transaction.body.value = 0;
-        resign_v2(&mut transaction, &signing_key);
-
         let mut state = state_for(&transaction, 5_000, 3);
         let before = state.clone();
+
+        transaction.body.action = NativeActionV2::Transfer;
 
         let error = execute_inactive_compute_transaction_v2(
             &mut state,
