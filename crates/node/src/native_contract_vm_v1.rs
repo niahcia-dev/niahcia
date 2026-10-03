@@ -609,6 +609,56 @@ fn trap_result_with_gas(
 mod tests {
 
     #[test]
+    fn gas_meter_charges_exactly_and_traps_before_next_instruction() {
+        let code = module(3, 1, &[0x01, 0, 0, 0, 0, 0, 0, 0, 7, 0x03, 0x00]);
+        let context = Nvm1ExecutionContext::default();
+
+        let exact = execute_nvm1_core_with_context_and_gas(&code, &context, 4).unwrap();
+        assert_eq!(exact.halt, Nvm1Halt::Stop);
+        assert_eq!(exact.gas_used, 4);
+        assert_eq!(exact.instructions_executed, 3);
+
+        let short = execute_nvm1_core_with_context_and_gas(&code, &context, 3).unwrap();
+        assert_eq!(short.halt, Nvm1Halt::Trap(Nvm1Trap::OutOfGas));
+        assert_eq!(short.gas_used, 3);
+        assert_eq!(short.instructions_executed, 2);
+        assert!(short.stack.is_empty());
+        assert_eq!(short.committed_storage, None);
+    }
+
+    #[test]
+    fn out_of_gas_before_storage_set_discards_working_storage() {
+        let key = [0x11; 32];
+        let value = [0x22; 32];
+        let mut instructions = vec![0x02];
+        instructions.extend_from_slice(&key);
+        instructions.push(0x02);
+        instructions.extend_from_slice(&value);
+        instructions.push(0x21);
+        instructions.push(0x00);
+        let code = module(4, 2, &instructions);
+        let context = Nvm1ExecutionContext::default();
+
+        let result = execute_nvm1_core_with_context_and_gas(&code, &context, 203).unwrap();
+        assert_eq!(result.halt, Nvm1Halt::Trap(Nvm1Trap::OutOfGas));
+        assert_eq!(result.gas_used, 4);
+        assert_eq!(result.instructions_executed, 2);
+        assert_eq!(result.committed_storage, None);
+        assert!(context.storage.is_empty());
+    }
+
+    #[test]
+    fn gas_bounds_infinite_jump_before_inactive_step_limit() {
+        let code = module(1, 1, &[0x08, 0, 0, 0, 0]);
+        let context = Nvm1ExecutionContext::default();
+        let result = execute_nvm1_core_with_context_and_gas(&code, &context, 9).unwrap();
+        assert_eq!(result.halt, Nvm1Halt::Trap(Nvm1Trap::OutOfGas));
+        assert_eq!(result.gas_used, 9);
+        assert_eq!(result.instructions_executed, 3);
+        assert_eq!(result.committed_storage, None);
+    }
+
+    #[test]
     fn gas_schedule_v1_costs_are_locked() {
         let cases = [
             (vec![0x00], 1),
