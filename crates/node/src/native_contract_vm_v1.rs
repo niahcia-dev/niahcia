@@ -192,6 +192,7 @@ pub enum Nvm1Trap {
     InputOutOfRange,
     MemoryLengthOverflow,
     MemoryLimitExceeded,
+    OutOfGas,
     StepLimitExceeded,
     FellOffEnd,
 }
@@ -224,6 +225,25 @@ pub struct Nvm1ExecutionResult {
 struct DecodedInstruction {
     opcode: u8,
     operand: Vec<u8>,
+}
+
+fn nvm1_gas_cost(instruction: &DecodedInstruction) -> Result<u64, String> {
+    let cost = match instruction.opcode {
+        0x00 | 0x03 | 0x04 | 0x40 | 0x41 => 1,
+        0x01 | 0x02 | 0x10 | 0x12 | 0x13 => 2,
+        0x05 | 0x06 | 0x07 | 0x08 | 0x09 => 3,
+        0x11 => {
+            let length =
+                u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as u64;
+            3 + length.div_ceil(32)
+        }
+        0x20 => 50,
+        0x21 => 200,
+        0x22 => 100,
+        0x30 => 30,
+        opcode => return Err(format!("NVM1 gas cost undefined for opcode 0x{opcode:02x}")),
+    };
+    Ok(cost)
 }
 
 pub fn execute_nvm1_core(code: &[u8]) -> Result<Nvm1ExecutionResult, String> {
@@ -555,6 +575,29 @@ fn trap_result(_stack: Vec<Nvm1Value>, executed: u32, trap: Nvm1Trap) -> Nvm1Exe
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn gas_schedule_v1_costs_are_locked() {
+        let cases = [
+            (vec![0x00], 1),
+            (vec![0x01, 0, 0, 0, 0, 0, 0, 0, 1], 2),
+            (vec![0x05], 3),
+            (vec![0x11, 0, 0, 0, 0], 3),
+            (vec![0x11, 0, 0, 0, 1], 4),
+            (vec![0x11, 0, 0, 0, 32], 4),
+            (vec![0x11, 0, 0, 0, 33], 5),
+            (vec![0x20], 50),
+            (vec![0x21], 200),
+            (vec![0x22], 100),
+            (vec![0x30], 30),
+            (vec![0x40], 1),
+            (vec![0x41], 1),
+        ];
+        for (bytes, expected) in cases {
+            let decoded = decode_instructions(&bytes).unwrap();
+            assert_eq!(nvm1_gas_cost(&decoded[0]).unwrap(), expected);
+        }
+    }
 
     #[test]
     fn traps_do_not_expose_partially_consumed_stack() {
