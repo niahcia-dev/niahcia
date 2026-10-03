@@ -1,7 +1,8 @@
 use crate::address::AddressNetwork;
 use crate::compute_usage_receipt_v1::ComputeUsageReceiptV1;
 use crate::native_compute_payloads::{
-    derive_compute_channel_id_v1, ComputeChannelOpenPayloadV1, ComputeChannelSettlePayloadV1,
+    derive_compute_channel_id_v1, ComputeChannelOpenPayloadV1, ComputeChannelRefundPayloadV1,
+    ComputeChannelSettlePayloadV1,
 };
 use crate::native_state_v2::{ComputeChannelStateV1, ComputeChannelStatusV1, NativeStateV2};
 use crate::native_transaction_v2::{NativeActionV2, SignedNativeTransactionV2};
@@ -27,6 +28,16 @@ pub struct ValidatedComputeChannelSettleV1 {
     pub cumulative_spent: u128,
     pub worker_payment: u128,
     pub funding_refund: u128,
+    pub channel_state_after: ComputeChannelStateV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatedComputeChannelRefundV1 {
+    pub transaction_id: Hash32,
+    pub channel_id: Hash32,
+    pub funding_account: [u8; 20],
+    pub expected_nonce: u64,
+    pub refund_amount: u128,
     pub channel_state_after: ComputeChannelStateV1,
 }
 
@@ -196,6 +207,68 @@ pub fn plan_compute_channel_settle_v1(
         cumulative_spent: receipt.cumulative_spent,
         worker_payment: receipt.cumulative_spent,
         funding_refund,
+        channel_state_after,
+    })
+}
+
+pub fn plan_compute_channel_refund_v1(
+    state: &NativeStateV2,
+    transaction: &SignedNativeTransactionV2,
+    network: AddressNetwork,
+    current_height: u64,
+) -> Result<ValidatedComputeChannelRefundV1, String> {
+    transaction.verify_signature(network)?;
+
+    if transaction.body.action != NativeActionV2::ComputeChannelRefund {
+        return Err("native transaction V2 action is not ComputeChannelRefund".into());
+    }
+
+    if transaction.body.value != 0 {
+        return Err("ComputeChannelRefund transaction value must be zero".into());
+    }
+
+    let payload = ComputeChannelRefundPayloadV1::from_canonical_bytes(&transaction.body.data)?;
+    let channel = state
+        .channel(payload.channel_id)
+        .cloned()
+        .ok_or_else(|| "ComputeChannelRefund channel does not exist".to_string())?;
+
+    if channel.state != ComputeChannelStatusV1::Open {
+        return Err("ComputeChannelRefund channel is not OPEN".into());
+    }
+
+    let funding_account = transaction.authenticated_sender(network)?.payload;
+    if funding_account != channel.funding_account {
+        return Err("ComputeChannelRefund sender is not the committed funding_account".into());
+    }
+
+    let account = state.accounts().account(funding_account);
+    if account.nonce != transaction.body.nonce {
+        return Err(format!(
+            "native account nonce mismatch: expected {}, found {}",
+            account.nonce, transaction.body.nonce
+        ));
+    }
+
+    if current_height < channel.refund_available_height {
+        return Err("ComputeChannelRefund is before the refund available height".into());
+    }
+
+    let refund_amount = channel
+        .authorized_amount
+        .checked_sub(channel.settled_amount)
+        .ok_or_else(|| "ComputeChannelRefund arithmetic underflow".to_string())?;
+
+    let mut channel_state_after = channel;
+    channel_state_after.state = ComputeChannelStatusV1::Refunded;
+    channel_state_after.validate()?;
+
+    Ok(ValidatedComputeChannelRefundV1 {
+        transaction_id: transaction.tx_id()?,
+        channel_id: payload.channel_id,
+        funding_account,
+        expected_nonce: transaction.body.nonce,
+        refund_amount,
         channel_state_after,
     })
 }
@@ -393,6 +466,80 @@ mod tests {
         (state, transaction, worker_key, channel_key)
     }
 
+    fn refund_fixture() -> (NativeStateV2, SignedNativeTransactionV2, SigningKey) {
+        let funding_key = SigningKey::from_slice(&[0x51; 32]).unwrap();
+        let funding_public_key = funding_key
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec();
+        let funding_account =
+            crate::address::NiahciaAddressV1::account_from_uncompressed_public_key(
+                AddressNetwork::Devnet,
+                &funding_public_key,
+            )
+            .unwrap()
+            .payload;
+
+        let channel_key = SigningKey::from_slice(&[0x52; 32]).unwrap();
+        let channel_encoded = channel_key.verifying_key().to_encoded_point(false);
+        let channel_public_key: [u8; 65] = channel_encoded.as_bytes().try_into().unwrap();
+
+        let channel_id = [0xb1; 32];
+        let mut accounts = NativeStateV1::default();
+        accounts.set_account(
+            funding_account,
+            AccountStateV1 {
+                balance: 250,
+                nonce: 4,
+            },
+        );
+
+        let mut state = NativeStateV2::from_v1(accounts);
+        state
+            .set_channel(ComputeChannelStateV1 {
+                channel_id,
+                funding_account,
+                worker_id: [0xb2; 32],
+                operator_id: [0xb3; 32],
+                channel_public_key,
+                worker_payment_account: [0xb4; 20],
+                authorized_amount: 1_000,
+                settled_amount: 0,
+                opened_height: 10,
+                expiry_height: 100,
+                claim_deadline_height: 120,
+                refund_available_height: 121,
+                service_scope_commitment: [0xb5; 32],
+                model_scope_commitment: [0xb6; 32],
+                execution_profile_scope_commitment: [0xb7; 32],
+                settlement_policy: ComputeChannelSettlementPolicyV1::CumulativeReceipt,
+                state: ComputeChannelStatusV1::Open,
+            })
+            .unwrap();
+
+        let payload = ComputeChannelRefundPayloadV1 { channel_id };
+        let mut transaction = SignedNativeTransactionV2 {
+            body: NativeTransactionBodyV2 {
+                network_id: DEVNET_NETWORK_ID,
+                chain_id: DEVNET_CHAIN_ID,
+                nonce: 4,
+                action: NativeActionV2::ComputeChannelRefund,
+                target_payload: Vec::new(),
+                value: 0,
+                gas_limit: 0,
+                max_fee_per_gas: 0,
+                max_priority_fee_per_gas: 0,
+                data: payload.canonical_bytes().unwrap(),
+            },
+            public_key: funding_public_key,
+            signature: vec![0; 64],
+        };
+        resign_v2(&mut transaction, &funding_key);
+
+        (state, transaction, funding_key)
+    }
+
     #[test]
     fn open_plan_derives_exact_channel_without_mutating_state() {
         let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
@@ -574,6 +721,83 @@ mod tests {
             plan_compute_channel_settle_v1(&state, &value_transaction, AddressNetwork::Devnet, 110)
                 .unwrap_err();
         assert!(error.contains("value must be zero"));
+    }
+
+    #[test]
+    fn refund_plan_derives_full_refund_without_mutating_state() {
+        let (state, transaction, _) = refund_fixture();
+        let before = state.clone();
+
+        let plan =
+            plan_compute_channel_refund_v1(&state, &transaction, AddressNetwork::Devnet, 121)
+                .unwrap();
+
+        assert_eq!(state, before);
+        assert_eq!(plan.channel_id, [0xb1; 32]);
+        assert_eq!(plan.expected_nonce, 4);
+        assert_eq!(plan.refund_amount, 1_000);
+        assert_eq!(plan.channel_state_after.settled_amount, 0);
+        assert_eq!(
+            plan.channel_state_after.state,
+            ComputeChannelStatusV1::Refunded
+        );
+    }
+
+    #[test]
+    fn refund_plan_rejects_before_refund_height_and_nonzero_value() {
+        let (state, transaction, funding_key) = refund_fixture();
+
+        let error =
+            plan_compute_channel_refund_v1(&state, &transaction, AddressNetwork::Devnet, 120)
+                .unwrap_err();
+        assert!(error.contains("before the refund available height"));
+
+        let mut value_transaction = transaction;
+        value_transaction.body.value = 1;
+        resign_v2(&mut value_transaction, &funding_key);
+        let error =
+            plan_compute_channel_refund_v1(&state, &value_transaction, AddressNetwork::Devnet, 121)
+                .unwrap_err();
+        assert!(error.contains("value must be zero"));
+    }
+
+    #[test]
+    fn refund_plan_requires_funding_account_and_matching_nonce() {
+        let (state, transaction, funding_key) = refund_fixture();
+
+        let other_key = SigningKey::from_slice(&[0x53; 32]).unwrap();
+        let mut wrong_sender = transaction.clone();
+        wrong_sender.public_key = other_key
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .to_vec();
+        resign_v2(&mut wrong_sender, &other_key);
+        let error =
+            plan_compute_channel_refund_v1(&state, &wrong_sender, AddressNetwork::Devnet, 121)
+                .unwrap_err();
+        assert!(error.contains("funding_account"));
+
+        let mut wrong_nonce = transaction;
+        wrong_nonce.body.nonce = 5;
+        resign_v2(&mut wrong_nonce, &funding_key);
+        let error =
+            plan_compute_channel_refund_v1(&state, &wrong_nonce, AddressNetwork::Devnet, 121)
+                .unwrap_err();
+        assert!(error.contains("nonce mismatch"));
+    }
+
+    #[test]
+    fn refund_plan_rejects_closed_channel() {
+        let (mut state, transaction, _) = refund_fixture();
+        let mut channel = state.channel([0xb1; 32]).unwrap().clone();
+        channel.state = ComputeChannelStatusV1::Settled;
+        state.set_channel(channel).unwrap();
+
+        let error =
+            plan_compute_channel_refund_v1(&state, &transaction, AddressNetwork::Devnet, 121)
+                .unwrap_err();
+        assert!(error.contains("not OPEN"));
     }
 
     #[test]
