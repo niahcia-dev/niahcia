@@ -1,6 +1,5 @@
 # NIAHCIA
 
-**AI CHAIN — reversed.**
 
 NIAHCIA is a pre-alpha permissionless CPU Proof-of-Work blockchain built for decentralized AI, native smart contracts, wallet-controlled Agents, and open compute.
 
