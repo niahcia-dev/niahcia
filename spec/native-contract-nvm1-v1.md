@@ -277,3 +277,22 @@ The interpreter executes against a working copy/view of the current contract sto
 `REVERT` and deterministic VM traps discard all storage writes/deletes produced by that execution. They MUST NOT partially mutate persistent Contract State V1.
 
 This section does not activate storage execution. Gas/resource charging and the enclosing state-transition commit boundary remain required before Runtime ID 1 activation.
+
+
+## Candidate KECCAK256 opcode semantics
+
+Status: **CANDIDATE / INACTIVE**
+
+`KECCAK256` hashes exactly one `Bytes32` stack value using legacy Keccak-256 and replaces it with the 32-byte digest:
+
+```text
+KECCAK256 [Bytes32(value)] -> [Bytes32(keccak256(value))]
+```
+
+The hash input is exactly the 32 bytes contained in the operand, in their existing byte order. No length prefix, domain tag, text encoding, ABI encoding, memory bytes, or other implicit data is added.
+
+The opcode requires one `Bytes32` operand. Stack underflow or a non-`Bytes32` operand traps. The output is exactly the raw 32-byte Keccak-256 digest as `Bytes32`.
+
+This intentionally narrow primitive keeps NVM1 hashing deterministic without introducing arbitrary memory-range hashing. Contracts that need to hash shorter structured values must first represent or derive the exact 32-byte preimage through protocol-defined operations. A later runtime version may add explicit byte-memory hashing if required.
+
+This section does not activate Runtime ID 1. Gas/resource charging remains required before activation.
