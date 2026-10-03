@@ -96,7 +96,7 @@ that genesis is treated as stable.
 ## Mainnet
 
 Mainnet genesis and launch-specific consensus values are not selected during
-Prototype 0.
+first implementation milestone.
 
 They MUST be generated once, independently reviewed, published in this
 repository, and represented by canonical test vectors before mainnet launch.
