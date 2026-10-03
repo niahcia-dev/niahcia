@@ -5,6 +5,7 @@ pub const NVM1_MAGIC: [u8; 4] = *b"NVM1";
 pub const NVM1_MAX_INSTRUCTIONS: u32 = 16_384;
 pub const NVM1_MAX_STACK_ITEMS: u16 = 256;
 pub const NVM1_INACTIVE_EXECUTION_STEP_LIMIT: u32 = 65_536;
+pub const NVM1_MAX_MEMORY_BYTES: usize = 65_536;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Nvm1CodeHeader {
@@ -217,6 +218,7 @@ pub fn execute_nvm1_core_with_context(
     let instructions = decode_instructions(&validated.instruction_bytes)?;
 
     let mut stack = Vec::<Nvm1Value>::new();
+    let mut memory = Vec::<u8>::new();
     let mut pc = 0usize;
     let mut executed = 0u32;
 
@@ -370,6 +372,32 @@ pub fn execute_nvm1_core_with_context(
                 }
                 pc += 1;
             }
+            0x11 => {
+                let Some(offset) = stack.pop() else {
+                    return Ok(trap_result(stack, executed, "NVM1 INPUT_COPY stack underflow"));
+                };
+                let Nvm1Value::U64(offset) = offset else {
+                    return Ok(trap_result(stack, executed, "NVM1 INPUT_COPY type mismatch"));
+                };
+                let offset = usize::try_from(offset)
+                    .map_err(|_| "NVM1 INPUT_COPY offset does not fit usize".to_string())?;
+                let length =
+                    u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as usize;
+                let Some(end) = offset.checked_add(length) else {
+                    return Ok(trap_result(stack, executed, "NVM1 INPUT_COPY range overflow"));
+                };
+                if end > context.input.len() {
+                    return Ok(trap_result(stack, executed, "NVM1 INPUT_COPY out of range"));
+                }
+                let Some(new_memory_len) = memory.len().checked_add(length) else {
+                    return Ok(trap_result(stack, executed, "NVM1 memory length overflow"));
+                };
+                if new_memory_len > NVM1_MAX_MEMORY_BYTES {
+                    return Ok(trap_result(stack, executed, "NVM1 memory limit exceeded"));
+                }
+                memory.extend_from_slice(&context.input[offset..end]);
+                pc += 1;
+            }
             0x13 => {
                 if let Some(result) = push_value(
                     &mut stack,
@@ -381,7 +409,21 @@ pub fn execute_nvm1_core_with_context(
                 }
                 pc += 1;
             }
-            0x11 | 0x12 | 0x20..=0x41 => {
+            0x40 => {
+                return Ok(Nvm1ExecutionResult {
+                    halt: Nvm1Halt::Return(memory),
+                    stack,
+                    instructions_executed: executed,
+                });
+            }
+            0x41 => {
+                return Ok(Nvm1ExecutionResult {
+                    halt: Nvm1Halt::Revert(memory),
+                    stack,
+                    instructions_executed: executed,
+                });
+            }
+            0x12 | 0x20..=0x30 => {
                 return Ok(trap_result(
                     stack,
                     executed,
@@ -531,6 +573,78 @@ mod tests {
         let result = execute_nvm1_core_with_context(&code, &context).unwrap();
         assert_eq!(result.halt, Nvm1Halt::Stop);
         assert_eq!(result.stack, vec![Nvm1Value::U64(5), Nvm1Value::U64(42)]);
+    }
+
+    #[test]
+    fn input_copy_returns_selected_bytes() {
+        let code = module(
+            3,
+            1,
+            &[0x01, 0, 0, 0, 0, 0, 0, 0, 1, 0x11, 0, 0, 0, 3, 0x40],
+        );
+        let context = Nvm1ExecutionContext {
+            input: vec![10, 20, 30, 40, 50],
+            call_value: 0,
+        };
+        let result = execute_nvm1_core_with_context(&code, &context).unwrap();
+        assert_eq!(result.halt, Nvm1Halt::Return(vec![20, 30, 40]));
+        assert!(result.stack.is_empty());
+    }
+
+    #[test]
+    fn input_copy_traps_on_range_and_memory_limit() {
+        let out_of_range = module(
+            3,
+            1,
+            &[0x01, 0, 0, 0, 0, 0, 0, 0, 2, 0x11, 0, 0, 0, 2, 0x40],
+        );
+        let context = Nvm1ExecutionContext {
+            input: vec![1, 2, 3],
+            call_value: 0,
+        };
+        assert_eq!(
+            execute_nvm1_core_with_context(&out_of_range, &context)
+                .unwrap()
+                .halt,
+            Nvm1Halt::Trap("NVM1 INPUT_COPY out of range".to_string())
+        );
+
+        let mut input = vec![0u8; NVM1_MAX_MEMORY_BYTES + 1];
+        input[NVM1_MAX_MEMORY_BYTES] = 1;
+        let memory_overflow = module(
+            5,
+            1,
+            &[
+                0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0, 0, 0xff, 0xff, 0x01, 0, 0, 0, 0, 0,
+                0, 0, 0, 0x11, 0, 0, 0, 2, 0x40,
+            ],
+        );
+        assert_eq!(
+            execute_nvm1_core_with_context(&memory_overflow, &Nvm1ExecutionContext {
+                input,
+                call_value: 0,
+            })
+            .unwrap()
+            .halt,
+            Nvm1Halt::Trap("NVM1 memory limit exceeded".to_string())
+        );
+    }
+
+    #[test]
+    fn revert_returns_current_memory() {
+        let code = module(
+            3,
+            1,
+            &[0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0, 0, 0, 2, 0x41],
+        );
+        let context = Nvm1ExecutionContext {
+            input: vec![7, 8],
+            call_value: 0,
+        };
+        assert_eq!(
+            execute_nvm1_core_with_context(&code, &context).unwrap().halt,
+            Nvm1Halt::Revert(vec![7, 8])
+        );
     }
 
     #[test]
