@@ -50,19 +50,18 @@ A candidate block is processed in this order:
 12. calculate block work and cumulative work,
 13. insert into block tree,
 14. change canonical head only if fork-choice rules require it,
-15. instruct the execution engine to follow the resulting NIAHCIA canonical head.
+15. make the validated native state associated with the winning branch canonical.
 
 ## Authority boundary
 
-Reth's database is execution state.
+The NIAHCIA chain database and its committed native state snapshots are authoritative for:
 
-The NIAHCIA chain database is the authority for:
-
-- NIAHCIA parentage,
-- PoW validity,
-- cumulative work,
-- canonical-chain selection,
-- reorganization decisions.
+- NIAHCIA parentage;
+- PoW validity;
+- cumulative work;
+- canonical-chain selection;
+- reorganization decisions;
+- the native state committed by each accepted block.
 
 ## Service-node observations
 
