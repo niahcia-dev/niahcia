@@ -1,47 +1,29 @@
 # Consensus Development Constants
 
-The current Prototype 0 consensus candidates are:
+These are pre-alpha development candidates, not frozen production parameters.
 
 ```text
-target block interval   30 seconds
-median-time window      11 ancestors
-maximum future drift    90 seconds
-RandomX epoch length    2048 blocks
-RandomX seed lag        64 blocks
+target block interval   approximately 30 seconds
+RandomX                 CPU PoW
+fork choice             highest cumulative valid work
 ```
 
-## RandomX work
+## RandomX
 
-The miner hashes exactly the canonical 164-byte `BlockHeaderV1`.
+The active devnet implementation uses RandomX and supplies seed/seed-height information through mining work.
 
-The node supplies the RandomX seed and seed height with `pow_getWork`.
+The current development header/vector path is useful for testing, but production miner/pool interoperability and final RandomX epoch/seed parameters remain under review.
 
-For height `h`:
-
-```text
-epoch_start = floor(h / 2048) * 2048
-seed_height = max(0, epoch_start - 64)
-seed = keccak256("NIAHCIA/RANDOMX-SEED/V1" || seed_block_id)
-```
-
-The node now resolves the seed block from persisted NIAHCIA canonical chain history whenever a chain head exists. Only the initial empty-chain/genesis bootstrap still uses the zero block ID as a provisional seed source until genesis/network parameters are frozen. The seed formula itself is implemented and unit-tested.
+Do not treat current constants or development vectors as public-network freeze decisions.
 
 ## Target comparison
 
-RandomX output and target are interpreted as unsigned 256-bit big-endian values:
+RandomX output and target are interpreted deterministically under the active implementation. Final interoperability vectors must remain synchronized with the production mining preimage.
 
-```text
-valid_pow iff pow_hash <= target
-```
+## Timestamp / difficulty
 
-## Timestamp validation
+Timestamp and difficulty policy remain review items. ASERT is the leading difficulty direction, but timestamp-adversary behavior must be resolved before production freeze.
 
-A candidate timestamp must be greater than median time past and no more than 90 seconds ahead of adjusted node time.
+## Network parameters
 
-The helper logic is implemented and tested; it is not yet wired into block acceptance because block submission/persistent chain state do not exist yet.
-
-## Difficulty
-
-The protocol repo contains the initial 60-block / 30-minute adjustment candidate.
-
-It remains deliberately marked for simulation rather than being silently frozen into consensus.
+Production genesis, PoW limits, activation heights, RandomX seed schedule, and final chain ID/network parameters remain unfrozen.
