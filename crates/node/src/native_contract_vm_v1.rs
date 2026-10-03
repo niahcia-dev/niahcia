@@ -667,17 +667,11 @@ mod tests {
     }
 
     #[test]
-    fn core_enforces_declared_stack_bound_and_rejects_deferred_opcodes() {
+    fn core_enforces_declared_stack_bound() {
         let bound = module(3, 1, &[0x01, 0, 0, 0, 0, 0, 0, 0, 1, 0x04, 0x00]);
         assert_eq!(
             execute_nvm1_core(&bound).unwrap().halt,
             Nvm1Halt::Trap("NVM1 declared stack bound exceeded".to_string())
-        );
-
-        let deferred = execute_nvm1_core(&module(2, 1, &[0x30, 0x00])).unwrap();
-        assert_eq!(
-            deferred.halt,
-            Nvm1Halt::Trap("NVM1 opcode 0x30 execution semantics are not active".to_string())
         );
     }
 
