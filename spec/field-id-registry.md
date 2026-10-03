@@ -733,3 +733,20 @@ These positions are permanent within schema version 1 and do not consume global 
 1   producer_fee_recipient
 2   transactions
 ```
+
+
+## ContractCreatePayload — object type 0x0018
+
+```text
+1   runtime_id
+2   code
+3   init_data
+```
+
+Schema V1 rules:
+
+- `runtime_id` is an unsigned integer that MUST fit `u32`; zero is reserved;
+- `code` is a non-empty byte string of at most 65,536 bytes;
+- `init_data` is a byte string of at most 65,536 bytes;
+- the enclosing NativeTransaction `ContractCreate` action keeps an empty `target_payload`;
+- NativeTransaction `data` contains the complete canonical NCE/1 ContractCreatePayload object.

@@ -67,6 +67,31 @@ A contract MAY eventually verify explicitly specified deterministic evidence suc
 
 A contract MUST NOT make chain validity depend on an AI worker responding.
 
+## ContractCreate payload boundary
+
+The canonical creation payload is NCE/1 object type `0x0018`, schema V1:
+
+```text
+1 runtime_id
+2 code
+3 init_data
+```
+
+The enclosing NativeTransaction retains the already-locked action shape: `ContractCreate` has an empty `target_payload`, and its `data` field contains the complete canonical ContractCreatePayload V1 bytes.
+
+V1 payload validation is intentionally separate from VM support:
+
+- `runtime_id = 0` is reserved and invalid;
+- non-zero runtime IDs are syntactically representable;
+- an execution implementation MUST separately reject a runtime ID that is not activated for the current network/height;
+- code MUST be non-empty and no larger than 65,536 bytes;
+- init data MAY be empty and may be no larger than 65,536 bytes;
+- code bytes and init-data bytes are distinct fields and MUST NOT be concatenated or guessed apart by a VM.
+
+On successful creation, the persistent ContractStateV1 `code` field stores exactly the validated `code` bytes. `init_data` is constructor input and is not automatically appended to persisted code.
+
+The canonical fixture is `test-vectors/native-contract-create-payload-v1.json`.
+
 ## Contract address derivation and collision rule
 
 ContractCreate uses the locked Address V1 derivation domain:

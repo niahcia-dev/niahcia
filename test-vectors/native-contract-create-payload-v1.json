@@ -1,0 +1,26 @@
+{
+  "schema": "niahcia-native-contract-create-payload-v1",
+  "status": "locked",
+  "object_type": "0x0018",
+  "schema_version": 1,
+  "description": "Canonical ContractCreate payload boundary. runtime_id=1 is only a serialization fixture and does not select or activate a VM.",
+  "limits": {
+    "max_code_bytes": 65536,
+    "max_init_data_bytes": 65536,
+    "runtime_id_zero_reserved": true,
+    "empty_code_rejected": true
+  },
+  "fixture": {
+    "runtime_id": 1,
+    "code_hex": "01020304",
+    "init_data_hex": "a1b2c3",
+    "canonical_hex": "TODO"
+  },
+  "semantics": {
+    "transaction_target_payload_must_be_empty": true,
+    "transaction_data_contains_complete_canonical_payload": true,
+    "code_is_persisted_only_after_successful_creation": true,
+    "init_data_is_constructor_input_not_persisted_code": true,
+    "runtime_support_is_checked_separately_from_payload_canonicality": true
+  }
+}

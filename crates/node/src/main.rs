@@ -12,6 +12,7 @@ pub mod native_block_execution_v2;
 pub mod native_compute_execution;
 pub mod native_compute_fee_v1;
 pub mod native_compute_payloads;
+pub mod native_contract_payload_v1;
 pub mod native_contract_state_v1;
 pub mod native_execution;
 pub mod native_execution_commitment_v2;
