@@ -212,6 +212,42 @@ mod tests {
     }
 
     #[test]
+    fn contract_state_probe_vector() {
+        let mut contract = ContractStateV1::new(
+            [0x33; 20],
+            1_234,
+            1,
+            vec![0x01, 0x02, 0x03, 0x04],
+        );
+        contract.set_storage([0x44; 32], [0x55; 32]);
+
+        let contract_bytes = contract.canonical_bytes().unwrap();
+        let contract_hash = contract.record_hash().unwrap();
+
+        let mut state = NativeStateV3::from_v2(NativeStateV2::default());
+        state.insert_contract(contract).unwrap();
+
+        let actual = (
+            hex::encode(contract_bytes),
+            hex::encode(contract_hash),
+            hex::encode(state.contracts_root().unwrap()),
+            hex::encode(state.state_root().unwrap()),
+            hex::encode(state.canonical_bytes().unwrap()),
+        );
+
+        assert_eq!(
+            actual,
+            (
+                "TODO".to_string(),
+                "TODO".to_string(),
+                "TODO".to_string(),
+                "TODO".to_string(),
+                "TODO".to_string(),
+            )
+        );
+    }
+
+    #[test]
     fn duplicate_contract_id_is_rejected_without_replacement() {
         let mut state = NativeStateV3::default();
         state.insert_contract(contract(0x33)).unwrap();
