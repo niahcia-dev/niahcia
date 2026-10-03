@@ -592,6 +592,116 @@ mod tests {
         let _ = std::fs::remove_file(path);
     }
 
+    fn assert_transition_reorg_restores_ancestor(
+        name: &str,
+        marker: u8,
+        ancestor_state: &NativeStateV2,
+        detached_state: &NativeStateV2,
+    ) {
+        let path = temp_compute_state_path(name);
+        let ancestor_root = ancestor_state.state_root().unwrap();
+        let detached_root = detached_state.state_root().unwrap();
+        assert_ne!(ancestor_root, detached_root);
+
+        let genesis = BlockHeaderV1 {
+            version: 1,
+            parent_hash: [0_u8; 32],
+            height: 0,
+            timestamp: 1_800_200_000 + marker as u64,
+            transactions_root: [marker; 32],
+            execution_root: ancestor_root,
+            target: [0xff; 32],
+            nonce: marker as u64,
+            extra_nonce: 0,
+        };
+        let genesis_id = genesis.block_id();
+
+        let detached_block = BlockHeaderV1 {
+            version: 1,
+            parent_hash: genesis_id,
+            height: 1,
+            timestamp: genesis.timestamp + 1,
+            transactions_root: [marker.wrapping_add(1); 32],
+            execution_root: detached_root,
+            target: [0xff; 32],
+            nonce: marker.wrapping_add(1) as u64,
+            extra_nonce: 0,
+        };
+        let detached_id = detached_block.block_id();
+
+        let winning_block = BlockHeaderV1 {
+            version: 1,
+            parent_hash: genesis_id,
+            height: 1,
+            timestamp: genesis.timestamp + 2,
+            transactions_root: [marker.wrapping_add(2); 32],
+            execution_root: ancestor_root,
+            target: [0x7f; 32],
+            nonce: marker.wrapping_add(2) as u64,
+            extra_nonce: 0,
+        };
+        let winning_id = winning_block.block_id();
+
+        {
+            let store = StateStore::open(&path).unwrap();
+            store.insert_chain_block(genesis).unwrap();
+            store
+                .store_native_state_v2_snapshot(genesis_id, ancestor_state)
+                .unwrap();
+
+            store.insert_chain_block(detached_block).unwrap();
+            store
+                .store_native_state_v2_snapshot(detached_id, detached_state)
+                .unwrap();
+
+            store.insert_chain_block(winning_block).unwrap();
+            store
+                .store_native_state_v2_snapshot(winning_id, ancestor_state)
+                .unwrap();
+
+            assert_eq!(
+                store.best_chain_head().unwrap().unwrap().block_id(),
+                winning_id
+            );
+
+            let reorg = store
+                .canonical_reorg(detached_id, winning_id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(reorg.common_ancestor, genesis_id);
+            assert_eq!(reorg.detached, vec![detached_id]);
+            assert_eq!(reorg.attached, vec![winning_id]);
+
+            let canonical = store
+                .native_state_v2_snapshot(winning_id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(canonical, *ancestor_state);
+            assert_eq!(canonical.state_root().unwrap(), ancestor_root);
+
+            let detached = store
+                .native_state_v2_snapshot(detached_id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(detached, *detached_state);
+            assert_eq!(detached.state_root().unwrap(), detached_root);
+        }
+
+        {
+            let reopened = StateStore::open(&path).unwrap();
+            assert_eq!(
+                reopened.best_chain_head().unwrap().unwrap().block_id(),
+                winning_id
+            );
+            assert_eq!(
+                reopened.native_state_v2_snapshot(winning_id).unwrap(),
+                Some(ancestor_state.clone())
+            );
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
+
     fn open_payload(expiry_height: u64) -> ComputeChannelOpenPayloadV1 {
         let channel_key = SigningKey::from_slice(&[0x22; 32]).unwrap();
         let encoded = channel_key.verifying_key().to_encoded_point(false);
@@ -1378,6 +1488,56 @@ mod tests {
             AppliedComputeTransitionV1::Refund(_)
         ));
         assert_v2_snapshot_survives_restart("post-refund", 0xc3, &state);
+    }
+
+    #[test]
+    fn reorg_detaches_compute_channel_open_effects() {
+        let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
+        let transaction = signed_open(&signing_key, 3, 1_000, 100);
+        let mut state = state_for(&transaction, 5_000, 3);
+        let ancestor = state.clone();
+
+        execute_inactive_compute_transaction_v2(
+            &mut state,
+            &transaction,
+            AddressNetwork::Devnet,
+            50,
+        )
+        .unwrap();
+
+        assert_transition_reorg_restores_ancestor("reorg-open", 0xd1, &ancestor, &state);
+    }
+
+    #[test]
+    fn reorg_detaches_compute_channel_settle_effects() {
+        let (mut state, transaction, _, _) = settle_fixture();
+        let ancestor = state.clone();
+
+        execute_inactive_compute_transaction_v2(
+            &mut state,
+            &transaction,
+            AddressNetwork::Devnet,
+            110,
+        )
+        .unwrap();
+
+        assert_transition_reorg_restores_ancestor("reorg-settle", 0xd2, &ancestor, &state);
+    }
+
+    #[test]
+    fn reorg_detaches_compute_channel_refund_effects() {
+        let (mut state, transaction, _) = refund_fixture();
+        let ancestor = state.clone();
+
+        execute_inactive_compute_transaction_v2(
+            &mut state,
+            &transaction,
+            AddressNetwork::Devnet,
+            121,
+        )
+        .unwrap();
+
+        assert_transition_reorg_restores_ancestor("reorg-refund", 0xd3, &ancestor, &state);
     }
 
     #[test]
