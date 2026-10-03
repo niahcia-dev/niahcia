@@ -78,7 +78,7 @@ impl NodeConfig {
         }
 
         cfg.validate()?;
-        cfg.normalize_fee_recipient_for_execution()?;
+        cfg.normalize_fee_recipient()?;
         Ok(cfg)
     }
 
@@ -121,7 +121,7 @@ impl NodeConfig {
         Ok(())
     }
 
-    fn normalize_fee_recipient_for_execution(&mut self) -> Result<(), String> {
+    fn normalize_fee_recipient(&mut self) -> Result<(), String> {
         if let Some(address) = self.native_fee_recipient()? {
             // NIAHCIA exposes Bech32m at its native boundary while internal
             // execution stores the same account as its canonical 20-byte payload.
@@ -164,7 +164,7 @@ reth_engine_api = "http://127.0.0.1:8551"
     }
 
     #[test]
-    fn native_devnet_account_normalizes_to_fee_recipient() {
+    fn native_devnet_account_normalizes_to_internal_payload() {
         let payload = [0x42; 20];
         let native = NiahciaAddressV1::new(AddressNetwork::Devnet, AddressKind::Account, payload)
             .encode()
@@ -175,7 +175,7 @@ reth_engine_api = "http://127.0.0.1:8551"
         };
 
         cfg.validate().unwrap();
-        cfg.normalize_fee_recipient_for_execution().unwrap();
+        cfg.normalize_fee_recipient().unwrap();
         assert_eq!(cfg.fee_recipient, format!("0x{}", hex::encode(payload)));
     }
 
