@@ -22,7 +22,10 @@ impl NativeExecutionActivationV2 {
         Ok(self)
     }
 
-    pub fn execution_version_at_height(self, height: u64) -> Result<NativeExecutionVersion, String> {
+    pub fn execution_version_at_height(
+        self,
+        height: u64,
+    ) -> Result<NativeExecutionVersion, String> {
         self.validate()?;
         if height < self.activation_height {
             Ok(NativeExecutionVersion::V1)
