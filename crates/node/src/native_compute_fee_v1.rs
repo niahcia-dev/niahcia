@@ -237,6 +237,80 @@ mod tests {
     }
 
     #[test]
+    fn compute_gas_fee_vector_matches_json() {
+        let vectors: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../test-vectors/native-compute-gas-v1.json"
+        ))
+        .unwrap();
+
+        assert_eq!(
+            vectors["intrinsic_gas"]["transfer_baseline"].as_u64().unwrap(),
+            crate::native_transaction::NATIVE_TRANSFER_GAS_V1
+        );
+        assert_eq!(
+            vectors["intrinsic_gas"]["compute_channel_open"].as_u64().unwrap(),
+            NATIVE_COMPUTE_CHANNEL_OPEN_GAS_V1
+        );
+        assert_eq!(
+            vectors["intrinsic_gas"]["compute_channel_settle"].as_u64().unwrap(),
+            NATIVE_COMPUTE_CHANNEL_SETTLE_GAS_V1
+        );
+        assert_eq!(
+            vectors["intrinsic_gas"]["compute_channel_refund"].as_u64().unwrap(),
+            NATIVE_COMPUTE_CHANNEL_REFUND_GAS_V1
+        );
+
+        let sample = &vectors["fee_example"];
+        let gas_used = sample["gas_used"].as_u64().unwrap();
+        let gas_limit = sample["gas_limit"].as_u64().unwrap();
+        let base_fee_per_gas: u128 = sample["base_fee_per_gas"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let max_fee_per_gas: u128 = sample["max_fee_per_gas"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let max_priority_fee_per_gas: u128 = sample["max_priority_fee_per_gas"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+
+        let priority = max_priority_fee_per_gas.min(max_fee_per_gas - base_fee_per_gas);
+        let effective = base_fee_per_gas + priority;
+        let max_reserve = max_fee_per_gas * gas_limit as u128;
+        let burned = base_fee_per_gas * gas_used as u128;
+        let producer = priority * gas_used as u128;
+        let actual = burned + producer;
+        let unused = max_reserve - actual;
+
+        assert_eq!(
+            effective.to_string(),
+            sample["effective_fee_per_gas"].as_str().unwrap()
+        );
+        assert_eq!(
+            max_reserve.to_string(),
+            sample["max_execution_charge"].as_str().unwrap()
+        );
+        assert_eq!(
+            burned.to_string(),
+            sample["base_fee_burned"].as_str().unwrap()
+        );
+        assert_eq!(
+            producer.to_string(),
+            sample["producer_priority_fee"].as_str().unwrap()
+        );
+        assert_eq!(actual.to_string(), sample["actual_fee"].as_str().unwrap());
+        assert_eq!(
+            unused.to_string(),
+            sample["unused_fee_reserve"].as_str().unwrap()
+        );
+    }
+
+    #[test]
     fn fee_quote_rejects_intrinsic_gas_underflow() {
         let key = SigningKey::from_slice(&[0x32; 32]).unwrap();
         let transaction = sign(

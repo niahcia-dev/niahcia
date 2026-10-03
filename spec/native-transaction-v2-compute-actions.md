@@ -311,10 +311,14 @@ The activation height/network parameter must be committed by the network-paramet
 
 ## Gas schedule boundary
 
-Compute-channel actions require deterministic intrinsic gas values before implementation lock.
+The candidate deterministic schedule is defined by `spec/native-compute-gas-v1.md`:
 
-Gas MUST be protocol accounting, not wall-clock execution time.
+```text
+ComputeChannelOpen    3,000 gas
+ComputeChannelSettle  5,000 gas
+ComputeChannelRefund  2,000 gas
+```
 
-The exact Open/Settle/Refund gas constants are deliberately not assigned by this document yet. They require explicit review alongside canonical payload size/signature-verification cost and test vectors.
+Gas is protocol accounting, not wall-clock execution time. The schedule uses the existing native Transfer fee model: base fee is burned, priority fee is credited to the CPU block producer, and channel value remains separate from transaction fees.
 
-Implementations MUST NOT invent local gas values and treat them as consensus.
+The schedule is vectored but remains inactive until the V2 activation boundary is explicitly selected.

@@ -1,0 +1,35 @@
+{
+  "schema": "niahcia-native-compute-gas-v1",
+  "status": "candidate-vectored",
+  "description": "Deterministic intrinsic gas and native fee accounting for inactive NativeTransaction V2 ComputeChannel actions.",
+  "intrinsic_gas": {
+    "transfer_baseline": 1000,
+    "compute_channel_open": 3000,
+    "compute_channel_settle": 5000,
+    "compute_channel_refund": 2000
+  },
+  "fee_example": {
+    "action": "ComputeChannelOpen",
+    "gas_used": 3000,
+    "gas_limit": 3000,
+    "base_fee_per_gas": "2",
+    "max_fee_per_gas": "5",
+    "max_priority_fee_per_gas": "1",
+    "priority_fee_per_gas": "1",
+    "effective_fee_per_gas": "3",
+    "max_execution_charge": "15000",
+    "base_fee_burned": "6000",
+    "producer_priority_fee": "3000",
+    "actual_fee": "9000",
+    "unused_fee_reserve": "6000"
+  },
+  "rules": {
+    "gas_is_wall_clock_time": false,
+    "gas_limit_must_cover_intrinsic": true,
+    "max_fee_must_cover_base_fee": true,
+    "base_fee_is_burned": true,
+    "priority_fee_goes_to_cpu_producer": true,
+    "channel_value_is_separate_from_native_fee": true,
+    "fee_reserve_uses_pre_execution_sender_balance": true
+  }
+}

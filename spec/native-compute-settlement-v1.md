@@ -286,3 +286,10 @@ The first native AI-payment test should prove:
 Compute-channel state MUST be part of the canonical native state snapshot/root. It MUST NOT be maintained as an uncommitted auxiliary side table.
 
 NativeStateV1 remains accounts-only and unchanged; compute actions require explicit NativeStateV2 activation.
+
+
+## Native transaction gas and fee accounting
+
+ComputeChannel Open / Settle / Refund use the deterministic candidate intrinsic-gas and fee rules defined in `spec/native-compute-gas-v1.md`.
+
+The native transaction fee is separate from channel authorization and compute-service payment. Base fee is burned and priority fee is credited to the CPU block producer. The ComputeChannel state transition and its native fee accounting must commit atomically.
