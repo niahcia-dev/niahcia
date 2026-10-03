@@ -2,8 +2,8 @@ use crate::native_block_body_v2::{NativeBlockBodyV2, VersionedSignedNativeTransa
 use crate::native_block_execution_v2::{
     InactiveVersionedBlockTransitionV2, InactiveVersionedTransactionTransitionV2,
 };
-use crate::native_transaction::{NativeActionV1, SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION};
-use crate::native_transaction_v2::{NativeActionV2, SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION_V2};
+use crate::native_transaction::SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION;
+use crate::native_transaction_v2::SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION_V2;
 use crate::work::{keccak256, Hash32};
 
 const RECEIPT_DOMAIN_V2: &[u8] = b"NIAHCIA/NATIVE-RECEIPT/V2";
@@ -362,6 +362,8 @@ pub fn build_inactive_execution_result_v2(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native_transaction::NativeActionV1;
+    use crate::native_transaction_v2::NativeActionV2;
 
     fn receipt(marker: u8, schema: u64, action: u64) -> NativeReceiptV2 {
         NativeReceiptV2 {
