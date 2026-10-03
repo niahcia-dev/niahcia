@@ -276,19 +276,19 @@ pub fn execute_nvm1_core_with_context_and_gas(
     loop {
         let Some(instruction) = instructions.get(pc) else {
             return Ok(trap_result_with_gas(
-                        stack,
-                        executed,
-                        gas_used,
-                        Nvm1Trap::FellOffEnd,
-                    ));
+                stack,
+                executed,
+                gas_used,
+                Nvm1Trap::FellOffEnd,
+            ));
         };
         if executed >= NVM1_INACTIVE_EXECUTION_STEP_LIMIT {
             return Ok(trap_result_with_gas(
-                        stack,
-                        executed,
-                        gas_used,
-                        Nvm1Trap::StepLimitExceeded,
-                    ));
+                stack,
+                executed,
+                gas_used,
+                Nvm1Trap::StepLimitExceeded,
+            ));
         }
         let gas_cost = nvm1_gas_cost(instruction)?;
         if gas_cost > gas_limit.saturating_sub(gas_used) {
@@ -426,7 +426,14 @@ pub fn execute_nvm1_core_with_context_and_gas(
                 let equal = match (&lhs, &rhs) {
                     (Nvm1Value::U64(a), Nvm1Value::U64(b)) => a == b,
                     (Nvm1Value::Bytes32(a), Nvm1Value::Bytes32(b)) => a == b,
-                    _ => return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::TypeMismatch)),
+                    _ => {
+                        return Ok(trap_result_with_gas(
+                            stack,
+                            executed,
+                            gas_used,
+                            Nvm1Trap::TypeMismatch,
+                        ))
+                    }
                 };
                 stack.push(Nvm1Value::U64(u64::from(equal)));
                 pc += 1;
