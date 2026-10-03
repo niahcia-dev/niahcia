@@ -58,13 +58,16 @@ Current guarantees include:
 - multi-transaction candidate batches publish no mutation unless every compute transaction succeeds;
 - successful batch transitions form one deterministic state-root chain.
 
+Persistence/restart/reorg proof is now implemented for transition-derived V2 state: Open, Settle, and Refund snapshots survive restart with exact roots, and detached transition effects are removed when canonical state is restored from the winning branch.
+
 Still required before activation:
 
-1. post-transition persistence/restart/reorg coverage;
-2. inactive integration with the candidate native block/state persistence boundary;
-3. explicit fee/gas schedule;
-4. activation network parameter;
-5. final interoperability vectors covering activation/migration execution.
+1. explicit successor block-body support for versioned V1/V2 signed transactions;
+2. explicit successor execution/receipt commitment that commits NativeStateV2 without changing NativeExecutionV1;
+3. inactive integration of compute batches with that successor block/state persistence boundary;
+4. explicit fee/gas schedule;
+5. activation network parameter;
+6. final interoperability vectors covering activation/migration execution.
 
 ## AI / Agent architecture
 
@@ -118,8 +121,9 @@ The active reference node is native-execution only.
 
 ## Highest-priority open protocol work
 
-1. Finish inactive ComputeChannel persistence/restart/reorg proof and candidate block/state integration.
-2. Review and assign compute intrinsic gas/fee rules before any activation.
+1. Define the versioned block-body and execution-commitment successor required to carry NativeTransactionV2 / NativeStateV2 without reinterpreting V1.
+2. Integrate inactive compute batches with that successor persistence boundary.
+3. Review and assign compute intrinsic gas/fee rules before any activation.
 3. Define explicit NativeStateV2 / NativeTransactionV2 activation parameters and migration vectors.
 4. Resolve stock miner/pool RandomX interoperability.
 5. Resolve difficulty/timestamp hardening.
