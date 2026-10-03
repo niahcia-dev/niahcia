@@ -442,36 +442,69 @@ pub fn execute_nvm1_core_with_context(
             }
             0x20 => {
                 let Some(key) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_GET stack underflow"));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 STORAGE_GET stack underflow",
+                    ));
                 };
                 let Nvm1Value::Bytes32(key) = key else {
-                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_GET type mismatch"));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 STORAGE_GET type mismatch",
+                    ));
                 };
                 let value = storage.get(&key).copied().unwrap_or([0u8; 32]);
-                if let Some(result) = push_value(&mut stack, validated.header.max_stack_items, Nvm1Value::Bytes32(value), executed) {
+                if let Some(result) = push_value(
+                    &mut stack,
+                    validated.header.max_stack_items,
+                    Nvm1Value::Bytes32(value),
+                    executed,
+                ) {
                     return Ok(result);
                 }
                 pc += 1;
             }
             0x21 => {
                 let Some(value) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_SET stack underflow"));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 STORAGE_SET stack underflow",
+                    ));
                 };
                 let Some(key) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_SET stack underflow"));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 STORAGE_SET stack underflow",
+                    ));
                 };
                 let (Nvm1Value::Bytes32(key), Nvm1Value::Bytes32(value)) = (key, value) else {
-                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_SET type mismatch"));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 STORAGE_SET type mismatch",
+                    ));
                 };
                 storage.insert(key, value);
                 pc += 1;
             }
             0x22 => {
                 let Some(key) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_DELETE stack underflow"));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 STORAGE_DELETE stack underflow",
+                    ));
                 };
                 let Nvm1Value::Bytes32(key) = key else {
-                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_DELETE type mismatch"));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 STORAGE_DELETE type mismatch",
+                    ));
                 };
                 storage.remove(&key);
                 pc += 1;
@@ -722,7 +755,7 @@ mod tests {
                     input,
                     caller_payload: [0u8; 20],
                     call_value: 0,
-            storage: BTreeMap::new(),
+                    storage: BTreeMap::new(),
                 }
             )
             .unwrap()
