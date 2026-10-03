@@ -38,9 +38,9 @@ packaging
 performance
 networking
 rpc
-evm
+native-execution
 randomx
-reth
+compute-settlement
 testing
 ci
 ```
