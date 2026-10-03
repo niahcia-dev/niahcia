@@ -1,54 +1,40 @@
 # Node Configuration
 
-NIAHCIA currently uses a small TOML configuration file for the pre-alpha node bootstrap.
+NIAHCIA uses TOML configuration plus environment overrides.
+
+The node now uses native NIAHCIA execution. Reth/Engine-API/JWT configuration is obsolete and rejected rather than silently ignored.
 
 ## Example
-
-Copy the repository example:
 
 ```bash
 cp config/niahcia.example.toml niahcia.toml
 cargo run -p niahcia -- --config niahcia.toml
 ```
 
-## Fields
-
 ```toml
 network = "devnet"
 data_dir = "./data"
-
-reth_engine_api = "http://127.0.0.1:8551"
-reth_jwt_path = "./jwt.hex"
-
+fee_recipient = "0x0000000000000000000000000000000000000000"
 mining_rpc_bind = "127.0.0.1:9332"
+p2p_bind = "127.0.0.1:9442"
+p2p_peers = []
 log_level = "info"
 ```
 
-## Environment overrides
+A devnet `dniah1...` account address may also be used as `fee_recipient`; it is normalized internally to its 20-byte account payload.
 
-Every current field may be overridden:
+## Environment overrides
 
 ```text
 NIAHCIA_NETWORK
 NIAHCIA_DATA_DIR
-NIAHCIA_RETH_ENGINE_API
-NIAHCIA_RETH_JWT_PATH
+NIAHCIA_FEE_RECIPIENT
 NIAHCIA_MINING_RPC_BIND
+NIAHCIA_P2P_BIND
+NIAHCIA_P2P_PEERS
 NIAHCIA_LOG_LEVEL
 ```
 
-## Startup lifecycle
+Unknown TOML fields are rejected. This prevents obsolete configuration such as former `reth_*` keys from appearing to work while being ignored.
 
-The node currently:
-
-1. parses CLI arguments,
-2. loads configuration,
-3. applies environment overrides,
-4. validates configuration,
-5. initializes logging,
-6. creates the data directory,
-7. installs SIGINT/SIGTERM-compatible Ctrl-C handling where supported by the runtime,
-8. enters the bootstrap run loop,
-9. exits cleanly when shutdown is requested.
-
-Reth connectivity is implemented in the next development issue.
+Current pre-alpha consensus parameters support devnet only.
