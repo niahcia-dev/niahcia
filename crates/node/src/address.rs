@@ -5,6 +5,7 @@ use std::str::FromStr;
 
 pub const ADDRESS_PAYLOAD_LEN: usize = 20;
 const ADDRESS_VERSION: u8 = 1;
+const CONTRACT_DERIVATION_DOMAIN: &[u8] = b"NIAHCIA/CONTRACT/V1";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AddressNetwork {
@@ -14,6 +15,14 @@ pub enum AddressNetwork {
 }
 
 impl AddressNetwork {
+    pub const fn network_id(self) -> u8 {
+        match self {
+            Self::Mainnet => 0x00,
+            Self::Testnet => 0x01,
+            Self::Devnet => 0x02,
+        }
+    }
+
     pub const fn hrp(self) -> &'static str {
         match self {
             Self::Mainnet => "niah",
@@ -84,6 +93,41 @@ impl NiahciaAddressV1 {
         let mut payload = [0u8; ADDRESS_PAYLOAD_LEN];
         payload.copy_from_slice(&digest[12..]);
         Ok(Self::new(network, AddressKind::Account, payload))
+    }
+
+    pub fn contract_derivation_preimage(
+        network: AddressNetwork,
+        chain_id: u64,
+        creator_payload: [u8; ADDRESS_PAYLOAD_LEN],
+        creator_nonce: u64,
+    ) -> Vec<u8> {
+        let mut preimage = Vec::with_capacity(
+            CONTRACT_DERIVATION_DOMAIN.len() + 1 + 1 + 1 + 8 + 1 + ADDRESS_PAYLOAD_LEN + 1 + 8,
+        );
+        preimage.extend_from_slice(CONTRACT_DERIVATION_DOMAIN);
+        preimage.push(0);
+        preimage.push(network.network_id());
+        preimage.push(0);
+        preimage.extend_from_slice(&chain_id.to_be_bytes());
+        preimage.push(0);
+        preimage.extend_from_slice(&creator_payload);
+        preimage.push(0);
+        preimage.extend_from_slice(&creator_nonce.to_be_bytes());
+        preimage
+    }
+
+    pub fn contract_from_creator(
+        network: AddressNetwork,
+        chain_id: u64,
+        creator_payload: [u8; ADDRESS_PAYLOAD_LEN],
+        creator_nonce: u64,
+    ) -> Self {
+        let preimage =
+            Self::contract_derivation_preimage(network, chain_id, creator_payload, creator_nonce);
+        let digest = Keccak256::digest(&preimage);
+        let mut payload = [0u8; ADDRESS_PAYLOAD_LEN];
+        payload.copy_from_slice(&digest[12..]);
+        Self::new(network, AddressKind::Contract, payload)
     }
 
     fn data(self) -> [u8; ADDRESS_PAYLOAD_LEN + 2] {
@@ -195,6 +239,52 @@ mod tests {
             let address = NiahciaAddressV1::new(network, kind, [0u8; ADDRESS_PAYLOAD_LEN]);
             assert_eq!(address.encode().unwrap(), expected);
             assert_eq!(NiahciaAddressV1::decode(expected).unwrap(), address);
+        }
+    }
+
+    #[test]
+    fn contract_derivation_probe_vector() {
+        let creator = hex::decode("1a642f0e3c3af545e7acbd38b07251b3990914f1").unwrap();
+        let creator: [u8; ADDRESS_PAYLOAD_LEN] = creator.try_into().unwrap();
+
+        let cases = [
+            (
+                AddressNetwork::Mainnet,
+                0x0000_0000_4E49_4148,
+                7_u64,
+                "TODO_MAIN_PREIMAGE",
+                "TODO_MAIN_PAYLOAD",
+                "TODO_MAIN_ADDRESS",
+            ),
+            (
+                AddressNetwork::Testnet,
+                0x0000_0001_5449_4148,
+                7_u64,
+                "TODO_TEST_PREIMAGE",
+                "TODO_TEST_PAYLOAD",
+                "TODO_TEST_ADDRESS",
+            ),
+            (
+                AddressNetwork::Devnet,
+                0x0000_0002_4449_4148,
+                7_u64,
+                "TODO_DEV_PREIMAGE",
+                "TODO_DEV_PAYLOAD",
+                "TODO_DEV_ADDRESS",
+            ),
+        ];
+
+        for (network, chain_id, nonce, expected_preimage, expected_payload, expected_address) in cases
+        {
+            let preimage =
+                NiahciaAddressV1::contract_derivation_preimage(network, chain_id, creator, nonce);
+            let address =
+                NiahciaAddressV1::contract_from_creator(network, chain_id, creator, nonce);
+
+            assert_eq!(hex::encode(preimage), expected_preimage);
+            assert_eq!(hex::encode(address.payload), expected_payload);
+            assert_eq!(address.to_string(), expected_address);
+            assert_eq!(address.kind, AddressKind::Contract);
         }
     }
 

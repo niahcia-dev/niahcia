@@ -67,6 +67,22 @@ A contract MAY eventually verify explicitly specified deterministic evidence suc
 
 A contract MUST NOT make chain validity depend on an AI worker responding.
 
+## Contract address derivation and collision rule
+
+ContractCreate uses the locked Address V1 derivation domain:
+
+`NIAHCIA/CONTRACT/V1`
+
+with the transaction network ID, native chain ID, authenticated creator Account payload, and the creator transaction nonce.
+
+The Bech32m text form is never part of the derivation input.
+
+A successful ContractCreate MUST install contract state only at the exact derived Contract Address V1 payload. If persistent contract state already exists at that payload, creation MUST fail deterministically and MUST NOT overwrite or merge with the existing contract.
+
+Address derivation itself does not mutate state.
+
+Canonical derivation vectors are required before contract execution activation.
+
 ## State atomicity
 
 Contract execution must use deterministic transactional semantics.
