@@ -351,8 +351,10 @@ pub struct InactiveAcceptedContractCallV1 {
 /// Contract storage and call value commit only for STOP/RETURN; REVERT and traps discard both.
 pub fn execute_inactive_accepted_contract_call_v1(
     state: &mut NativeStateV3,
+    registry: &NativeContractRuntimeRegistryV1,
     transaction: &SignedNativeTransactionV2,
     network: AddressNetwork,
+    current_height: u64,
     context: NativeExecutionContextV1,
 ) -> Result<InactiveAcceptedContractCallV1, String> {
     transaction.body.validate(network)?;
@@ -371,6 +373,7 @@ pub fn execute_inactive_accepted_contract_call_v1(
         .contract(contract_id)
         .cloned()
         .ok_or_else(|| "ContractCall target contract does not exist".to_string())?;
+    registry.active_descriptor(contract.runtime_id, current_height)?;
     if contract.runtime_id != NVM1_RUNTIME_ID {
         return Err(format!(
             "inactive ContractCall executor supports only NVM1 runtime_id {}",
@@ -657,8 +660,10 @@ mod tests {
 
         let result = execute_inactive_accepted_contract_call_v1(
             &mut state,
+            &registry(),
             &sender_tx,
             AddressNetwork::Devnet,
+            10,
             NativeExecutionContextV1 {
                 base_fee_per_gas: 2,
                 cpu_producer: producer,
@@ -695,8 +700,10 @@ mod tests {
 
         let result = execute_inactive_accepted_contract_call_v1(
             &mut state,
+            &registry(),
             &tx,
             AddressNetwork::Devnet,
+            10,
             NativeExecutionContextV1 {
                 base_fee_per_gas: 2,
                 cpu_producer: producer,
@@ -741,8 +748,10 @@ mod tests {
 
         let result = execute_inactive_accepted_contract_call_v1(
             &mut state,
+            &registry(),
             &tx,
             AddressNetwork::Devnet,
+            10,
             NativeExecutionContextV1 {
                 base_fee_per_gas: 2,
                 cpu_producer: producer,
