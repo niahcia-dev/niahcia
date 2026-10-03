@@ -213,12 +213,7 @@ mod tests {
 
     #[test]
     fn contract_state_probe_vector() {
-        let mut contract = ContractStateV1::new(
-            [0x33; 20],
-            1_234,
-            1,
-            vec![0x01, 0x02, 0x03, 0x04],
-        );
+        let mut contract = ContractStateV1::new([0x33; 20], 1_234, 1, vec![0x01, 0x02, 0x03, 0x04]);
         contract.set_storage([0x44; 32], [0x55; 32]);
 
         let contract_bytes = contract.canonical_bytes().unwrap();
