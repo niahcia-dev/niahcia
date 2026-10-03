@@ -10,7 +10,7 @@ This document defines the NIAHCIA-specific rules around RandomX. It does not red
 
 The RandomX input is exactly the 164-byte canonical `BlockHeaderV1` byte sequence.
 
-No Reth identifier, Ethereum identifier, JSON representation, length prefix, or hidden salt is added.
+No external execution identifier, JSON representation, length prefix, or hidden salt is added.
 
 ```text
 pow_input = canonical_block_header_164_bytes
@@ -24,7 +24,7 @@ nonce
 extra_nonce
 ```
 
-Changing either field does not require EVM re-execution.
+Changing either field does not require rebuilding the native transaction/state transition.
 
 ## Target comparison
 
@@ -40,7 +40,7 @@ Byte-for-byte comparison may be implemented as unsigned lexicographic comparison
 
 ## Initial development epoch parameters
 
-Prototype 0 uses the following development parameters:
+The current devnet uses the following development parameters:
 
 ```text
 RANDOMX_EPOCH_LENGTH = 2048 blocks
@@ -81,9 +81,8 @@ The seed is derived only from NIAHCIA chain history.
 
 It MUST NOT depend on:
 
-- Reth state
-- Ethereum block hashes
-- beacon-chain randomness
+- external execution state
+- external chain hashes or randomness
 - wall-clock randomness
 - miner-provided randomness
 - developer servers
