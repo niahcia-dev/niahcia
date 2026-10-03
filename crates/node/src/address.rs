@@ -274,7 +274,8 @@ mod tests {
             ),
         ];
 
-        for (network, chain_id, nonce, expected_preimage, expected_payload, expected_address) in cases
+        for (network, chain_id, nonce, expected_preimage, expected_payload, expected_address) in
+            cases
         {
             let preimage =
                 NiahciaAddressV1::contract_derivation_preimage(network, chain_id, creator, nonce);
