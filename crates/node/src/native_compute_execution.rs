@@ -816,7 +816,10 @@ mod tests {
                 nonce: 5,
             }
         );
-        assert_eq!(state.channel(plan.channel_id), Some(&plan.channel_state_after));
+        assert_eq!(
+            state.channel(plan.channel_id),
+            Some(&plan.channel_state_after)
+        );
     }
 
     #[test]
