@@ -21,9 +21,7 @@ impl ContractRuntimeDescriptorV1 {
         if self.code_format_version == 0 {
             return Err("contract code_format_version 0 is reserved".into());
         }
-        if self.max_code_bytes == 0
-            || self.max_code_bytes as usize > MAX_CONTRACT_CODE_BYTES_V1
-        {
+        if self.max_code_bytes == 0 || self.max_code_bytes as usize > MAX_CONTRACT_CODE_BYTES_V1 {
             return Err(format!(
                 "contract runtime max_code_bytes must be within 1..={MAX_CONTRACT_CODE_BYTES_V1}"
             ));
@@ -220,7 +218,9 @@ mod tests {
             let height = case["height"].as_u64().unwrap();
             let active = case["active"].as_bool().unwrap();
             assert_eq!(
-                registry.active_descriptor(descriptor.runtime_id, height).is_ok(),
+                registry
+                    .active_descriptor(descriptor.runtime_id, height)
+                    .is_ok(),
                 active
             );
         }
