@@ -489,6 +489,42 @@ pub fn execute_inactive_compute_transaction_v2(
     })
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InactiveComputeBatchExecutionResultV1 {
+    pub transactions: Vec<InactiveComputeExecutionResultV1>,
+    pub state_root_before: Hash32,
+    pub state_root_after: Hash32,
+}
+
+pub fn execute_inactive_compute_batch_v2(
+    state: &mut NativeStateV2,
+    transactions: &[SignedNativeTransactionV2],
+    network: AddressNetwork,
+    current_height: u64,
+) -> Result<InactiveComputeBatchExecutionResultV1, String> {
+    let state_root_before = state.state_root()?;
+    let mut next = state.clone();
+    let mut results = Vec::with_capacity(transactions.len());
+
+    for transaction in transactions {
+        results.push(execute_inactive_compute_transaction_v2(
+            &mut next,
+            transaction,
+            network,
+            current_height,
+        )?);
+    }
+
+    let state_root_after = next.state_root()?;
+    *state = next;
+
+    Ok(InactiveComputeBatchExecutionResultV1 {
+        transactions: results,
+        state_root_before,
+        state_root_after,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1141,6 +1177,88 @@ mod tests {
             50,
         )
         .is_err());
+        assert_eq!(state, before);
+    }
+
+    #[test]
+    fn inactive_batch_commits_all_transactions_atomically() {
+        let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
+        let first = signed_open(&signing_key, 3, 1_000, 100);
+        let second = signed_open(&signing_key, 4, 1_000, 101);
+        let mut state = state_for(&first, 5_000, 3);
+        let before_root = state.state_root().unwrap();
+
+        let result = execute_inactive_compute_batch_v2(
+            &mut state,
+            &[first.clone(), second.clone()],
+            AddressNetwork::Devnet,
+            50,
+        )
+        .unwrap();
+
+        assert_eq!(result.transactions.len(), 2);
+        assert_eq!(result.state_root_before, before_root);
+        assert_eq!(
+            result.transactions[0].state_root_before,
+            result.state_root_before
+        );
+        assert_eq!(
+            result.transactions[0].state_root_after,
+            result.transactions[1].state_root_before
+        );
+        assert_eq!(
+            result.transactions[1].state_root_after,
+            result.state_root_after
+        );
+        assert_eq!(result.state_root_after, state.state_root().unwrap());
+
+        let sender = first
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload;
+        assert_eq!(
+            state.accounts().account(sender),
+            AccountStateV1 {
+                balance: 3_000,
+                nonce: 5,
+            }
+        );
+        assert!(state.channel(result.transactions[0].transition.channel_id()).is_some());
+        assert!(state.channel(result.transactions[1].transition.channel_id()).is_some());
+    }
+
+    #[test]
+    fn inactive_batch_rolls_back_earlier_transaction_when_later_one_fails() {
+        let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
+        let first = signed_open(&signing_key, 3, 1_000, 100);
+        let second = signed_open(&signing_key, 5, 1_000, 101);
+        let mut state = state_for(&first, 5_000, 3);
+        let before = state.clone();
+
+        let error = execute_inactive_compute_batch_v2(
+            &mut state,
+            &[first, second],
+            AddressNetwork::Devnet,
+            50,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("nonce mismatch"));
+        assert_eq!(state, before);
+    }
+
+    #[test]
+    fn inactive_empty_batch_is_a_deterministic_noop() {
+        let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
+        let transaction = signed_open(&signing_key, 3, 1_000, 100);
+        let mut state = state_for(&transaction, 5_000, 3);
+        let before = state.clone();
+
+        let result =
+            execute_inactive_compute_batch_v2(&mut state, &[], AddressNetwork::Devnet, 50).unwrap();
+
+        assert!(result.transactions.is_empty());
+        assert_eq!(result.state_root_before, result.state_root_after);
         assert_eq!(state, before);
     }
 
