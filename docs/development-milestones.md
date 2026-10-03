@@ -1,162 +1,36 @@
 # Development Milestones
 
-NIAHCIA development is organized around runnable, testable releases rather than broad architecture phases.
+NIAHCIA development is organized around reproducible technical checkpoints rather than obsolete version labels.
 
-## v0.1.0 — First Runnable Node
+## Completed foundation — native chain path
 
-Goal: prove the base execution/consensus boundary with one runnable NIAHCIA node process.
+The reference node has moved from the former external-execution prototype to native NIAHCIA execution.
 
-Acceptance target:
+Current green foundation includes deterministic native accounts/state roots, NativeTransaction V1, Transfer execution, native block commitments, atomic persistence, RandomX PoW, cumulative-work fork choice, P2P Version 3, shared native mempool, non-empty mining templates, and restart/reorg handling.
 
-```text
-niahcia node starts
-↓
-loads configuration
-↓
-connects to local Reth
-↓
-obtains/constructs an execution payload template
-↓
-builds a PoW work template
-↓
-exposes local mining work
-```
+The old Reth/EVM development path is superseded and must not be used as current setup guidance.
 
-This release does not need a public network, polished miner, AI compute, explorer, or service nodes.
+## Current milestone — inactive compute settlement proof
 
-Required work:
+NativeStateV2 and NativeTransaction V2 compute-channel functionality is being built behind an inactive boundary.
 
-- Rust workspace/bootstrap
-- node/pow daemon startup and configuration
-- authenticated Reth Engine API client
-- execution payload/template abstraction
-- PoW header/work-template types
-- local RPC for mining work
-- logging and version reporting
-- smoke-test documentation
+The milestone is complete only when Open, Settle, and Refund are proven across deterministic validation, exact state-root mutation, nonce/value accounting, stale/duplicate rejection, atomic rollback, persistence/restart, reorg behavior, canonical vectors, reviewed fee/gas accounting, and explicit activation rules.
 
-## v0.2.0 — First Mined Block
+No V2 compute action is accepted by active mempool/P2P/mining until that boundary is deliberately activated.
 
-Goal: mine and accept the first valid RandomX-secured NIAHCIA block.
+## Next milestone — first decentralized AI payment
 
-Required work:
-
-- RandomX integration
-- nonce search
-- PoW validation
-- block submission path
-- execution payload import
-- accepted/rejected block telemetry
-- deterministic development network parameters
-
-Acceptance target:
-
-```text
-node + miner
-↓
-work template
-↓
-RandomX solution
-↓
-block submission
-↓
-block accepted
-```
-
-## v0.3.0 — Multi-Node Chain
-
-Goal: two or more independent nodes agree on the same CPU-PoW chain.
-
-Implementation handoff: [v0.3.0 multi-node devnet](multi-node-devnet-handoff.md)
-
-Required work:
-
-- chain P2P
-- block/header propagation
-- cumulative-work fork choice
-- difficulty adjustment
-- synchronization
-- basic reorganization handling
-
-Acceptance target:
-
-- Node A and Node B follow the same canonical chain.
-- A miner can connect to either node.
-- Restarting one node does not destroy network continuity.
-
-Current verified devnet result:
-
-- independent Reth A / NIAHCIA A and Reth B / NIAHCIA B state directories
-- Node A mined heights 0, 1, and 2
-- Node B synchronized to the same NIAHCIA canonical tip over the native P2P protocol
-- Node B was stopped, Node A mined height 3, and Node B restarted
-- Node B caught up without copying NIAHCIA or Reth state
-- both execution nodes reached canonical execution height 4
-- reproduced with `scripts/devnet-two-node-smoke.sh`
-
-This proves linear two-node synchronization and restart catch-up.
-
-Additional verified fork/reorg result:
-
-- Node A and Node B were first synchronized to the same canonical tip
-- both NIAHCIA nodes were stopped and restarted without peers
-- isolated Node B mined a competing block at height 4
-- isolated Node A mined its own height-4 block plus height 5, creating the higher-work branch
-- Node B was restarted against Node A with its competing persisted fork intact
-- Node B discovered the shared ancestor, validated A's branch locally, reorganized to the higher-work chain, and advanced to next work height 6
-- both independent execution backends converged to canonical execution height 6
-- reproduced with `scripts/devnet-two-node-smoke.sh`
-
-This verifies basic common-ancestor discovery and live two-node reorg convergence on the current devnet implementation.
-
-Static-peer reconnect/catch-up is also verified live:
-
-- Node B remained running after initial synchronization
-- Node A mined an additional canonical block while B's previous sync connection had ended
-- B's static-peer worker reconnected automatically without process restart
-- B caught up to NIAHCIA next-work height 4 and execution canonical height 4
-- the subsequent divergent-fork reorg test still converged successfully to NIAHCIA next-work height 6 / execution height 6
-
-This removes the startup-order/manual-restart dependency for static peers on the current devnet transport.
-
-Static-peer startup-order recovery is now verified live as well:
-
-- Node B started first with Node A configured but unavailable
-- B remained healthy while outbound connection attempts failed
-- Node A was started later and mined heights 0 through 2
-- already-running B discovered A through its retry loop and synchronized to next-work height 3 without restart
-- B subsequently caught another A block through automatic reconnect at next-work height 4
-- the divergent-fork common-ancestor reorg still converged afterward to next-work height 6 / execution height 6
-
-This verifies that static-peer availability at process startup is no longer required for devnet synchronization.
-
-## v0.4.0 — EVM Usable Network
-
-Goal: ordinary Ethereum-style transactions and Solidity contracts work on the CPU-PoW network.
-
-Required work:
-
-- Ethereum-compatible JSON-RPC
-- wallet connection
-- transaction propagation
-- contract deployment
-- gas/base-fee handling
-- receipts/logs
-- chain ID/network parameters
-
-## v0.5.0 — AI Job Prototype
-
-Goal: first end-to-end off-chain AI execution settled through the chain.
-
-Required work moves primarily into:
-
-- `niahcia-protocol`
-- `niahcia-compute`
-
-The base chain must remain independent of AI availability.
+1. wallet owns spendable NIAH;
+2. wallet opens a worker-bound channel;
+3. funds are locked exactly once;
+4. several AI jobs execute off-chain;
+5. wallet signs increasing usage receipts;
+6. worker submits the final receipt;
+7. worker receives the acknowledged amount;
+8. unused value returns to the wallet;
+9. a second terminal transition is rejected;
+10. CPU-PoW chain progress remains independent of worker availability.
 
 ## Release rule
 
-A milestone version is not considered complete because code exists.
-
-It is complete only when its acceptance target can be reproduced from a clean setup using documented commands.
+A milestone is complete only when its acceptance target is reproducible from a clean environment with documented commands and green CI.
