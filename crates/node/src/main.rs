@@ -10,6 +10,7 @@ pub mod native_block_body_v2;
 pub mod native_compute_execution;
 pub mod native_compute_payloads;
 pub mod native_execution;
+pub mod native_execution_v2;
 pub mod native_mempool;
 pub mod native_rpc;
 pub mod native_state_v2;
