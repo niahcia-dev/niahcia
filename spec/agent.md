@@ -64,11 +64,11 @@ REVOKED
 2. Previously published AgentVersions are immutable.
 3. Updating `current_version` does not invalidate older versions.
 4. Execution-critical behavior must not be inferred from mutable metadata.
-5. Smart contracts SHOULD pin an exact AgentVersion rather than implicitly follow `current_version`.
+5. Protocol callers SHOULD pin an exact AgentVersion rather than implicitly follow `current_version`.
 
-## Prototype 0
+## first implementation milestone
 
-Prototype 0 needs only stable identity, creator/controller, `current_version`, status, and metadata. The schema nevertheless reserves the full governance model.
+first implementation milestone needs only stable identity, creator/controller, `current_version`, status, and metadata. The schema nevertheless reserves the full governance model.
 
 
 ## V1 wallet-hosted Agent model
