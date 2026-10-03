@@ -530,10 +530,7 @@ mod tests {
         };
         let result = execute_nvm1_core_with_context(&code, &context).unwrap();
         assert_eq!(result.halt, Nvm1Halt::Stop);
-        assert_eq!(
-            result.stack,
-            vec![Nvm1Value::U64(5), Nvm1Value::U64(42)]
-        );
+        assert_eq!(result.stack, vec![Nvm1Value::U64(5), Nvm1Value::U64(42)]);
     }
 
     #[test]
