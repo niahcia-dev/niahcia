@@ -21,7 +21,7 @@ The base fee does not fund GPU AI workers, storage/service nodes, a treasury, de
 
 ## Why retain base-fee burning
 
-NIAHCIA does not adopt burning merely because Reth/EVM supports it. It retains the property because paying the protocol-computed base fee directly to the block producer weakens the economic separation between the congestion price and the producer's inclusion incentive and can create incentives to manipulate the fee mechanism.
+NIAHCIA retains base-fee burning because paying the protocol-computed base fee directly to the block producer weakens the economic separation between the congestion price and the producer's inclusion incentive and can create incentives to manipulate the fee mechanism.
 
 The priority fee remains the direct market incentive for transaction inclusion and ordering. CPU miners additionally receive the deterministic PoW subsidy defined by `monetary-policy-v1.md` and `monetary.rs`, including the permanent tail subsidy.
 
