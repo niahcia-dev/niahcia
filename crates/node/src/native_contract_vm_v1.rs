@@ -246,18 +246,10 @@ pub fn execute_nvm1_core_with_context(
 
     loop {
         let Some(instruction) = instructions.get(pc) else {
-            return Ok(trap_result(
-                stack,
-                executed,
-                Nvm1Trap::FellOffEnd,
-            ));
+            return Ok(trap_result(stack, executed, Nvm1Trap::FellOffEnd));
         };
         if executed >= NVM1_INACTIVE_EXECUTION_STEP_LIMIT {
-            return Ok(trap_result(
-                stack,
-                executed,
-                Nvm1Trap::StepLimitExceeded,
-            ));
+            return Ok(trap_result(stack, executed, Nvm1Trap::StepLimitExceeded));
         }
         executed += 1;
 
@@ -316,25 +308,13 @@ pub fn execute_nvm1_core_with_context(
             }
             0x05 | 0x06 => {
                 let Some(rhs) = stack.pop() else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::StackUnderflow,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 };
                 let Some(lhs) = stack.pop() else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::StackUnderflow,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 };
                 let (Nvm1Value::U64(lhs), Nvm1Value::U64(rhs)) = (lhs, rhs) else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::TypeMismatch,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
                 };
                 let value = if instruction.opcode == 0x05 {
                     lhs.checked_add(rhs)
@@ -342,11 +322,7 @@ pub fn execute_nvm1_core_with_context(
                     lhs.checked_sub(rhs)
                 };
                 let Some(value) = value else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::ArithmeticOverflowOrUnderflow,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::ArithmeticOverflowOrUnderflow));
                 };
                 stack.push(Nvm1Value::U64(value));
                 pc += 1;
@@ -397,29 +373,17 @@ pub fn execute_nvm1_core_with_context(
             }
             0x11 => {
                 let Some(offset) = stack.pop() else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::StackUnderflow,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 };
                 let Nvm1Value::U64(offset) = offset else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::TypeMismatch,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
                 };
                 let offset = usize::try_from(offset)
                     .map_err(|_| "NVM1 INPUT_COPY offset does not fit usize".to_string())?;
                 let length =
                     u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as usize;
                 let Some(end) = offset.checked_add(length) else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::InputRangeOverflow,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::InputRangeOverflow));
                 };
                 if end > context.input.len() {
                     return Ok(trap_result(stack, executed, Nvm1Trap::InputOutOfRange));
@@ -459,18 +423,10 @@ pub fn execute_nvm1_core_with_context(
             }
             0x20 => {
                 let Some(key) = stack.pop() else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::StackUnderflow,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 };
                 let Nvm1Value::Bytes32(key) = key else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::TypeMismatch,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
                 };
                 let value = storage.get(&key).copied().unwrap_or([0u8; 32]);
                 if let Some(result) = push_value(
@@ -485,43 +441,23 @@ pub fn execute_nvm1_core_with_context(
             }
             0x21 => {
                 let Some(value) = stack.pop() else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::StackUnderflow,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 };
                 let Some(key) = stack.pop() else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::StackUnderflow,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 };
                 let (Nvm1Value::Bytes32(key), Nvm1Value::Bytes32(value)) = (key, value) else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::TypeMismatch,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
                 };
                 storage.insert(key, value);
                 pc += 1;
             }
             0x22 => {
                 let Some(key) = stack.pop() else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::StackUnderflow,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 };
                 let Nvm1Value::Bytes32(key) = key else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::TypeMismatch,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
                 };
                 storage.remove(&key);
                 pc += 1;
@@ -544,11 +480,7 @@ pub fn execute_nvm1_core_with_context(
             }
             0x30 => {
                 let Some(value) = stack.pop() else {
-                    return Ok(trap_result(
-                        stack,
-                        executed,
-                        Nvm1Trap::StackUnderflow,
-                    ));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 };
                 let Nvm1Value::Bytes32(value) = value else {
                     return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
@@ -661,10 +593,7 @@ mod tests {
         mixed.extend_from_slice(&[0u8; 32]);
         mixed.extend_from_slice(&[0x01, 0, 0, 0, 0, 0, 0, 0, 1, 0x07, 0x00]);
         let mismatch = execute_nvm1_core(&module(4, 2, &mixed)).unwrap();
-        assert_eq!(
-            mismatch.halt,
-            Nvm1Halt::Trap(Nvm1Trap::TypeMismatch)
-        );
+        assert_eq!(mismatch.halt, Nvm1Halt::Trap(Nvm1Trap::TypeMismatch));
 
         let overflow = module(
             4,
@@ -906,19 +835,13 @@ mod tests {
             result.instructions_executed,
             NVM1_INACTIVE_EXECUTION_STEP_LIMIT
         );
-        assert_eq!(
-            result.halt,
-            Nvm1Halt::Trap(Nvm1Trap::StepLimitExceeded)
-        );
+        assert_eq!(result.halt, Nvm1Halt::Trap(Nvm1Trap::StepLimitExceeded));
     }
 
     #[test]
     fn core_traps_on_fallthrough() {
         let result = execute_nvm1_core(&module(1, 1, &[0x01, 0, 0, 0, 0, 0, 0, 0, 1])).unwrap();
-        assert_eq!(
-            result.halt,
-            Nvm1Halt::Trap(Nvm1Trap::FellOffEnd)
-        );
+        assert_eq!(result.halt, Nvm1Halt::Trap(Nvm1Trap::FellOffEnd));
     }
 
     use super::*;
