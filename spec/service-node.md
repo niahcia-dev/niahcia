@@ -79,9 +79,9 @@ EXITED
 3. Service claims MUST be explicit and auditable.
 4. Payment for one service class MUST NOT imply entitlement to another.
 
-## Prototype 0
+## first implementation milestone
 
-Prototype 0 enables MODEL_STORAGE, model manifest/chunk serving, basic availability tracking, and test retrieval accounting.
+first implementation milestone enables MODEL_STORAGE, model manifest/chunk serving, basic availability tracking, and test retrieval accounting.
 
 ## Security support boundary
 
