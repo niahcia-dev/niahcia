@@ -1,12 +1,13 @@
-# NIAHCIA development-node configuration
+# NIAHCIA native devnet configuration
 
 network = "devnet"
 data_dir = "./data"
 
-reth_engine_api = "http://127.0.0.1:8551"
-reth_http_rpc = "http://127.0.0.1:8545"
+# A devnet dniah1 account or legacy 20-byte hex account payload.
 fee_recipient = "0x0000000000000000000000000000000000000000"
-reth_jwt_path = "./jwt.hex"
 
 mining_rpc_bind = "127.0.0.1:9332"
+p2p_bind = "127.0.0.1:9442"
+p2p_peers = []
+
 log_level = "info"
