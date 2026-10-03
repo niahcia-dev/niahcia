@@ -473,6 +473,80 @@ mod tests {
     }
 
     #[test]
+    fn locked_execution_v2_interoperability_vector() {
+        let receipts = vec![
+            receipt(
+                0x21,
+                SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION,
+                NativeActionV1::Transfer as u64,
+            ),
+            receipt(
+                0x31,
+                SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION_V2,
+                NativeActionV2::Transfer as u64,
+            ),
+        ];
+
+        assert_eq!(
+            hex::encode(receipts[0].canonical_bytes()),
+            "02000000000000000100000000000000002121212121212121212121212121212121212121212121212121212121212121222222222222222222222222222222222222222222222222222222222222222200000000000003e800000000000000000000000000000003000000000000000000000000000007d0000000000000000000000000000003e8"
+        );
+        assert_eq!(
+            hex::encode(receipts[0].commitment()),
+            "a00e5dcb1f43f173d6426d8d8163b7113510c059106a048229d40ab24c5540b4"
+        );
+        assert_eq!(
+            hex::encode(receipts[1].canonical_bytes()),
+            "02000000000000000200000000000000003131313131313131313131313131313131313131313131313131313131313131323232323232323232323232323232323232323232323232323232323232323200000000000003e800000000000000000000000000000003000000000000000000000000000007d0000000000000000000000000000003e8"
+        );
+        assert_eq!(
+            hex::encode(receipts[1].commitment()),
+            "04ae41c84fd6018d3d8095e17859fe6c0b8cd9e6e48c1434a634037b8c541e38"
+        );
+
+        let receipts_root = native_receipts_root_v2(&receipts);
+        assert_eq!(
+            hex::encode(receipts_root),
+            "6868864e5a0d44f18ec0ed81b8dc1a572a15d68ba52b1ef02ea23e3c1c696dbd"
+        );
+
+        let transactions_root = [0x44; 32];
+        let state_root = receipts[1].state_root_after;
+        let gas_used = 2_000;
+        let base_fee_burned = 4_000;
+        let producer_priority_fee = 2_000;
+        let execution_root = native_execution_root_v2(
+            transactions_root,
+            state_root,
+            receipts_root,
+            gas_used,
+            base_fee_burned,
+            producer_priority_fee,
+        );
+        assert_eq!(
+            hex::encode(execution_root),
+            "b1109234b8a96dacc33d9b7ad69c9abe533b9cfee51b97ba16dcb8e6b5f0a4ba"
+        );
+
+        let result = NativeBlockExecutionResultV2 {
+            transactions_root,
+            state_root,
+            receipts_root,
+            execution_root,
+            gas_used,
+            base_fee_burned,
+            producer_priority_fee,
+            receipts,
+        };
+        let encoded = result.canonical_bytes().unwrap();
+        assert_eq!(encoded.len(), 451);
+        assert_eq!(
+            hex::encode(encoded),
+            "02444444444444444444444444444444444444444444444444444444444444444432323232323232323232323232323232323232323232323232323232323232326868864e5a0d44f18ec0ed81b8dc1a572a15d68ba52b1ef02ea23e3c1c696dbdb1109234b8a96dacc33d9b7ad69c9abe533b9cfee51b97ba16dcb8e6b5f0a4ba00000000000007d000000000000000000000000000000fa0000000000000000000000000000007d0000000000000000202000000000000000100000000000000002121212121212121212121212121212121212121212121212121212121212121222222222222222222222222222222222222222222222222222222222222222200000000000003e800000000000000000000000000000003000000000000000000000000000007d0000000000000000000000000000003e802000000000000000200000000000000003131313131313131313131313131313131313131313131313131313131313131323232323232323232323232323232323232323232323232323232323232323200000000000003e800000000000000000000000000000003000000000000000000000000000007d0000000000000000000000000000003e8"
+        );
+    }
+
+    #[test]
     fn empty_receipt_root_is_domain_separated_from_v1() {
         assert_ne!(
             native_receipts_root_v2(&[]),

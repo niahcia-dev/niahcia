@@ -102,13 +102,30 @@ All integer fields are big-endian.
 
 Decoding must recompute receipt root, aggregate gas/fee totals, final receipt state root, and execution root. Mismatch is invalid.
 
+## Locked interoperability vector
+
+The canonical vector is stored at:
+
+`test-vectors/native-execution-v2.json`
+
+and is enforced by the Rust test `locked_execution_v2_interoperability_vector`.
+
+The locked vector fixes:
+
+- both Receipt V2 canonical encodings;
+- both receipt commitments;
+- the ordered receipts root;
+- the execution root;
+- the complete 451-byte canonical NativeBlockExecutionResultV2 encoding.
+
+Any incompatible change to those bytes or commitments requires an explicit successor version and replacement vectors. The vector lock does not activate V2 execution.
+
 ## Activation boundary
 
 This candidate structure is not admitted to active block persistence, P2P, mining, or mempool behavior.
 
 Before activation it still requires:
 
-- locked interoperability vectors;
 - explicit block/execution version activation parameters;
 - persistence/restart/reorg integration;
 - defined ComputeChannel gas/fee rules;

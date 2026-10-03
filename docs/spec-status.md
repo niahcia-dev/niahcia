@@ -36,7 +36,7 @@ This file is a living audit of protocol status. Implementation alone does not ma
 | NativeState V1 | IMPLEMENTED + VECTORED | Active accounts-only state/snapshot path. |
 | NativeBlockBody V1 | IMPLEMENTED | Active canonical non-empty block-body path. |
 | NativeBlockBody V2 | IMPLEMENTED (DEV) + INACTIVE | Versioned canonical body for ordered V1/V2 signed transactions; not admitted to active runtime. |
-| Native Execution Commitment V2 | IMPLEMENTED (DEV) + REVIEW REQUIRED + INACTIVE | Domain-separated ReceiptV2/ExecutionResultV2 commits transaction schema/action, per-transaction post-state roots, aggregate state/gas/fees; vectors and persistence activation work remain open. |
+| Native Execution Commitment V2 | IMPLEMENTED (DEV) + VECTOR LOCKED + REVIEW REQUIRED + INACTIVE | Domain-separated ReceiptV2/ExecutionResultV2 commits transaction schema/action, per-transaction post-state roots, aggregate state/gas/fees. `test-vectors/native-execution-v2.json` locks canonical receipt/result bytes and commitments; activation remains open. |
 | Native smart-contract runtime | REQUIRED + REVIEW REQUIRED + INACTIVE | Smart contracts are a core protocol requirement. ContractCall/ContractCreate are reserved in NativeTransaction V1, but runtime/state/storage/gas/revert/receipt semantics are not yet implemented. |
 | NativeState V2 | IMPLEMENTED (DEV) + VECTORED + INACTIVE | Accounts + ComputeChannel state; no activation height set. |
 | NativeTransaction V2 | IMPLEMENTED (DEV) + VECTORED + INACTIVE | Explicit ComputeChannel actions; not admitted to active mempool/P2P/mining. |
@@ -123,8 +123,8 @@ The active reference node is native-execution only.
 
 ## Highest-priority open protocol work
 
-1. Lock interoperability vectors for NativeReceiptV2 / NativeBlockExecutionResultV2.
-2. Review and, if retained, implement one atomic inactive V2 header/body/execution/state insertion boundary without changing active V1 persistence semantics.
+1. Review and, if retained, implement one atomic inactive V2 header/body/execution/state insertion boundary without changing active V1 persistence semantics.
+2. Preserve the now-locked NativeReceiptV2 / NativeBlockExecutionResultV2 vectors; incompatible changes require an explicit successor version.
 3. Specify the native smart-contract runtime boundary (code format, contract state/storage, deterministic call/create/revert, gas, receipts, persistence, activation) without reintroducing an external EVM dependency.
 4. Review and assign compute intrinsic gas/fee rules before any activation.
 5. Define explicit NativeStateV2 / NativeTransactionV2 activation parameters and migration vectors.
