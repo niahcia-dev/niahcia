@@ -197,3 +197,39 @@ remain inactive until their respective surfaces are specified together:
 
 Gas accounting is also deferred from this core slice. No gas constants are implied
 by these semantics.
+
+
+## Candidate execution semantics — call context and byte memory
+
+Status: **CANDIDATE / INACTIVE**
+
+The inactive NVM1 interpreter uses one bounded linear byte-memory buffer. Memory begins empty and may grow only through deterministic VM operations. Runtime 1 remains inactive while gas costs are unspecified.
+
+The candidate V1 memory ceiling is **65,536 bytes**. Any operation whose resulting memory length would exceed that ceiling traps. Reads beyond the current memory length trap; memory is never implicitly zero-extended by a read.
+
+### Call context
+
+Each execution receives immutable call input bytes and a native `u64` call value.
+
+```text
+INPUT_LEN          [] -> [U64(input_length)]
+CALL_VALUE         [] -> [U64(call_value)]
+INPUT_COPY n       [U64(input_offset)] -> append input[input_offset..input_offset+n] to memory
+```
+
+For `INPUT_COPY n`, the immediate `u32` operand is the byte count. The stack supplies the input offset. The offset plus length must be wholly within call input; otherwise execution traps. A zero-length copy is valid when the offset is at most the input length. Successful copy consumes the offset and appends exactly the selected bytes to memory.
+
+### Return and revert data
+
+```text
+RETURN             [] -> halt success with the complete current memory buffer
+REVERT             [] -> halt revert with the complete current memory buffer
+```
+
+Neither opcode consumes stack values. `STOP` remains successful termination with empty return data regardless of memory contents.
+
+This deliberately small model avoids introducing arbitrary memory addressing before NVM1 needs it. A future code-format/runtime version may add explicit memory load/store operations if contract workloads require them.
+
+### Still deferred
+
+`CALLER` remains deferred until the exact address-to-stack representation is locked. Storage operations, KECCAK256, and gas accounting also remain inactive.
