@@ -850,6 +850,98 @@ mod tests {
     }
 
     #[test]
+    fn open_apply_changes_state_root_deterministically() {
+        let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
+        let transaction = signed_open(&signing_key, 3, 1_000, 100);
+        let mut state = state_for(&transaction, 5_000, 3);
+        let before_root = state.state_root().unwrap();
+        let plan =
+            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50).unwrap();
+
+        apply_compute_channel_open_v1(&mut state, &plan).unwrap();
+        let after_root = state.state_root().unwrap();
+
+        assert_ne!(after_root, before_root);
+        let restored = NativeStateV2::from_canonical_bytes(&state.canonical_bytes().unwrap()).unwrap();
+        assert_eq!(restored.state_root().unwrap(), after_root);
+        assert_eq!(restored, state);
+    }
+
+    #[test]
+    fn settle_apply_changes_state_root_deterministically() {
+        let (mut state, transaction, _, _) = settle_fixture();
+        let before_root = state.state_root().unwrap();
+        let plan =
+            plan_compute_channel_settle_v1(&state, &transaction, AddressNetwork::Devnet, 110)
+                .unwrap();
+
+        apply_compute_channel_settle_v1(&mut state, &plan).unwrap();
+        let after_root = state.state_root().unwrap();
+
+        assert_ne!(after_root, before_root);
+        let restored = NativeStateV2::from_canonical_bytes(&state.canonical_bytes().unwrap()).unwrap();
+        assert_eq!(restored.state_root().unwrap(), after_root);
+        assert_eq!(restored, state);
+    }
+
+    #[test]
+    fn refund_apply_changes_state_root_deterministically() {
+        let (mut state, transaction, _) = refund_fixture();
+        let before_root = state.state_root().unwrap();
+        let plan =
+            plan_compute_channel_refund_v1(&state, &transaction, AddressNetwork::Devnet, 121)
+                .unwrap();
+
+        apply_compute_channel_refund_v1(&mut state, &plan).unwrap();
+        let after_root = state.state_root().unwrap();
+
+        assert_ne!(after_root, before_root);
+        let restored = NativeStateV2::from_canonical_bytes(&state.canonical_bytes().unwrap()).unwrap();
+        assert_eq!(restored.state_root().unwrap(), after_root);
+        assert_eq!(restored, state);
+    }
+
+    #[test]
+    fn settle_apply_rejects_stale_and_duplicate_terminal_plan() {
+        let (mut state, transaction, _, _) = settle_fixture();
+        let plan =
+            plan_compute_channel_settle_v1(&state, &transaction, AddressNetwork::Devnet, 110)
+                .unwrap();
+
+        apply_compute_channel_settle_v1(&mut state, &plan).unwrap();
+        let settled = state.clone();
+
+        let error = apply_compute_channel_settle_v1(&mut state, &plan).unwrap_err();
+        assert!(error.contains("stale"));
+        assert_eq!(state, settled);
+
+        let error =
+            plan_compute_channel_settle_v1(&state, &transaction, AddressNetwork::Devnet, 110)
+                .unwrap_err();
+        assert!(error.contains("not OPEN"));
+    }
+
+    #[test]
+    fn refund_apply_rejects_stale_and_duplicate_terminal_plan() {
+        let (mut state, transaction, _) = refund_fixture();
+        let plan =
+            plan_compute_channel_refund_v1(&state, &transaction, AddressNetwork::Devnet, 121)
+                .unwrap();
+
+        apply_compute_channel_refund_v1(&mut state, &plan).unwrap();
+        let refunded = state.clone();
+
+        let error = apply_compute_channel_refund_v1(&mut state, &plan).unwrap_err();
+        assert!(error.contains("stale"));
+        assert_eq!(state, refunded);
+
+        let error =
+            plan_compute_channel_refund_v1(&state, &transaction, AddressNetwork::Devnet, 121)
+                .unwrap_err();
+        assert!(error.contains("not OPEN"));
+    }
+
+    #[test]
     fn settle_plan_requires_worker_payment_account_sender() {
         let (state, mut transaction, _, _) = settle_fixture();
         let other_key = SigningKey::from_slice(&[0x32; 32]).unwrap();
