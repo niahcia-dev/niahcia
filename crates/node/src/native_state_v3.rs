@@ -1,6 +1,4 @@
-use crate::native_contract_state_v1::{
-    contracts_root_v1, ContractId, ContractStateV1,
-};
+use crate::native_contract_state_v1::{contracts_root_v1, ContractId, ContractStateV1};
 use crate::native_state_v2::NativeStateV2;
 use crate::work::{keccak256, Hash32};
 use std::collections::BTreeMap;
@@ -188,8 +186,7 @@ mod tests {
     use crate::native_contract_state_v1::ContractStateV1;
 
     fn contract(marker: u8) -> ContractStateV1 {
-        let mut contract =
-            ContractStateV1::new([marker; 20], 1_234, 1, vec![0x01, marker, 0x03]);
+        let mut contract = ContractStateV1::new([marker; 20], 1_234, 1, vec![0x01, marker, 0x03]);
         contract.set_storage([marker.wrapping_add(1); 32], [marker.wrapping_add(2); 32]);
         contract
     }

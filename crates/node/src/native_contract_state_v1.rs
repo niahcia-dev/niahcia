@@ -19,12 +19,7 @@ pub struct ContractStateV1 {
 }
 
 impl ContractStateV1 {
-    pub fn new(
-        contract_id: ContractId,
-        balance: u128,
-        runtime_id: u32,
-        code: Vec<u8>,
-    ) -> Self {
+    pub fn new(contract_id: ContractId, balance: u128, runtime_id: u32, code: Vec<u8>) -> Self {
         Self {
             contract_id,
             balance,
@@ -42,10 +37,7 @@ impl ContractStateV1 {
         self.storage.insert(key, value);
     }
 
-    pub fn remove_storage(
-        &mut self,
-        key: ContractStorageKey,
-    ) -> Option<ContractStorageValue> {
+    pub fn remove_storage(&mut self, key: ContractStorageKey) -> Option<ContractStorageValue> {
         self.storage.remove(&key)
     }
 
@@ -207,12 +199,8 @@ mod tests {
     use super::*;
 
     fn contract(marker: u8) -> ContractStateV1 {
-        let mut contract = ContractStateV1::new(
-            [marker; 20],
-            1_234,
-            1,
-            vec![0x01, marker, 0x03, 0x04],
-        );
+        let mut contract =
+            ContractStateV1::new([marker; 20], 1_234, 1, vec![0x01, marker, 0x03, 0x04]);
         contract.set_storage([marker.wrapping_add(1); 32], [marker.wrapping_add(2); 32]);
         contract
     }
@@ -221,7 +209,10 @@ mod tests {
     fn contract_state_round_trips_canonically() {
         let contract = contract(0x33);
         let bytes = contract.canonical_bytes().unwrap();
-        assert_eq!(ContractStateV1::from_canonical_bytes(&bytes).unwrap(), contract);
+        assert_eq!(
+            ContractStateV1::from_canonical_bytes(&bytes).unwrap(),
+            contract
+        );
         assert_eq!(
             ContractStateV1::from_canonical_bytes(&bytes)
                 .unwrap()
@@ -241,7 +232,10 @@ mod tests {
         second.set_storage([0x11; 32], [0x55; 32]);
         second.set_storage([0x22; 32], [0x33; 32]);
 
-        assert_eq!(first.canonical_bytes().unwrap(), second.canonical_bytes().unwrap());
+        assert_eq!(
+            first.canonical_bytes().unwrap(),
+            second.canonical_bytes().unwrap()
+        );
         assert_eq!(first.record_hash().unwrap(), second.record_hash().unwrap());
     }
 
