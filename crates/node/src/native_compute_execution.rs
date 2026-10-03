@@ -346,10 +346,14 @@ pub fn apply_compute_channel_settle_v1(
         return Err("ComputeChannelSettle validated plan is stale".into());
     }
 
-    next.accounts_mut()
-        .credit(plan.channel_state_before.worker_payment_account, plan.worker_payment)?;
-    next.accounts_mut()
-        .credit(plan.channel_state_before.funding_account, plan.funding_refund)?;
+    next.accounts_mut().credit(
+        plan.channel_state_before.worker_payment_account,
+        plan.worker_payment,
+    )?;
+    next.accounts_mut().credit(
+        plan.channel_state_before.funding_account,
+        plan.funding_refund,
+    )?;
     next.accounts_mut()
         .consume_nonce(plan.submitter_account, plan.expected_nonce)?;
     next.set_channel(plan.channel_state_after.clone())?;
@@ -725,7 +729,10 @@ mod tests {
 
         apply_compute_channel_open_v1(&mut state, &plan).unwrap();
 
-        assert_eq!(state.accounts().account(plan.funding_account).balance, 4_000);
+        assert_eq!(
+            state.accounts().account(plan.funding_account).balance,
+            4_000
+        );
         assert_eq!(state.accounts().account(plan.funding_account).nonce, 4);
         assert_eq!(state.channel(plan.channel_id), Some(&plan.channel_state));
     }
@@ -761,10 +768,16 @@ mod tests {
             }
         );
         assert_eq!(
-            state.accounts().account(plan.channel_state_before.funding_account).balance,
+            state
+                .accounts()
+                .account(plan.channel_state_before.funding_account)
+                .balance,
             630
         );
-        assert_eq!(state.channel(plan.channel_id), Some(&plan.channel_state_after));
+        assert_eq!(
+            state.channel(plan.channel_id),
+            Some(&plan.channel_state_after)
+        );
     }
 
     #[test]
