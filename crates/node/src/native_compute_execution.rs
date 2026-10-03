@@ -23,6 +23,7 @@ pub struct ValidatedComputeChannelSettleV1 {
     pub transaction_id: Hash32,
     pub channel_id: Hash32,
     pub submitter_account: [u8; 20],
+    pub expected_nonce: u64,
     pub receipt_id: Hash32,
     pub receipt_sequence: u64,
     pub cumulative_spent: u128,
@@ -207,6 +208,7 @@ pub fn plan_compute_channel_settle_v1(
         transaction_id: transaction.tx_id()?,
         channel_id: payload.channel_id,
         submitter_account: submitter,
+        expected_nonce: transaction.body.nonce,
         receipt_id: receipt.receipt_id,
         receipt_sequence: receipt.sequence,
         cumulative_spent: receipt.cumulative_spent,
@@ -349,7 +351,7 @@ pub fn apply_compute_channel_settle_v1(
     next.accounts_mut()
         .credit(plan.channel_state_before.funding_account, plan.funding_refund)?;
     next.accounts_mut()
-        .consume_nonce(plan.submitter_account, next.accounts().account(plan.submitter_account).nonce)?;
+        .consume_nonce(plan.submitter_account, plan.expected_nonce)?;
     next.set_channel(plan.channel_state_after.clone())?;
 
     *state = next;
@@ -702,6 +704,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(state, before);
+        assert_eq!(plan.expected_nonce, 2);
         assert_eq!(plan.cumulative_spent, 370);
         assert_eq!(plan.worker_payment, 370);
         assert_eq!(plan.funding_refund, 630);
