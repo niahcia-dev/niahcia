@@ -26,7 +26,7 @@ pub enum InactiveVersionedTransactionTransitionV2 {
         state_root_after: Hash32,
         outcome: NativeTransferOutcomeV2,
     },
-    Compute(InactiveComputeExecutionResultV1),
+    Compute(Box<InactiveComputeExecutionResultV1>),
 }
 
 impl InactiveVersionedTransactionTransitionV2 {
@@ -156,14 +156,14 @@ pub fn execute_inactive_versioned_block_v2(
                             );
                         }
 
-                        InactiveVersionedTransactionTransitionV2::Compute(
+                        InactiveVersionedTransactionTransitionV2::Compute(Box::new(
                             execute_inactive_compute_transaction_v2(
                                 &mut next,
                                 &transaction,
                                 network,
                                 current_height,
                             )?,
-                        )
+                        ))
                     }
                     NativeActionV2::ContractCall | NativeActionV2::ContractCreate => return Err(
                         "inactive V2 block executor does not yet execute smart-contract actions"
