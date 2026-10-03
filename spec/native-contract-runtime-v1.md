@@ -83,6 +83,14 @@ Address derivation itself does not mutate state.
 
 Canonical derivation is locked by `test-vectors/contract-address-v1.json` and the reference implementation's `locked_contract_derivation_vector` test.
 
+## Contract-capable state boundary
+
+Persistent contract code, native value, and storage are defined by `spec/native-contract-state-v1.md`.
+
+The candidate contract-capable successor state is NativeStateV3, which commits the exact NativeStateV2 root plus a separate domain-separated contracts root. NativeStateV2 bytes and roots are not reinterpreted.
+
+Contract storage is fixed-width 32-byte keys and 32-byte values in canonical ascending-key order. Contract code remains opaque at this layer so VM selection remains a separate decision.
+
 ## State atomicity
 
 Contract execution must use deterministic transactional semantics.
