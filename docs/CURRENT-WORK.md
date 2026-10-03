@@ -212,7 +212,7 @@ The inactive NativeStateV2 / NativeTransactionV2 compute-channel foundation is n
 - stale Settle/Refund plans are rejected when the current channel no longer exactly matches the validated pre-state;
 - overflow and rollback-focused application tests are present alongside planner negative-path tests.
 
-As of current main commit `c4af51d0a0eb89b62edef28dda761abb55cdd965`, Rust CI is fully green with **267 tests passing**, plus formatting, Cargo check, and Clippy.
+As of green checkpoint `0242622c93b5c980ed5c87839625c7dc7c1c6eb4`, Rust CI passes formatting, Cargo check, the full test suite, and Clippy. State-root round-trip tests and stale/duplicate terminal-transition tests for Open/Settle/Refund are included.
 
 The runtime boundary remains unchanged:
 
@@ -226,15 +226,13 @@ The runtime boundary remains unchanged:
 
 Next implementation priority is to finish the inactive transition proof before considering activation:
 
-1. Add exact deterministic state-root assertions for Open, Settle, and Refund application results.
-2. Add explicit stale-plan / duplicate-terminal tests proving an already changed channel cannot accept a previously validated Settle or Refund plan.
-3. Add an inactive end-to-end V2 compute execution helper that dispatches one signed V2 compute transaction through planner -> atomic apply against NativeStateV2, without exposing it to the active mempool/P2P/mining path.
-4. Add inactive multi-transaction atomicity tests proving that a later failed compute transition cannot leave an earlier mutation partially committed when executed as one candidate block transition.
-5. Extend restart/persistence/reorg coverage for post-transition NativeStateV2 snapshots before activation.
-6. Keep compute gas constants deliberately unset until payload/signature-verification costs and the native fee schedule are reviewed; do not invent consensus gas values locally.
-7. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
-8. Do not add worker/operator on-chain registration or bonds to the first ordinary paid-compute milestone.
-9. Preserve the 164-byte BlockHeaderV1, CPU-PoW cumulative-work fork choice, P2P V3 baseline, and all locked V1 transaction/execution/state vectors.
+1. Add an inactive end-to-end V2 compute execution helper that dispatches one signed V2 compute transaction through planner -> atomic apply against NativeStateV2, without exposing it to the active mempool/P2P/mining path.
+2. Add inactive multi-transaction atomicity tests proving that a later failed compute transition cannot leave an earlier mutation partially committed when executed as one candidate block transition.
+3. Extend restart/persistence/reorg coverage for post-transition NativeStateV2 snapshots before activation.
+4. Keep compute gas constants deliberately unset until payload/signature-verification costs and the native fee schedule are reviewed; do not invent consensus gas values locally.
+5. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
+6. Do not add worker/operator on-chain registration or bonds to the first ordinary paid-compute milestone.
+7. Preserve the 164-byte BlockHeaderV1, CPU-PoW cumulative-work fork choice, P2P V3 baseline, and all locked V1 transaction/execution/state vectors.
 
 Deliberate consensus review still needed for RandomX stock miner/pool interoperability, public-testnet RandomX epoch/seed parameters, remaining monetary constants, genesis/network parameters, and chain-ID finalization.
 
@@ -254,7 +252,7 @@ The first decentralized AI milestone has been simplified substantially:
 - worker/operator chain registration and service bonds are deferred from the first ordinary paid-compute milestone;
 - NativeTransaction schema V2 candidate actions are ComputeChannelOpen/Settle/Refund; V1 actions are not reinterpreted;
 - NativeStateV2 is an explicit future successor that commits accounts + compute channels without changing NativeStateV1 vectors;
-- P2P V3 + NativeBlockBodyV1 must be implemented before any compute-channel consensus work.
+- P2P V3 + NativeBlockBodyV1 are already implemented and remain the active V1 transport baseline while compute-channel work stays inactive.
 
 Relevant new specs include:
 
@@ -285,6 +283,18 @@ Relevant new specs include:
 - `niahcia/niahcia-compute` — replaceable GPU/accelerator execution-host behavior and operational documentation.
 
 Protocol-visible implementation changes update the canonical repository and any retained mirror that carries the same protocol material.
+
+## Repository cleanup audit
+
+Repository cleanup audit completed after the native-execution migration:
+
+- obsolete Reth/Engine-API/JWT configuration and CLI guidance removed;
+- unknown TOML fields now fail closed instead of silently accepting stale settings;
+- obsolete Reth devnet helper scripts and Reth-dependent smoke/handoff files removed;
+- README, roadmap, architecture, configuration, build, milestone, repository-family, and prototype documentation realigned to the native-chain architecture;
+- current dev guidance now treats native execution/P2P V3 as active and ComputeChannel V2 work as inactive.
+
+A fresh CI run on the cleanup head must remain green before resuming compute-dispatcher implementation.
 
 ## Development doctrine
 
