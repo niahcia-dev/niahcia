@@ -1,0 +1,50 @@
+{
+  "schema": "niahcia-native-contract-nvm1-gas-v1",
+  "status": "candidate-vectored",
+  "runtime_id": 1,
+  "code_format_version": 1,
+  "description": "Deterministic GasScheduleV1 fixtures for inactive NVM1 execution. These vectors do not activate Runtime 1 on any network.",
+  "schedule": {
+    "STOP": 1, "PUSH_U64": 2, "PUSH_BYTES32": 2, "POP": 1, "DUP": 1,
+    "ADD_U64": 3, "SUB_U64": 3, "EQ": 3, "JUMP": 3, "JUMP_IF": 3,
+    "INPUT_LEN": 2, "INPUT_COPY_BASE": 3, "INPUT_COPY_PER_32_BYTES_CEIL": 1,
+    "CALLER": 2, "CALL_VALUE": 2, "STORAGE_GET": 50, "STORAGE_SET": 200,
+    "STORAGE_DELETE": 100, "KECCAK256": 30, "RETURN": 1, "REVERT": 1
+  },
+  "vectors": [
+    {
+      "name": "exact-stop-budget",
+      "instruction_bytes_hex": "0100000000000000070300",
+      "instruction_count": 3, "max_stack_items": 1, "gas_limit": 4,
+      "expected_halt": "Stop", "expected_gas_used": 4, "expected_instructions_executed": 3
+    },
+    {
+      "name": "out-of-gas-before-stop",
+      "instruction_bytes_hex": "0100000000000000070300",
+      "instruction_count": 3, "max_stack_items": 1, "gas_limit": 3,
+      "expected_halt": "OutOfGas", "expected_gas_used": 3,
+      "expected_instructions_executed": 2, "committed_storage": false
+    },
+    {
+      "name": "input-copy-33-byte-cost",
+      "instruction_bytes_hex": "1100000021",
+      "instruction_count": 1, "max_stack_items": 1, "expected_instruction_gas": 5
+    },
+    {
+      "name": "infinite-jump-bounded-by-gas",
+      "instruction_bytes_hex": "0800000000",
+      "instruction_count": 1, "max_stack_items": 1, "gas_limit": 9,
+      "expected_halt": "OutOfGas", "expected_gas_used": 9,
+      "expected_instructions_executed": 3, "committed_storage": false
+    }
+  ],
+  "rules": {
+    "charge_before_execution": true,
+    "out_of_gas_instruction_is_not_executed": true,
+    "out_of_gas_instruction_charge_is_not_added": true,
+    "trap_discards_persistent_storage_changes": true,
+    "gas_is_not_wall_clock_time": true,
+    "transaction_gas_limit_is_the_execution_budget": true,
+    "second_contract_specific_gas_limit": false
+  }
+}
