@@ -233,3 +233,20 @@ This deliberately small model avoids introducing arbitrary memory addressing bef
 ### Still deferred
 
 `CALLER` remains deferred until the exact address-to-stack representation is locked. Storage operations, KECCAK256, and gas accounting also remain inactive.
+
+
+## Candidate CALLER representation
+
+Status: **CANDIDATE / INACTIVE**
+
+`CALLER` exposes the authenticated caller's **20-byte Address V1 payload**, not Bech32m text and not the 22-byte version/kind address container.
+
+NVM1 represents that payload as `Bytes32` by left-padding with exactly 12 zero bytes:
+
+```text
+CALLER [] -> [Bytes32(0x000000000000000000000000 || caller_payload_20)]
+```
+
+The final 20 bytes are exactly the Address V1 payload. The leading 12 bytes MUST be zero. This representation is identical for account and contract callers; caller kind remains transaction/execution-context metadata and is not encoded into the `Bytes32` value.
+
+This rule avoids introducing a third stack type solely for native addresses while preserving the complete canonical 20-byte payload without text encoding or truncation.
