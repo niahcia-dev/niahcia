@@ -567,6 +567,173 @@ mod tests {
         NativeStateV3::from_v2(NativeStateV2::from_v1(accounts))
     }
 
+    fn signed_call(
+        key: &SigningKey,
+        nonce: u64,
+        contract_id: [u8; 20],
+        value: u128,
+        gas_limit: u64,
+        max_fee_per_gas: u128,
+        data: Vec<u8>,
+    ) -> SignedNativeTransactionV2 {
+        let body = NativeTransactionBodyV2 {
+            network_id: DEVNET_NETWORK_ID,
+            chain_id: DEVNET_CHAIN_ID,
+            nonce,
+            action: NativeActionV2::ContractCall,
+            target_payload: contract_id.to_vec(),
+            value,
+            gas_limit,
+            max_fee_per_gas,
+            max_priority_fee_per_gas: 2,
+            data,
+        };
+        let mut tx = SignedNativeTransactionV2 {
+            body,
+            public_key: key
+                .verifying_key()
+                .to_encoded_point(false)
+                .as_bytes()
+                .to_vec(),
+            signature: vec![0; 64],
+        };
+        let digest = tx.signing_digest().unwrap();
+        let signature: Signature = key.sign_prehash(&digest).unwrap();
+        tx.signature = signature.to_bytes().to_vec();
+        tx
+    }
+
+    fn insert_contract(state: &mut NativeStateV3, id: [u8; 20], balance: u128, code: Vec<u8>) {
+        state
+            .insert_contract(ContractStateV1::new(id, balance, NVM1_RUNTIME_ID, code))
+            .unwrap();
+    }
+
+    #[test]
+    fn accepted_call_success_commits_value_storage_and_exact_fee() {
+        let key = SigningKey::from_slice(&[0x31; 32]).unwrap();
+        let sender_tx = signed_call(&key, 0, [0x71; 20], 500, 205, 5, vec![0xaa]);
+        let sender = sender_tx
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload;
+        let producer = [0x93; 20];
+        let contract_id = [0x71; 20];
+        let storage_key = [0x44; 32];
+        let storage_value = [0x55; 32];
+        let mut instructions = vec![0x02];
+        instructions.extend_from_slice(&storage_key);
+        instructions.push(0x02);
+        instructions.extend_from_slice(&storage_value);
+        instructions.push(0x21);
+        instructions.push(0x00);
+        let mut state = funded_v3(sender, 10_000, 0);
+        insert_contract(&mut state, contract_id, 100, module(4, 2, &instructions));
+
+        let result = execute_inactive_accepted_contract_call_v1(
+            &mut state,
+            &sender_tx,
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 2,
+                cpu_producer: producer,
+            },
+        )
+        .unwrap();
+
+        assert!(result.call_succeeded);
+        assert_eq!(state.base().accounts().account(sender).nonce, 1);
+        assert_eq!(state.base().accounts().account(sender).balance, 9_088);
+        assert_eq!(state.base().accounts().account(producer).balance, 206);
+        assert_eq!(state.contract(contract_id).unwrap().balance, 600);
+        assert_eq!(
+            state.contract(contract_id).unwrap().storage(storage_key),
+            Some(storage_value)
+        );
+        assert_eq!(result.gas_used, 103);
+        assert_eq!(result.actual_fee, 412);
+        assert_eq!(result.unused_fee_reserve, 613);
+    }
+
+    #[test]
+    fn accepted_call_revert_discards_value_and_storage_but_charges_used_gas() {
+        let key = SigningKey::from_slice(&[0x32; 32]).unwrap();
+        let contract_id = [0x72; 20];
+        let tx = signed_call(&key, 0, contract_id, 500, 10, 5, Vec::new());
+        let sender = tx
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload;
+        let producer = [0x94; 20];
+        let mut state = funded_v3(sender, 10_000, 0);
+        insert_contract(&mut state, contract_id, 100, module(1, 1, &[0x41]));
+
+        let result = execute_inactive_accepted_contract_call_v1(
+            &mut state,
+            &tx,
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 2,
+                cpu_producer: producer,
+            },
+        )
+        .unwrap();
+
+        assert!(!result.call_succeeded);
+        assert!(matches!(result.execution.halt, Nvm1Halt::Revert(_)));
+        assert_eq!(result.gas_used, 1);
+        assert_eq!(result.actual_fee, 4);
+        assert_eq!(state.base().accounts().account(sender).nonce, 1);
+        assert_eq!(state.base().accounts().account(sender).balance, 9_996);
+        assert_eq!(state.base().accounts().account(producer).balance, 2);
+        assert_eq!(state.contract(contract_id).unwrap().balance, 100);
+    }
+
+    #[test]
+    fn accepted_call_out_of_gas_charges_full_limit_and_discards_value() {
+        let key = SigningKey::from_slice(&[0x33; 32]).unwrap();
+        let contract_id = [0x73; 20];
+        let tx = signed_call(&key, 0, contract_id, 500, 1, 5, Vec::new());
+        let sender = tx
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload;
+        let producer = [0x95; 20];
+        let mut state = funded_v3(sender, 10_000, 0);
+        insert_contract(
+            &mut state,
+            contract_id,
+            100,
+            module(
+                1,
+                1,
+                &[
+                    0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0,
+                ],
+            ),
+        );
+
+        let result = execute_inactive_accepted_contract_call_v1(
+            &mut state,
+            &tx,
+            AddressNetwork::Devnet,
+            NativeExecutionContextV1 {
+                base_fee_per_gas: 2,
+                cpu_producer: producer,
+            },
+        )
+        .unwrap();
+
+        assert!(!result.call_succeeded);
+        assert!(matches!(result.execution.halt, Nvm1Halt::Trap(_)));
+        assert_eq!(result.gas_used, 1);
+        assert_eq!(result.actual_fee, 4);
+        assert_eq!(state.base().accounts().account(sender).nonce, 1);
+        assert_eq!(state.base().accounts().account(sender).balance, 9_996);
+        assert_eq!(state.contract(contract_id).unwrap().balance, 100);
+    }
+
     #[test]
     fn accepted_create_success_consumes_nonce_value_and_exact_fee() {
         let key = SigningKey::from_slice(&[0x21; 32]).unwrap();
