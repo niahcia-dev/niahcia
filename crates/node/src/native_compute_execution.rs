@@ -320,14 +320,18 @@ pub fn apply_compute_channel_settle_v1(
     plan.channel_state_after.validate()?;
 
     if plan.channel_state_before.channel_id != plan.channel_id
-        || plan.channel_state_after.channel_id != plan.channel_id
         || plan.submitter_account != plan.channel_state_before.worker_payment_account
         || plan.channel_state_before.state != ComputeChannelStatusV1::Open
-        || plan.channel_state_after.state != ComputeChannelStatusV1::Settled
-        || plan.channel_state_after.settled_amount != plan.worker_payment
         || plan.cumulative_spent != plan.worker_payment
     {
         return Err("ComputeChannelSettle validated plan is internally inconsistent".into());
+    }
+
+    let mut expected_after = plan.channel_state_before.clone();
+    expected_after.settled_amount = plan.worker_payment;
+    expected_after.state = ComputeChannelStatusV1::Settled;
+    if plan.channel_state_after != expected_after {
+        return Err("ComputeChannelSettle validated plan changes unexpected channel fields".into());
     }
 
     let total = plan
@@ -370,13 +374,16 @@ pub fn apply_compute_channel_refund_v1(
     plan.channel_state_after.validate()?;
 
     if plan.channel_state_before.channel_id != plan.channel_id
-        || plan.channel_state_after.channel_id != plan.channel_id
         || plan.channel_state_before.funding_account != plan.funding_account
-        || plan.channel_state_after.funding_account != plan.funding_account
         || plan.channel_state_before.state != ComputeChannelStatusV1::Open
-        || plan.channel_state_after.state != ComputeChannelStatusV1::Refunded
     {
         return Err("ComputeChannelRefund validated plan is internally inconsistent".into());
+    }
+
+    let mut expected_after = plan.channel_state_before.clone();
+    expected_after.state = ComputeChannelStatusV1::Refunded;
+    if plan.channel_state_after != expected_after {
+        return Err("ComputeChannelRefund validated plan changes unexpected channel fields".into());
     }
 
     let expected_refund = plan
