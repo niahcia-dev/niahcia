@@ -150,10 +150,7 @@ mod tests {
     use crate::native_transaction_v2::NativeTransactionBodyV2;
     use k256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey};
 
-    fn sign(
-        key: &SigningKey,
-        body: NativeTransactionBodyV2,
-    ) -> SignedNativeTransactionV2 {
+    fn sign(key: &SigningKey, body: NativeTransactionBodyV2) -> SignedNativeTransactionV2 {
         let mut transaction = SignedNativeTransactionV2 {
             body,
             public_key: key

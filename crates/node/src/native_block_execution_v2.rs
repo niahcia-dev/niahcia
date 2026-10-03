@@ -97,39 +97,39 @@ pub fn execute_inactive_versioned_block_v2(
     for transaction in body.decoded_transactions()? {
         let before = next.state_root()?;
 
-        let transition = match transaction {
-            VersionedSignedNativeTransaction::V1(transaction) => {
-                if transaction.body.action != NativeActionV1::Transfer {
-                    return Err(
-                        "inactive V2 block executor does not yet execute V1 contract actions"
-                            .into(),
-                    );
-                }
+        let transition =
+            match transaction {
+                VersionedSignedNativeTransaction::V1(transaction) => {
+                    if transaction.body.action != NativeActionV1::Transfer {
+                        return Err(
+                            "inactive V2 block executor does not yet execute V1 contract actions"
+                                .into(),
+                        );
+                    }
 
-                let outcome = execute_transfer_v1(
-                    next.accounts_mut(),
-                    &transaction,
-                    network,
-                    NativeExecutionContextV1 {
-                        base_fee_per_gas,
-                        cpu_producer: body.producer_fee_recipient,
-                    },
-                )?;
-                producer_priority_fee = producer_priority_fee
-                    .checked_add(outcome.producer_priority_fee)
-                    .ok_or_else(|| {
-                        "inactive V2 block producer priority fee overflow".to_string()
-                    })?;
+                    let outcome = execute_transfer_v1(
+                        next.accounts_mut(),
+                        &transaction,
+                        network,
+                        NativeExecutionContextV1 {
+                            base_fee_per_gas,
+                            cpu_producer: body.producer_fee_recipient,
+                        },
+                    )?;
+                    producer_priority_fee = producer_priority_fee
+                        .checked_add(outcome.producer_priority_fee)
+                        .ok_or_else(|| {
+                            "inactive V2 block producer priority fee overflow".to_string()
+                        })?;
 
-                InactiveVersionedTransactionTransitionV2::V1Transfer {
-                    transaction_id: transaction.tx_id()?,
-                    state_root_before: before,
-                    state_root_after: next.state_root()?,
-                    outcome,
+                    InactiveVersionedTransactionTransitionV2::V1Transfer {
+                        transaction_id: transaction.tx_id()?,
+                        state_root_before: before,
+                        state_root_after: next.state_root()?,
+                        outcome,
+                    }
                 }
-            }
-            VersionedSignedNativeTransaction::V2(transaction) => {
-                match transaction.body.action {
+                VersionedSignedNativeTransaction::V2(transaction) => match transaction.body.action {
                     NativeActionV2::Transfer => {
                         let outcome = execute_transfer_v2(
                             &mut next,
@@ -178,9 +178,8 @@ pub fn execute_inactive_versioned_block_v2(
                         "inactive V2 block executor does not yet execute smart-contract actions"
                             .into(),
                     ),
-                }
-            }
-        };
+                },
+            };
 
         if transition.state_root_before() != before {
             return Err("inactive V2 block transition root discontinuity".into());
