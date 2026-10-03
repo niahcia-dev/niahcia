@@ -1,7 +1,5 @@
 use crate::address::AddressNetwork;
-use crate::native_block_body_v2::{
-    NativeBlockBodyV2, VersionedSignedNativeTransaction,
-};
+use crate::native_block_body_v2::{NativeBlockBodyV2, VersionedSignedNativeTransaction};
 use crate::native_compute_execution::{
     execute_inactive_compute_transaction_v2, InactiveComputeExecutionResultV1,
 };
@@ -120,59 +118,59 @@ pub fn execute_inactive_versioned_block_v2(
                     outcome,
                 }
             }
-            VersionedSignedNativeTransaction::V2(transaction) => match transaction.body.action {
-                NativeActionV2::Transfer => {
-                    let outcome = execute_transfer_v2(
-                        &mut next,
-                        &transaction,
-                        network,
-                        NativeExecutionContextV1 {
-                            base_fee_per_gas,
-                            cpu_producer: body.producer_fee_recipient,
-                        },
-                    )?;
-                    producer_priority_fee = producer_priority_fee
-                        .checked_add(outcome.producer_priority_fee)
-                        .ok_or_else(|| {
-                            "inactive V2 block producer priority fee overflow".to_string()
-                        })?;
+            VersionedSignedNativeTransaction::V2(transaction) => {
+                match transaction.body.action {
+                    NativeActionV2::Transfer => {
+                        let outcome = execute_transfer_v2(
+                                &mut next,
+                                &transaction,
+                                network,
+                            NativeExecutionContextV1 {
+                                base_fee_per_gas,
+                                cpu_producer: body.producer_fee_recipient,
+                            },
+                        )?;
+                        producer_priority_fee = producer_priority_fee
+                            .checked_add(outcome.producer_priority_fee)
+                            .ok_or_else(|| {
+                                "inactive V2 block producer priority fee overflow".to_string()
+                            })?;
 
-                    InactiveVersionedTransactionTransitionV2::V2Transfer {
-                        transaction_id: transaction.tx_id()?,
-                        state_root_before: before,
-                        state_root_after: next.state_root()?,
-                        outcome,
+                        InactiveVersionedTransactionTransitionV2::V2Transfer {
+                            transaction_id: transaction.tx_id()?,
+                            state_root_before: before,
+                            state_root_after: next.state_root()?,
+                            outcome,
+                        }
                     }
-                }
-                NativeActionV2::ComputeChannelOpen
-                | NativeActionV2::ComputeChannelSettle
-                | NativeActionV2::ComputeChannelRefund => {
-                    if transaction.body.gas_limit != 0
-                        || transaction.body.max_fee_per_gas != 0
-                        || transaction.body.max_priority_fee_per_gas != 0
-                    {
-                        return Err(
-                            "inactive compute execution requires zero placeholder gas/fee fields until the compute gas schedule is specified"
-                                .into(),
-                        );
-                    }
+                    NativeActionV2::ComputeChannelOpen
+                    | NativeActionV2::ComputeChannelSettle
+                    | NativeActionV2::ComputeChannelRefund => {
+                        if transaction.body.gas_limit != 0
+                            || transaction.body.max_fee_per_gas != 0
+                            || transaction.body.max_priority_fee_per_gas != 0
+                        {
+                            return Err(
+                                "inactive compute execution requires zero placeholder gas/fee fields until the compute gas schedule is specified"
+                                    .into(),
+                            );
+                        }
 
-                    InactiveVersionedTransactionTransitionV2::Compute(
-                        execute_inactive_compute_transaction_v2(
-                            &mut next,
-                            &transaction,
-                            network,
-                            current_height,
-                        )?,
-                    )
-                }
-                NativeActionV2::ContractCall | NativeActionV2::ContractCreate => {
-                    return Err(
+                        InactiveVersionedTransactionTransitionV2::Compute(
+                            execute_inactive_compute_transaction_v2(
+                                &mut next,
+                                &transaction,
+                                network,
+                                current_height,
+                            )?,
+                        )
+                    }
+                    NativeActionV2::ContractCall | NativeActionV2::ContractCreate => return Err(
                         "inactive V2 block executor does not yet execute smart-contract actions"
                             .into(),
-                    )
-                }
-            },
+                        ),
+                    }
+            }
         };
 
         if transition.state_root_before() != before {
@@ -218,12 +216,10 @@ mod tests {
     use crate::native_execution::{AccountStateV1, NativeStateV1};
     use crate::native_state_v2::ComputeChannelSettlementPolicyV1;
     use crate::native_transaction::{
-        NativeTransactionBodyV1, SignedNativeTransactionV1, DEVNET_CHAIN_ID,
-        DEVNET_NETWORK_ID, NATIVE_TRANSFER_GAS_V1,
+        NativeTransactionBodyV1, SignedNativeTransactionV1, DEVNET_CHAIN_ID, DEVNET_NETWORK_ID,
+        NATIVE_TRANSFER_GAS_V1,
     };
-    use crate::native_transaction_v2::{
-        NativeTransactionBodyV2, SignedNativeTransactionV2,
-    };
+    use crate::native_transaction_v2::{NativeTransactionBodyV2, SignedNativeTransactionV2};
     use k256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey};
 
     fn sign_v1(key: &SigningKey, body: NativeTransactionBodyV1) -> SignedNativeTransactionV1 {
@@ -330,14 +326,9 @@ mod tests {
         )
         .unwrap();
 
-        let result = execute_inactive_versioned_block_v2(
-            &mut state,
-            &body,
-            AddressNetwork::Devnet,
-            10,
-            2,
-        )
-        .unwrap();
+        let result =
+            execute_inactive_versioned_block_v2(&mut state, &body, AddressNetwork::Devnet, 10, 2)
+                .unwrap();
 
         assert_eq!(result.transactions.len(), 2);
         assert_eq!(
@@ -515,14 +506,9 @@ mod tests {
         )
         .unwrap();
 
-        let result = execute_inactive_versioned_block_v2(
-            &mut state,
-            &body,
-            AddressNetwork::Devnet,
-            10,
-            2,
-        )
-        .unwrap();
+        let result =
+            execute_inactive_versioned_block_v2(&mut state, &body, AddressNetwork::Devnet, 10, 2)
+                .unwrap();
 
         assert_eq!(result.transactions.len(), 2);
         assert_eq!(
@@ -610,14 +596,9 @@ mod tests {
         )
         .unwrap();
 
-        let error = execute_inactive_versioned_block_v2(
-            &mut state,
-            &body,
-            AddressNetwork::Devnet,
-            10,
-            2,
-        )
-        .unwrap_err();
+        let error =
+            execute_inactive_versioned_block_v2(&mut state, &body, AddressNetwork::Devnet, 10, 2)
+                .unwrap_err();
 
         assert!(error.contains("zero placeholder gas/fee"));
         assert_eq!(state, before);
