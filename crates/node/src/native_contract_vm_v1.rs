@@ -183,11 +183,25 @@ pub enum Nvm1Value {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Nvm1Trap {
+    StackUnderflow,
+    StackOverflow,
+    TypeMismatch,
+    ArithmeticOverflowOrUnderflow,
+    InputRangeOverflow,
+    InputOutOfRange,
+    MemoryLengthOverflow,
+    MemoryLimitExceeded,
+    StepLimitExceeded,
+    FellOffEnd,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Nvm1Halt {
     Stop,
     Return(Vec<u8>),
     Revert(Vec<u8>),
-    Trap(String),
+    Trap(Nvm1Trap),
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -235,14 +249,14 @@ pub fn execute_nvm1_core_with_context(
             return Ok(trap_result(
                 stack,
                 executed,
-                "NVM1 execution fell past final instruction",
+                Nvm1Trap::FellOffEnd,
             ));
         };
         if executed >= NVM1_INACTIVE_EXECUTION_STEP_LIMIT {
             return Ok(trap_result(
                 stack,
                 executed,
-                "NVM1 inactive execution step limit exceeded",
+                Nvm1Trap::StepLimitExceeded,
             ));
         }
         executed += 1;
@@ -282,13 +296,13 @@ pub fn execute_nvm1_core_with_context(
             }
             0x03 => {
                 if stack.pop().is_none() {
-                    return Ok(trap_result(stack, executed, "NVM1 POP stack underflow"));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 }
                 pc += 1;
             }
             0x04 => {
                 let Some(value) = stack.last().cloned() else {
-                    return Ok(trap_result(stack, executed, "NVM1 DUP stack underflow"));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 };
                 if let Some(result) = push_value(
                     &mut stack,
@@ -305,21 +319,21 @@ pub fn execute_nvm1_core_with_context(
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 arithmetic stack underflow",
+                        Nvm1Trap::StackUnderflow,
                     ));
                 };
                 let Some(lhs) = stack.pop() else {
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 arithmetic stack underflow",
+                        Nvm1Trap::StackUnderflow,
                     ));
                 };
                 let (Nvm1Value::U64(lhs), Nvm1Value::U64(rhs)) = (lhs, rhs) else {
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 arithmetic type mismatch",
+                        Nvm1Trap::TypeMismatch,
                     ));
                 };
                 let value = if instruction.opcode == 0x05 {
@@ -331,7 +345,7 @@ pub fn execute_nvm1_core_with_context(
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 arithmetic overflow or underflow",
+                        Nvm1Trap::ArithmeticOverflowOrUnderflow,
                     ));
                 };
                 stack.push(Nvm1Value::U64(value));
@@ -339,15 +353,15 @@ pub fn execute_nvm1_core_with_context(
             }
             0x07 => {
                 let Some(rhs) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, "NVM1 EQ stack underflow"));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 };
                 let Some(lhs) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, "NVM1 EQ stack underflow"));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 };
                 let equal = match (&lhs, &rhs) {
                     (Nvm1Value::U64(a), Nvm1Value::U64(b)) => a == b,
                     (Nvm1Value::Bytes32(a), Nvm1Value::Bytes32(b)) => a == b,
-                    _ => return Ok(trap_result(stack, executed, "NVM1 EQ type mismatch")),
+                    _ => return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch)),
                 };
                 stack.push(Nvm1Value::U64(u64::from(equal)));
                 pc += 1;
@@ -357,10 +371,10 @@ pub fn execute_nvm1_core_with_context(
             }
             0x09 => {
                 let Some(condition) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, "NVM1 JUMP_IF stack underflow"));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
                 };
                 let Nvm1Value::U64(condition) = condition else {
-                    return Ok(trap_result(stack, executed, "NVM1 JUMP_IF type mismatch"));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
                 };
                 if condition != 0 {
                     pc = u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as usize;
@@ -386,14 +400,14 @@ pub fn execute_nvm1_core_with_context(
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 INPUT_COPY stack underflow",
+                        Nvm1Trap::StackUnderflow,
                     ));
                 };
                 let Nvm1Value::U64(offset) = offset else {
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 INPUT_COPY type mismatch",
+                        Nvm1Trap::TypeMismatch,
                     ));
                 };
                 let offset = usize::try_from(offset)
@@ -404,17 +418,17 @@ pub fn execute_nvm1_core_with_context(
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 INPUT_COPY range overflow",
+                        Nvm1Trap::InputRangeOverflow,
                     ));
                 };
                 if end > context.input.len() {
-                    return Ok(trap_result(stack, executed, "NVM1 INPUT_COPY out of range"));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::InputOutOfRange));
                 }
                 let Some(new_memory_len) = memory.len().checked_add(length) else {
-                    return Ok(trap_result(stack, executed, "NVM1 memory length overflow"));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::MemoryLengthOverflow));
                 };
                 if new_memory_len > NVM1_MAX_MEMORY_BYTES {
-                    return Ok(trap_result(stack, executed, "NVM1 memory limit exceeded"));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::MemoryLimitExceeded));
                 }
                 memory.extend_from_slice(&context.input[offset..end]);
                 pc += 1;
@@ -448,14 +462,14 @@ pub fn execute_nvm1_core_with_context(
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 STORAGE_GET stack underflow",
+                        Nvm1Trap::StackUnderflow,
                     ));
                 };
                 let Nvm1Value::Bytes32(key) = key else {
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 STORAGE_GET type mismatch",
+                        Nvm1Trap::TypeMismatch,
                     ));
                 };
                 let value = storage.get(&key).copied().unwrap_or([0u8; 32]);
@@ -474,21 +488,21 @@ pub fn execute_nvm1_core_with_context(
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 STORAGE_SET stack underflow",
+                        Nvm1Trap::StackUnderflow,
                     ));
                 };
                 let Some(key) = stack.pop() else {
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 STORAGE_SET stack underflow",
+                        Nvm1Trap::StackUnderflow,
                     ));
                 };
                 let (Nvm1Value::Bytes32(key), Nvm1Value::Bytes32(value)) = (key, value) else {
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 STORAGE_SET type mismatch",
+                        Nvm1Trap::TypeMismatch,
                     ));
                 };
                 storage.insert(key, value);
@@ -499,14 +513,14 @@ pub fn execute_nvm1_core_with_context(
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 STORAGE_DELETE stack underflow",
+                        Nvm1Trap::StackUnderflow,
                     ));
                 };
                 let Nvm1Value::Bytes32(key) = key else {
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 STORAGE_DELETE type mismatch",
+                        Nvm1Trap::TypeMismatch,
                     ));
                 };
                 storage.remove(&key);
@@ -533,11 +547,11 @@ pub fn execute_nvm1_core_with_context(
                     return Ok(trap_result(
                         stack,
                         executed,
-                        "NVM1 KECCAK256 stack underflow",
+                        Nvm1Trap::StackUnderflow,
                     ));
                 };
                 let Nvm1Value::Bytes32(value) = value else {
-                    return Ok(trap_result(stack, executed, "NVM1 KECCAK256 type mismatch"));
+                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
                 };
                 let digest: [u8; 32] = Keccak256::digest(value).into();
                 if let Some(result) = push_value(
@@ -587,16 +601,16 @@ fn push_value(
         return Some(trap_result(
             stack.clone(),
             executed,
-            "NVM1 declared stack bound exceeded",
+            Nvm1Trap::StackOverflow,
         ));
     }
     stack.push(value);
     None
 }
 
-fn trap_result(stack: Vec<Nvm1Value>, executed: u32, message: &str) -> Nvm1ExecutionResult {
+fn trap_result(stack: Vec<Nvm1Value>, executed: u32, trap: Nvm1Trap) -> Nvm1ExecutionResult {
     Nvm1ExecutionResult {
-        halt: Nvm1Halt::Trap(message.to_string()),
+        halt: Nvm1Halt::Trap(trap),
         stack,
         instructions_executed: executed,
         committed_storage: None,
@@ -649,7 +663,7 @@ mod tests {
         let mismatch = execute_nvm1_core(&module(4, 2, &mixed)).unwrap();
         assert_eq!(
             mismatch.halt,
-            Nvm1Halt::Trap("NVM1 EQ type mismatch".to_string())
+            Nvm1Halt::Trap(Nvm1Trap::TypeMismatch)
         );
 
         let overflow = module(
@@ -662,7 +676,7 @@ mod tests {
         );
         assert_eq!(
             execute_nvm1_core(&overflow).unwrap().halt,
-            Nvm1Halt::Trap("NVM1 arithmetic overflow or underflow".to_string())
+            Nvm1Halt::Trap(Nvm1Trap::ArithmeticOverflowOrUnderflow)
         );
     }
 
@@ -671,7 +685,7 @@ mod tests {
         let bound = module(3, 1, &[0x01, 0, 0, 0, 0, 0, 0, 0, 1, 0x04, 0x00]);
         assert_eq!(
             execute_nvm1_core(&bound).unwrap().halt,
-            Nvm1Halt::Trap("NVM1 declared stack bound exceeded".to_string())
+            Nvm1Halt::Trap(Nvm1Trap::StackOverflow)
         );
     }
 
@@ -834,7 +848,7 @@ mod tests {
             execute_nvm1_core_with_context(&out_of_range, &context)
                 .unwrap()
                 .halt,
-            Nvm1Halt::Trap("NVM1 INPUT_COPY out of range".to_string())
+            Nvm1Halt::Trap(Nvm1Trap::InputOutOfRange)
         );
 
         let mut input = vec![0u8; NVM1_MAX_MEMORY_BYTES + 1];
@@ -859,7 +873,7 @@ mod tests {
             )
             .unwrap()
             .halt,
-            Nvm1Halt::Trap("NVM1 memory limit exceeded".to_string())
+            Nvm1Halt::Trap(Nvm1Trap::MemoryLimitExceeded)
         );
     }
 
@@ -894,7 +908,7 @@ mod tests {
         );
         assert_eq!(
             result.halt,
-            Nvm1Halt::Trap("NVM1 inactive execution step limit exceeded".to_string())
+            Nvm1Halt::Trap(Nvm1Trap::StepLimitExceeded)
         );
     }
 
@@ -903,7 +917,7 @@ mod tests {
         let result = execute_nvm1_core(&module(1, 1, &[0x01, 0, 0, 0, 0, 0, 0, 0, 1])).unwrap();
         assert_eq!(
             result.halt,
-            Nvm1Halt::Trap("NVM1 execution fell past final instruction".to_string())
+            Nvm1Halt::Trap(Nvm1Trap::FellOffEnd)
         );
     }
 
