@@ -275,10 +275,10 @@ pub fn execute_nvm1_core_with_context_and_gas(
 
     loop {
         let Some(instruction) = instructions.get(pc) else {
-            return Ok(trap_result(stack, executed, Nvm1Trap::FellOffEnd));
+            return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::FellOffEnd));
         };
         if executed >= NVM1_INACTIVE_EXECUTION_STEP_LIMIT {
-            return Ok(trap_result(stack, executed, Nvm1Trap::StepLimitExceeded));
+            return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StepLimitExceeded));
         }
         let gas_cost = nvm1_gas_cost(instruction)?;
         if gas_cost > gas_limit.saturating_sub(gas_used) {
@@ -328,13 +328,13 @@ pub fn execute_nvm1_core_with_context_and_gas(
             }
             0x03 => {
                 if stack.pop().is_none() {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 }
                 pc += 1;
             }
             0x04 => {
                 let Some(value) = stack.last().cloned() else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 };
                 if let Some(result) = push_value(
                     &mut stack,
@@ -348,13 +348,13 @@ pub fn execute_nvm1_core_with_context_and_gas(
             }
             0x05 | 0x06 => {
                 let Some(rhs) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 };
                 let Some(lhs) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 };
                 let (Nvm1Value::U64(lhs), Nvm1Value::U64(rhs)) = (lhs, rhs) else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::TypeMismatch));
                 };
                 let value = if instruction.opcode == 0x05 {
                     lhs.checked_add(rhs)
@@ -373,15 +373,15 @@ pub fn execute_nvm1_core_with_context_and_gas(
             }
             0x07 => {
                 let Some(rhs) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 };
                 let Some(lhs) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 };
                 let equal = match (&lhs, &rhs) {
                     (Nvm1Value::U64(a), Nvm1Value::U64(b)) => a == b,
                     (Nvm1Value::Bytes32(a), Nvm1Value::Bytes32(b)) => a == b,
-                    _ => return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch)),
+                    _ => return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::TypeMismatch)),
                 };
                 stack.push(Nvm1Value::U64(u64::from(equal)));
                 pc += 1;
@@ -391,10 +391,10 @@ pub fn execute_nvm1_core_with_context_and_gas(
             }
             0x09 => {
                 let Some(condition) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 };
                 let Nvm1Value::U64(condition) = condition else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::TypeMismatch));
                 };
                 if condition != 0 {
                     pc = u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as usize;
@@ -417,26 +417,26 @@ pub fn execute_nvm1_core_with_context_and_gas(
             }
             0x11 => {
                 let Some(offset) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 };
                 let Nvm1Value::U64(offset) = offset else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::TypeMismatch));
                 };
                 let offset = usize::try_from(offset)
                     .map_err(|_| "NVM1 INPUT_COPY offset does not fit usize".to_string())?;
                 let length =
                     u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as usize;
                 let Some(end) = offset.checked_add(length) else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::InputRangeOverflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::InputRangeOverflow));
                 };
                 if end > context.input.len() {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::InputOutOfRange));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::InputOutOfRange));
                 }
                 let Some(new_memory_len) = memory.len().checked_add(length) else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::MemoryLengthOverflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::MemoryLengthOverflow));
                 };
                 if new_memory_len > NVM1_MAX_MEMORY_BYTES {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::MemoryLimitExceeded));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::MemoryLimitExceeded));
                 }
                 memory.extend_from_slice(&context.input[offset..end]);
                 pc += 1;
@@ -467,10 +467,10 @@ pub fn execute_nvm1_core_with_context_and_gas(
             }
             0x20 => {
                 let Some(key) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 };
                 let Nvm1Value::Bytes32(key) = key else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::TypeMismatch));
                 };
                 let value = storage.get(&key).copied().unwrap_or([0u8; 32]);
                 if let Some(result) = push_value(
@@ -485,23 +485,23 @@ pub fn execute_nvm1_core_with_context_and_gas(
             }
             0x21 => {
                 let Some(value) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 };
                 let Some(key) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 };
                 let (Nvm1Value::Bytes32(key), Nvm1Value::Bytes32(value)) = (key, value) else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::TypeMismatch));
                 };
                 storage.insert(key, value);
                 pc += 1;
             }
             0x22 => {
                 let Some(key) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 };
                 let Nvm1Value::Bytes32(key) = key else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::TypeMismatch));
                 };
                 storage.remove(&key);
                 pc += 1;
@@ -526,10 +526,10 @@ pub fn execute_nvm1_core_with_context_and_gas(
             }
             0x30 => {
                 let Some(value) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::StackUnderflow));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::StackUnderflow));
                 };
                 let Nvm1Value::Bytes32(value) = value else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::TypeMismatch));
+                    return Ok(trap_result_with_gas(stack, executed, gas_used, Nvm1Trap::TypeMismatch));
                 };
                 let digest: [u8; 32] = Keccak256::digest(value).into();
                 if let Some(result) = push_value(
@@ -607,6 +607,17 @@ fn trap_result_with_gas(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn ordinary_trap_preserves_gas_already_charged() {
+        let code = module(2, 1, &[0x01, 0, 0, 0, 0, 0, 0, 0, 7, 0x05]);
+        let context = Nvm1ExecutionContext::default();
+        let result = execute_nvm1_core_with_context_and_gas(&code, &context, 10).unwrap();
+        assert_eq!(result.halt, Nvm1Halt::Trap(Nvm1Trap::StackUnderflow));
+        assert_eq!(result.gas_used, 5);
+        assert_eq!(result.instructions_executed, 2);
+        assert_eq!(result.committed_storage, None);
+    }
 
     #[test]
     fn gas_meter_charges_exactly_and_traps_before_next_instruction() {
