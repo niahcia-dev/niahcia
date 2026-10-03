@@ -413,6 +413,83 @@ pub fn apply_compute_channel_refund_v1(
     Ok(())
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AppliedComputeTransitionV1 {
+    Open(ValidatedComputeChannelOpenV1),
+    Settle(ValidatedComputeChannelSettleV1),
+    Refund(ValidatedComputeChannelRefundV1),
+}
+
+impl AppliedComputeTransitionV1 {
+    pub fn transaction_id(&self) -> Hash32 {
+        match self {
+            Self::Open(plan) => plan.transaction_id,
+            Self::Settle(plan) => plan.transaction_id,
+            Self::Refund(plan) => plan.transaction_id,
+        }
+    }
+
+    pub fn channel_id(&self) -> Hash32 {
+        match self {
+            Self::Open(plan) => plan.channel_id,
+            Self::Settle(plan) => plan.channel_id,
+            Self::Refund(plan) => plan.channel_id,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InactiveComputeExecutionResultV1 {
+    pub transition: AppliedComputeTransitionV1,
+    pub state_root_before: Hash32,
+    pub state_root_after: Hash32,
+}
+
+pub fn execute_inactive_compute_transaction_v2(
+    state: &mut NativeStateV2,
+    transaction: &SignedNativeTransactionV2,
+    network: AddressNetwork,
+    current_height: u64,
+) -> Result<InactiveComputeExecutionResultV1, String> {
+    let state_root_before = state.state_root()?;
+    let mut next = state.clone();
+
+    let transition = match transaction.body.action {
+        NativeActionV2::ComputeChannelOpen => {
+            let plan =
+                plan_compute_channel_open_v1(&next, transaction, network, current_height)?;
+            apply_compute_channel_open_v1(&mut next, &plan)?;
+            AppliedComputeTransitionV1::Open(plan)
+        }
+        NativeActionV2::ComputeChannelSettle => {
+            let plan =
+                plan_compute_channel_settle_v1(&next, transaction, network, current_height)?;
+            apply_compute_channel_settle_v1(&mut next, &plan)?;
+            AppliedComputeTransitionV1::Settle(plan)
+        }
+        NativeActionV2::ComputeChannelRefund => {
+            let plan =
+                plan_compute_channel_refund_v1(&next, transaction, network, current_height)?;
+            apply_compute_channel_refund_v1(&mut next, &plan)?;
+            AppliedComputeTransitionV1::Refund(plan)
+        }
+        _ => {
+            return Err(
+                "native transaction V2 action is not an inactive ComputeChannel action".into(),
+            )
+        }
+    };
+
+    let state_root_after = next.state_root()?;
+    *state = next;
+
+    Ok(InactiveComputeExecutionResultV1 {
+        transition,
+        state_root_before,
+        state_root_after,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -942,6 +1019,127 @@ mod tests {
             plan_compute_channel_refund_v1(&state, &transaction, AddressNetwork::Devnet, 121)
                 .unwrap_err();
         assert!(error.contains("not OPEN"));
+    }
+
+    #[test]
+    fn inactive_dispatcher_executes_open_and_reports_exact_roots() {
+        let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
+        let transaction = signed_open(&signing_key, 3, 1_000, 100);
+        let mut state = state_for(&transaction, 5_000, 3);
+        let before = state.clone();
+        let expected_before_root = before.state_root().unwrap();
+
+        let result = execute_inactive_compute_transaction_v2(
+            &mut state,
+            &transaction,
+            AddressNetwork::Devnet,
+            50,
+        )
+        .unwrap();
+
+        assert_eq!(result.state_root_before, expected_before_root);
+        assert_eq!(result.state_root_after, state.state_root().unwrap());
+        assert_ne!(result.state_root_after, result.state_root_before);
+        assert_eq!(result.transition.transaction_id(), transaction.tx_id().unwrap());
+
+        let channel_id = result.transition.channel_id();
+        assert!(state.channel(channel_id).is_some());
+        let sender = transaction
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload;
+        assert_eq!(
+            state.accounts().account(sender),
+            AccountStateV1 {
+                balance: 4_000,
+                nonce: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn inactive_dispatcher_executes_settle_and_refund_variants() {
+        let (mut settle_state, settle_transaction, _, _) = settle_fixture();
+        let settle_result = execute_inactive_compute_transaction_v2(
+            &mut settle_state,
+            &settle_transaction,
+            AddressNetwork::Devnet,
+            110,
+        )
+        .unwrap();
+        assert!(matches!(
+            settle_result.transition,
+            AppliedComputeTransitionV1::Settle(_)
+        ));
+        assert_eq!(
+            settle_state
+                .channel(settle_result.transition.channel_id())
+                .unwrap()
+                .state,
+            ComputeChannelStatusV1::Settled
+        );
+
+        let (mut refund_state, refund_transaction, _) = refund_fixture();
+        let refund_result = execute_inactive_compute_transaction_v2(
+            &mut refund_state,
+            &refund_transaction,
+            AddressNetwork::Devnet,
+            121,
+        )
+        .unwrap();
+        assert!(matches!(
+            refund_result.transition,
+            AppliedComputeTransitionV1::Refund(_)
+        ));
+        assert_eq!(
+            refund_state
+                .channel(refund_result.transition.channel_id())
+                .unwrap()
+                .state,
+            ComputeChannelStatusV1::Refunded
+        );
+    }
+
+    #[test]
+    fn inactive_dispatcher_rejects_noncompute_v2_action_without_mutation() {
+        let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
+        let mut transaction = signed_open(&signing_key, 3, 1_000, 100);
+        transaction.body.action = NativeActionV2::Transfer;
+        transaction.body.data.clear();
+        transaction.body.value = 0;
+        resign_v2(&mut transaction, &signing_key);
+
+        let mut state = state_for(&transaction, 5_000, 3);
+        let before = state.clone();
+
+        let error = execute_inactive_compute_transaction_v2(
+            &mut state,
+            &transaction,
+            AddressNetwork::Devnet,
+            50,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("not an inactive ComputeChannel action"));
+        assert_eq!(state, before);
+    }
+
+    #[test]
+    fn inactive_dispatcher_rolls_back_failed_compute_validation() {
+        let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
+        let mut transaction = signed_open(&signing_key, 3, 1_000, 100);
+        let mut state = state_for(&transaction, 5_000, 3);
+        let before = state.clone();
+
+        transaction.signature[0] ^= 1;
+        assert!(execute_inactive_compute_transaction_v2(
+            &mut state,
+            &transaction,
+            AddressNetwork::Devnet,
+            50,
+        )
+        .is_err());
+        assert_eq!(state, before);
     }
 
     #[test]
