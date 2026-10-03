@@ -285,7 +285,6 @@ pub fn execute_inactive_accepted_contract_create_v1(
     })
 }
 
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InactiveAcceptedContractCallV1 {
     pub transaction_id: Hash32,
@@ -386,8 +385,11 @@ pub fn execute_inactive_accepted_contract_call_v1(
         call_value: transaction.body.value,
         storage,
     };
-    let execution =
-        execute_nvm1_core_with_context_and_gas(&contract.code, &vm_context, transaction.body.gas_limit)?;
+    let execution = execute_nvm1_core_with_context_and_gas(
+        &contract.code,
+        &vm_context,
+        transaction.body.gas_limit,
+    )?;
     let call_succeeded = matches!(execution.halt, Nvm1Halt::Stop | Nvm1Halt::Return(_));
     let gas_used = if matches!(execution.halt, Nvm1Halt::Trap(_)) {
         transaction.body.gas_limit
