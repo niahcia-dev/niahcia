@@ -322,7 +322,11 @@ pub fn execute_nvm1_core_with_context(
                     lhs.checked_sub(rhs)
                 };
                 let Some(value) = value else {
-                    return Ok(trap_result(stack, executed, Nvm1Trap::ArithmeticOverflowOrUnderflow));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        Nvm1Trap::ArithmeticOverflowOrUnderflow,
+                    ));
                 };
                 stack.push(Nvm1Value::U64(value));
                 pc += 1;
