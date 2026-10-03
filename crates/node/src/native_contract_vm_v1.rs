@@ -667,6 +667,71 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn storage_get_set_delete_and_missing_zero_are_transactional() {
+        let key = [0x11u8; 32];
+        let old_value = [0x22u8; 32];
+        let new_value = [0x33u8; 32];
+        let mut storage = BTreeMap::new();
+        storage.insert(key, old_value);
+        let context = Nvm1ExecutionContext {
+            storage,
+            ..Nvm1ExecutionContext::default()
+        };
+
+        let mut bytes = vec![0x02];
+        bytes.extend_from_slice(&key);
+        bytes.push(0x20);
+        bytes.push(0x02);
+        bytes.extend_from_slice(&key);
+        bytes.push(0x02);
+        bytes.extend_from_slice(&new_value);
+        bytes.push(0x21);
+        bytes.push(0x02);
+        bytes.extend_from_slice(&key);
+        bytes.push(0x22);
+        bytes.push(0x02);
+        bytes.extend_from_slice(&key);
+        bytes.push(0x20);
+        bytes.push(0x00);
+
+        let result = execute_nvm1_core_with_context(&module(9, 3, &bytes), &context).unwrap();
+        assert_eq!(result.halt, Nvm1Halt::Stop);
+        assert_eq!(
+            result.stack,
+            vec![
+                Nvm1Value::Bytes32(old_value),
+                Nvm1Value::Bytes32([0u8; 32])
+            ]
+        );
+        assert_eq!(result.committed_storage, Some(BTreeMap::new()));
+        assert_eq!(context.storage.get(&key), Some(&old_value));
+    }
+
+    #[test]
+    fn revert_and_trap_do_not_expose_committable_storage() {
+        let key = [0x44u8; 32];
+        let value = [0x55u8; 32];
+        let mut prefix = vec![0x02];
+        prefix.extend_from_slice(&key);
+        prefix.push(0x02);
+        prefix.extend_from_slice(&value);
+        prefix.push(0x21);
+
+        let mut revert_bytes = prefix.clone();
+        revert_bytes.push(0x41);
+        let revert = execute_nvm1_core(&module(4, 2, &revert_bytes)).unwrap();
+        assert!(matches!(revert.halt, Nvm1Halt::Revert(_)));
+        assert_eq!(revert.committed_storage, None);
+
+        let mut trap_bytes = prefix;
+        trap_bytes.push(0x03);
+        let trap = execute_nvm1_core(&module(4, 2, &trap_bytes)).unwrap();
+        assert!(matches!(trap.halt, Nvm1Halt::Trap(_)));
+        assert_eq!(trap.committed_storage, None);
+    }
+
     #[test]
     fn context_exposes_input_length_and_call_value() {
         let code = module(3, 2, &[0x10, 0x13, 0x00]);
