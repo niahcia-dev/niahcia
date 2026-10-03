@@ -1065,6 +1065,208 @@ impl StateStore {
         })
     }
 
+
+    pub fn insert_inactive_native_v2_block_with_body_and_execution_outcome(
+        &self,
+        header: BlockHeaderV1,
+        body: &NativeBlockBodyV2,
+        execution: &NativeBlockExecutionResultV2,
+        state: &NativeStateV2,
+    ) -> Result<ChainInsertOutcome, String> {
+        let transactions_root = body.transactions_root();
+        if transactions_root != header.transactions_root
+            || execution.transactions_root != header.transactions_root
+        {
+            return Err("inactive V2 block transactions root does not match header".into());
+        }
+        if execution.execution_root != header.execution_root {
+            return Err("inactive V2 block execution root does not match header".into());
+        }
+        if state.state_root()? != execution.state_root {
+            return Err("inactive V2 state root does not match execution result".into());
+        }
+        body.validate_fee_recipient_canonicality(execution.producer_priority_fee)?;
+
+        let previous_best = self.best_chain_head()?.map(|block| block.block_id());
+
+        let parent_work = if header.height == 0 {
+            if header.parent_hash != [0_u8; 32] {
+                return Err("genesis block must have a zero parent hash".into());
+            }
+            BigUint::default()
+        } else {
+            let parent = self
+                .load_chain_block(header.parent_hash)?
+                .ok_or_else(|| "chain block parent is not persisted".to_string())?;
+            if parent.header.height.checked_add(1) != Some(header.height) {
+                return Err("chain block height does not follow persisted parent".into());
+            }
+            parent.chain_work
+        };
+
+        let record = PersistedChainBlock {
+            chain_work: parent_work + block_work(header.target),
+            header,
+        };
+        let block_id = record.block_id();
+        let encoded_block = record.encode_value()?;
+        let encoded_body = body.canonical_bytes()?;
+        let encoded_execution = execution.canonical_bytes()?;
+        let snapshot = state.canonical_bytes()?;
+        let mut encoded_state = Vec::with_capacity(32 + snapshot.len());
+        encoded_state.extend_from_slice(&execution.state_root);
+        encoded_state.extend_from_slice(&snapshot);
+
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("failed to begin inactive V2 block transaction: {e}"))?;
+
+        {
+            let mut blocks = write
+                .open_table(CHAIN_BLOCKS)
+                .map_err(|e| format!("failed to open chain block table: {e}"))?;
+            let existing = blocks
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to check existing chain block: {e}"))?
+                .map(|value| value.value().to_vec());
+
+            if let Some(existing) = existing {
+                let existing = PersistedChainBlock::decode(&existing)?;
+                if existing != record {
+                    return Err("block ID collision with different persisted record".into());
+                }
+            } else {
+                blocks
+                    .insert(block_id.as_slice(), encoded_block.as_slice())
+                    .map_err(|e| format!("failed to persist chain block: {e}"))?;
+            }
+        }
+
+        {
+            let mut bodies = write
+                .open_table(INACTIVE_NATIVE_BLOCK_BODIES_V2)
+                .map_err(|e| format!("failed to open inactive V2 block body table: {e}"))?;
+            let existing = bodies
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to inspect inactive V2 block body: {e}"))?
+                .map(|value| value.value().to_vec());
+
+            if let Some(existing) = existing {
+                if existing.as_slice() != encoded_body.as_slice() {
+                    return Err("block already has a different inactive V2 block body".into());
+                }
+            } else {
+                bodies
+                    .insert(block_id.as_slice(), encoded_body.as_slice())
+                    .map_err(|e| format!("failed to persist inactive V2 block body: {e}"))?;
+            }
+        }
+
+        {
+            let mut executions = write
+                .open_table(INACTIVE_NATIVE_BLOCK_EXECUTION_V2)
+                .map_err(|e| format!("failed to open inactive V2 execution table: {e}"))?;
+            let existing = executions
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to inspect inactive V2 execution: {e}"))?
+                .map(|value| value.value().to_vec());
+
+            if let Some(existing) = existing {
+                if existing.as_slice() != encoded_execution.as_slice() {
+                    return Err("block already has a different inactive V2 execution".into());
+                }
+            } else {
+                executions
+                    .insert(block_id.as_slice(), encoded_execution.as_slice())
+                    .map_err(|e| format!("failed to persist inactive V2 execution: {e}"))?;
+            }
+        }
+
+        {
+            let mut snapshots = write
+                .open_table(INACTIVE_NATIVE_STATE_SNAPSHOTS_V2)
+                .map_err(|e| format!("failed to open inactive V2 state table: {e}"))?;
+            let existing = snapshots
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to inspect inactive V2 state: {e}"))?
+                .map(|value| value.value().to_vec());
+
+            if let Some(existing) = existing {
+                if existing.as_slice() != encoded_state.as_slice() {
+                    return Err("block already has a different inactive V2 state".into());
+                }
+            } else {
+                snapshots
+                    .insert(block_id.as_slice(), encoded_state.as_slice())
+                    .map_err(|e| format!("failed to persist inactive V2 state: {e}"))?;
+            }
+        }
+
+        let current_best_id: Option<Hash32> = {
+            let meta = write
+                .open_table(CHAIN_META)
+                .map_err(|e| format!("failed to open chain metadata table: {e}"))?;
+            meta.get(BEST_HEAD_KEY)
+                .map_err(|e| format!("failed to read current best head: {e}"))?
+                .map(|best_id| {
+                    best_id
+                        .value()
+                        .try_into()
+                        .map_err(|_| "invalid persisted best-head ID length".to_string())
+                })
+                .transpose()?
+        };
+
+        let should_promote = match current_best_id {
+            Some(best_id) => {
+                let blocks = write
+                    .open_table(CHAIN_BLOCKS)
+                    .map_err(|e| format!("failed to open chain block table: {e}"))?;
+                let best = blocks
+                    .get(best_id.as_slice())
+                    .map_err(|e| format!("failed to read current best block: {e}"))?
+                    .ok_or_else(|| "best-head metadata references missing block".to_string())?;
+                let best = PersistedChainBlock::decode(best.value())?;
+
+                record.chain_work > best.chain_work
+                    || (record.chain_work == best.chain_work && block_id < best_id)
+            }
+            None => true,
+        };
+
+        if should_promote {
+            let mut meta = write
+                .open_table(CHAIN_META)
+                .map_err(|e| format!("failed to open chain metadata table: {e}"))?;
+            meta.insert(BEST_HEAD_KEY, block_id.as_slice())
+                .map_err(|e| format!("failed to persist best-head ID: {e}"))?;
+        }
+
+        write
+            .commit()
+            .map_err(|e| format!("failed to commit inactive V2 block transaction: {e}"))?;
+
+        let current_best = self
+            .best_chain_head()?
+            .ok_or_else(|| "inactive V2 block transaction committed without a best head".to_string())?
+            .block_id();
+
+        let reorg = match previous_best {
+            Some(old_head) if old_head != current_best => {
+                self.canonical_reorg(old_head, current_best)?
+            }
+            _ => None,
+        };
+
+        Ok(ChainInsertOutcome {
+            block: record,
+            previous_best,
+            current_best,
+            reorg,
+        })
+    }
+
     pub fn insert_chain_block_with_outcome(
         &self,
         header: BlockHeaderV1,
@@ -1370,6 +1572,111 @@ mod tests {
             crate::native_state_v2::NativeStateV2::from_v1(accounts),
             funding,
         )
+    }
+
+    #[test]
+    fn inactive_v2_atomic_insert_persists_header_body_execution_and_state_together() {
+        use crate::address::AddressNetwork;
+        use crate::native_block_body_v2::NativeBlockBodyV2;
+        use crate::native_block_execution_v2::execute_inactive_versioned_block_v2;
+        use crate::native_execution_commitment_v2::build_inactive_execution_result_v2;
+        use crate::native_state_v2::NativeStateV2;
+
+        let path = temp_state_path("inactive-v2-atomic-insert");
+        let store = StateStore::open(&path).unwrap();
+
+        let body = NativeBlockBodyV2::empty();
+        let mut state = NativeStateV2::default();
+        let transition =
+            execute_inactive_versioned_block_v2(&mut state, &body, AddressNetwork::Devnet, 0, 0)
+                .unwrap();
+        let execution = build_inactive_execution_result_v2(&body, &transition).unwrap();
+
+        let mut header = header([0_u8; 32], 0, [0xff; 32], 0x51);
+        header.transactions_root = execution.transactions_root;
+        header.execution_root = execution.execution_root;
+        let block_id = header.block_id();
+
+        let outcome = store
+            .insert_inactive_native_v2_block_with_body_and_execution_outcome(
+                header,
+                &body,
+                &execution,
+                &state,
+            )
+            .unwrap();
+
+        assert_eq!(outcome.block.block_id(), block_id);
+        assert_eq!(outcome.current_best, block_id);
+        assert_eq!(
+            store.inactive_native_block_body_v2(block_id).unwrap(),
+            Some(body)
+        );
+        assert_eq!(
+            store.inactive_native_block_execution_v2(block_id).unwrap(),
+            Some(execution)
+        );
+        assert_eq!(
+            store.inactive_native_state_v2_snapshot(block_id).unwrap(),
+            Some(state)
+        );
+        assert!(store.native_block_body(block_id).unwrap().is_none());
+        assert!(store.native_block_execution(block_id).unwrap().is_none());
+        assert!(store.native_state_snapshot(block_id).unwrap().is_none());
+
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn inactive_v2_atomic_insert_rejects_mismatch_without_persisting_header() {
+        use crate::address::AddressNetwork;
+        use crate::native_block_body_v2::NativeBlockBodyV2;
+        use crate::native_block_execution_v2::execute_inactive_versioned_block_v2;
+        use crate::native_execution_commitment_v2::build_inactive_execution_result_v2;
+        use crate::native_state_v2::NativeStateV2;
+
+        let path = temp_state_path("inactive-v2-atomic-reject");
+        let store = StateStore::open(&path).unwrap();
+
+        let body = NativeBlockBodyV2::empty();
+        let mut state = NativeStateV2::default();
+        let transition =
+            execute_inactive_versioned_block_v2(&mut state, &body, AddressNetwork::Devnet, 0, 0)
+                .unwrap();
+        let execution = build_inactive_execution_result_v2(&body, &transition).unwrap();
+
+        let mut header = header([0_u8; 32], 0, [0xff; 32], 0x52);
+        header.transactions_root = execution.transactions_root;
+        header.execution_root = execution.execution_root;
+        header.execution_root[0] ^= 0x01;
+        let block_id = header.block_id();
+
+        let error = store
+            .insert_inactive_native_v2_block_with_body_and_execution_outcome(
+                header,
+                &body,
+                &execution,
+                &state,
+            )
+            .unwrap_err();
+
+        assert!(error.contains("execution root"));
+        assert!(store.load_chain_block(block_id).unwrap().is_none());
+        assert!(store
+            .inactive_native_block_body_v2(block_id)
+            .unwrap()
+            .is_none());
+        assert!(store
+            .inactive_native_block_execution_v2(block_id)
+            .unwrap()
+            .is_none());
+        assert!(store
+            .inactive_native_state_v2_snapshot(block_id)
+            .unwrap()
+            .is_none());
+        assert!(store.best_chain_head().unwrap().is_none());
+
+        std::fs::remove_file(path).ok();
     }
 
     #[test]
