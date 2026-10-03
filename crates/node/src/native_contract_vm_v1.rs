@@ -558,11 +558,7 @@ mod tests {
 
     #[test]
     fn traps_do_not_expose_partially_consumed_stack() {
-        let code = module(
-            3,
-            2,
-            &[0x01, 0, 0, 0, 0, 0, 0, 0, 7, 0x05, 0x00],
-        );
+        let code = module(3, 2, &[0x01, 0, 0, 0, 0, 0, 0, 0, 7, 0x05, 0x00]);
         let result = execute_nvm1_core(&code).unwrap();
         assert_eq!(result.halt, Nvm1Halt::Trap(Nvm1Trap::StackUnderflow));
         assert!(result.stack.is_empty());
