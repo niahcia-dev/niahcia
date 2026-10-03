@@ -6,7 +6,7 @@ Draft consensus candidate.
 
 The block header commits to ordered transactions through a NIAHCIA-native binary Merkle tree.
 
-This commitment is independent from Ethereum's Merkle-Patricia transaction trie and from any Reth execution block hash.
+This is the NIAHCIA-native ordered transaction commitment and does not depend on any external execution-client transaction structure.
 
 ## Transaction leaf digest
 
@@ -83,8 +83,6 @@ transactions_root = leaf(tx0)
 No synthetic sibling is added for a single-leaf tree.
 
 ## Independence
-
-An execution engine may use its own internal transaction commitment for execution purposes.
 
 NIAHCIA consensus uses this Merkle root as the transaction commitment in `BlockHeaderV1`.
 
