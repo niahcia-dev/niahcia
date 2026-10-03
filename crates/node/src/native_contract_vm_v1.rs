@@ -523,7 +523,7 @@ pub fn execute_nvm1_core_with_context(
                     halt: Nvm1Halt::Revert(memory),
                     stack,
                     instructions_executed: executed,
-                    committed_storage: Some(storage),
+                    committed_storage: None,
                 });
             }
             0x30 => {
@@ -695,7 +695,7 @@ mod tests {
         bytes.push(0x20);
         bytes.push(0x00);
 
-        let result = execute_nvm1_core_with_context(&module(9, 3, &bytes), &context).unwrap();
+        let result = execute_nvm1_core_with_context(&module(10, 3, &bytes), &context).unwrap();
         assert_eq!(result.halt, Nvm1Halt::Stop);
         assert_eq!(
             result.stack,
