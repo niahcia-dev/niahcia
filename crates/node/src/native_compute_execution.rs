@@ -672,10 +672,7 @@ mod tests {
             assert_eq!(reorg.detached, vec![detached_id]);
             assert_eq!(reorg.attached, vec![winning_id]);
 
-            let canonical = store
-                .native_state_v2_snapshot(winning_id)
-                .unwrap()
-                .unwrap();
+            let canonical = store.native_state_v2_snapshot(winning_id).unwrap().unwrap();
             assert_eq!(canonical, *ancestor_state);
             assert_eq!(canonical.state_root().unwrap(), ancestor_root);
 
