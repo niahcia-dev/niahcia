@@ -75,9 +75,9 @@ Settlement policy may support:
 4. Payment accounting MUST be auditable from signed/on-chain records.
 5. Failed/expired jobs follow explicit refund rules.
 
-## Prototype 0
+## first implementation milestone
 
-Prototype 0 uses test currency and simple compute/storage escrow. Production issuance and fee percentages are intentionally undecided.
+first implementation milestone uses test currency and simple compute/storage escrow. Production issuance and fee percentages are intentionally undecided.
 
 
 ## Relationship to compute channels
