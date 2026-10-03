@@ -89,9 +89,9 @@ Delegated capabilities MUST be equal to or narrower than their parent authority.
 4. Expired/revoked capabilities are invalid even if cached by a worker.
 5. Tool execution is sandboxed independently from permission authorization.
 
-## Prototype 0
+## first implementation milestone
 
-Prototype 0 may use no tools or read-only capabilities, but the full capability model is part of Protocol v1.
+first implementation milestone may use no tools or read-only capabilities, but the full capability model is part of Protocol v1.
 
 
 ## Specialized compute-payment authorization
