@@ -224,6 +224,7 @@ pub fn execute_nvm1_core_with_context(
 
     let mut stack = Vec::<Nvm1Value>::new();
     let mut memory = Vec::<u8>::new();
+    let mut storage = context.storage.clone();
     let mut pc = 0usize;
     let mut executed = 0u32;
 
