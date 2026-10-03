@@ -158,7 +158,7 @@ Specifically, service nodes do not:
 - determine RandomX validity,
 - determine the required target,
 - control transaction validity,
-- control EVM execution validity.
+- control native execution validity.
 
 No threshold such as "60% of service nodes agree" may be used as a consensus acceptance rule.
 
