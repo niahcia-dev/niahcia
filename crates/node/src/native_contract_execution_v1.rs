@@ -13,6 +13,62 @@ use crate::work::Hash32;
 use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ContractFeeAccountingV1 {
+    max_execution_charge: u128,
+    effective_fee_per_gas: u128,
+    base_fee_burned: u128,
+    producer_priority_fee: u128,
+    actual_fee: u128,
+    unused_fee_reserve: u128,
+}
+
+fn contract_fee_accounting_v1(
+    gas_limit: u64,
+    gas_used: u64,
+    max_fee_per_gas: u128,
+    max_priority_fee_per_gas: u128,
+    base_fee_per_gas: u128,
+    label: &str,
+) -> Result<ContractFeeAccountingV1, String> {
+    if max_fee_per_gas < base_fee_per_gas {
+        return Err(format!(
+            "native transaction V2 max_fee_per_gas {} is below base_fee_per_gas {}",
+            max_fee_per_gas, base_fee_per_gas
+        ));
+    }
+    let max_execution_charge = max_fee_per_gas
+        .checked_mul(gas_limit as u128)
+        .ok_or_else(|| format!("{label} maximum execution charge overflow"))?;
+    let priority_headroom = max_fee_per_gas
+        .checked_sub(base_fee_per_gas)
+        .ok_or_else(|| format!("{label} priority fee headroom underflow"))?;
+    let priority_fee_per_gas = max_priority_fee_per_gas.min(priority_headroom);
+    let effective_fee_per_gas = base_fee_per_gas
+        .checked_add(priority_fee_per_gas)
+        .ok_or_else(|| format!("{label} effective fee overflow"))?;
+    let base_fee_burned = base_fee_per_gas
+        .checked_mul(gas_used as u128)
+        .ok_or_else(|| format!("{label} base fee burn overflow"))?;
+    let producer_priority_fee = priority_fee_per_gas
+        .checked_mul(gas_used as u128)
+        .ok_or_else(|| format!("{label} producer priority fee overflow"))?;
+    let actual_fee = base_fee_burned
+        .checked_add(producer_priority_fee)
+        .ok_or_else(|| format!("{label} actual fee overflow"))?;
+    let unused_fee_reserve = max_execution_charge
+        .checked_sub(actual_fee)
+        .ok_or_else(|| format!("{label} actual fee exceeds maximum reserve"))?;
+    Ok(ContractFeeAccountingV1 {
+        max_execution_charge,
+        effective_fee_per_gas,
+        base_fee_burned,
+        producer_priority_fee,
+        actual_fee,
+        unused_fee_reserve,
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InactiveContractCreateRequestV1 {
     pub network: AddressNetwork,
     pub chain_id: u64,
