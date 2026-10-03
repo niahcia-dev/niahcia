@@ -1141,7 +1141,12 @@ mod tests {
         };
         let result = execute_nvm1_core_with_context(&code, &context).unwrap();
         assert_eq!(result.halt, Nvm1Halt::Stop);
-        assert_eq!(result.stack, vec![Nvm1Value::U64(5), Nvm1Value::U64(42)]);
+        let mut value = [0u8; 32];
+        value[16..].copy_from_slice(&42u128.to_be_bytes());
+        assert_eq!(
+            result.stack,
+            vec![Nvm1Value::U64(5), Nvm1Value::Bytes32(value)]
+        );
     }
 
     #[test]
