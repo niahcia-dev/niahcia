@@ -14,15 +14,14 @@ Protocol v1 uses:
 Keccak-256
 ```
 
-for protocol object digests and identifiers that must interoperate directly with EVM contracts.
+for protocol object digests and identifiers that require stable cross-implementation interoperability.
 
 Reasoning:
 
-- native EVM `keccak256`
 - 32-byte output
 - mature cross-language implementations
-- efficient on-chain verification
-- avoids requiring contracts to implement a non-native hash
+- existing use throughout NIAHCIA identifiers and commitments
+- efficient deterministic verification across implementations
 
 This choice does not require every storage subsystem to use Keccak-256. Storage manifests MAY support multihash/content-addressing schemes, but protocol identity anchors use Keccak-256 unless another specification explicitly says otherwise.
 
