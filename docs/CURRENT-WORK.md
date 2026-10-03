@@ -251,7 +251,7 @@ The inactive NativeStateV2 / NativeTransactionV2 compute-channel foundation is n
 - NativeReceiptV2 commits transaction schema version, action, transaction ID, exact post-transaction NativeStateV2 root, gas, and fee accounting;
 - NativeBlockExecutionResultV2 now provides domain-separated V2 receipt and execution commitments with strict canonical round-trip validation and tamper rejection.
 
-As of green checkpoint `7ef84a51aae49adc9a8b62822ec2ddcb0f8b79aa`, Rust CI passes formatting, Cargo check, **310 tests**, and Clippy. NativeReceiptV2 / NativeBlockExecutionResultV2 interoperability vectors are locked, mixed Transfer + ComputeChannel restart/reorg behavior is proven, and inactive V2 now has a single atomic header + body + execution + NativeStateV2 insertion path using dedicated V2 tables while active V1 persistence remains unchanged.
+As of green checkpoint `9151109d7587eac9dd3cba97fe84d1d01d7c278c`, Rust CI passes formatting, Cargo check, **314 tests**, and Clippy. NativeReceiptV2 / NativeBlockExecutionResultV2 vectors are locked; mixed Transfer + ComputeChannel restart/reorg behavior is proven; inactive V2 has a single atomic header + body + execution + NativeStateV2 insertion path; and an explicit inactive V2 activation/migration boundary helper now defines V1-before / V2-at-and-after behavior without assigning any real network activation height.
 
 The runtime boundary remains unchanged:
 
@@ -269,7 +269,7 @@ Next implementation priority is the explicit **inactive V2 persistence boundary*
 2. Do not persist NativeStateV2 through NativeBlockExecutionResultV1. Its execution commitment remains intentionally bound to NativeStateV1.
 3. NativeReceiptV2 / NativeBlockExecutionResultV2 interoperability vectors are now locked in `test-vectors/native-execution-v2.json` and enforced by Rust tests.
 4. The inactive V2 header/body/execution/state bundle now has a single atomic insertion API. It validates header/body/execution/state commitments before one redb commit and preserves the current V1 atomic path unchanged.
-5. Define the explicit V2 activation/migration boundary only after fee/gas rules and the remaining runtime boundaries are reviewed.
+5. The candidate V2 activation/migration boundary is now explicitly defined in `spec/native-execution-v2-activation.md`: V1 below a configured height H, deterministic V1 -> V2 parent-state migration at H, and V2 at/after H. No network activation height is assigned and the helper is not wired into NodeConfig, mempool, P2P, mining, or active execution.
 6. Keep compute gas constants deliberately unset until payload/signature-verification costs and the native fee schedule are reviewed; zero fields are placeholders only.
 7. Keep the successor body/execution path inactive and disconnected from mempool/P2P/mining until activation rules and vectors exist.
 8. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
@@ -316,6 +316,7 @@ Relevant new specs include:
 - `spec/native-transaction-v2-compute-actions.md`;
 - `spec/native-state-v2-compute-channels.md`;
 - `spec/native-execution-commitment-v2.md`;
+- `spec/native-execution-v2-activation.md`;
 - `spec/native-block-body-v1.md`;
 - `spec/p2p-native-block-transfer-v3.md`.
 
