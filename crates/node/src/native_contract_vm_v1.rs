@@ -673,7 +673,7 @@ mod tests {
                 &Nvm1ExecutionContext {
                     input,
                     caller_payload: [0u8; 20],
-            call_value: 0,
+                    call_value: 0,
                 }
             )
             .unwrap()
