@@ -250,3 +250,30 @@ CALLER [] -> [Bytes32(0x000000000000000000000000 || caller_payload_20)]
 The final 20 bytes are exactly the Address V1 payload. The leading 12 bytes MUST be zero. This representation is identical for account and contract callers; caller kind remains transaction/execution-context metadata and is not encoded into the `Bytes32` value.
 
 This rule avoids introducing a third stack type solely for native addresses while preserving the complete canonical 20-byte payload without text encoding or truncation.
+
+
+## Candidate persistent storage opcode semantics
+
+Status: **CANDIDATE / INACTIVE**
+
+NVM1 persistent storage operates directly on the current contract's Contract State V1 storage map. Both keys and values are exactly `Bytes32`, matching the canonical 32-byte key/value state representation.
+
+```text
+STORAGE_GET     [Bytes32(key)] -> [Bytes32(value)]
+STORAGE_SET     [Bytes32(key), Bytes32(value)] -> []
+STORAGE_DELETE  [Bytes32(key)] -> []
+```
+
+For `STORAGE_GET`, the rightmost displayed item is the top of stack. A missing key returns exactly 32 zero bytes; absence is therefore observationally equivalent to a stored all-zero value through `STORAGE_GET` alone.
+
+`STORAGE_SET` inserts or replaces the exact 32-byte value at the exact 32-byte key. `STORAGE_DELETE` removes the key when present and is a successful no-op when absent.
+
+All three operations require `Bytes32` operands. Stack underflow or another value class traps.
+
+### Execution isolation
+
+The interpreter executes against a working copy/view of the current contract storage. Persistent state is committed only if the enclosing contract execution terminates successfully under the native state-transition rules.
+
+`REVERT` and deterministic VM traps discard all storage writes/deletes produced by that execution. They MUST NOT partially mutate persistent Contract State V1.
+
+This section does not activate storage execution. Gas/resource charging and the enclosing state-transition commit boundary remain required before Runtime ID 1 activation.
