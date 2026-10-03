@@ -1,174 +1,55 @@
-# Architecture
+# NIAHCIA Architecture
 
 ## System overview
 
-NIAHCIA separates consensus, execution, AI compute, and distributed services.
+NIAHCIA separates base-chain consensus from decentralized AI services.
 
 ```text
-                        NIAHCIA NETWORK
+                         NIAHCIA
 
-                     CPU PoW consensus
-                            |
-                            v
-                       EVM execution
-                            |
-          +-----------------+-----------------+
-          |                 |                 |
-          v                 v                 v
-     AI contracts      Agent registry    Service registry
-          |                 |                 |
-          +-----------------+-----------------+
-                            |
-                       P2P control
-          +-----------------+-----------------+
-          |                                   |
-          v                                   v
-   Compute workers                      Service nodes
-   AI inference                         models / memory
-   tools / agents                       artifacts / routing
+Layer 1 — CPU PoW blockchain
+consensus / transactions / balances / commitments / settlement
+                         |
+          +--------------+--------------+
+          |                             |
+          v                             v
+wallet / Agent control          optional service protocols
+          |                             |
+          v                             v
+AI compute workers              storage / retrieval / indexing
 ```
 
-## Network roles
+## Base-chain authority
 
-### CPU Miner
+CPU Proof-of-Work alone determines the canonical chain by cumulative valid work.
 
-- performs CPU-friendly PoW
-- proposes blocks
-- secures chain history and transaction ordering
-- receives block subsidy and transaction fees
+The active reference node uses native NIAHCIA execution and state. It does not require an external EVM execution engine.
 
-### Full Node
+Full nodes validate PoW/header rules, execute native transactions, verify state transitions and commitments, persist canonical state, and participate in P2P synchronization.
 
-- validates PoW
-- executes EVM transactions
-- verifies state transitions
-- does not need to mine or run AI
+## Compute workers
 
-### Compute Worker
+Compute workers are replaceable service providers. For the first paid-compute milestone, worker discovery/selection is wallet-local from signed expiring advertisements; ordinary jobs/prompts/streaming output/usage receipts remain off-chain; one bounded ComputeChannel aggregates many jobs with one selected worker; the base chain sees channel open plus final settlement or refund.
 
-- advertises execution capabilities
-- accepts AI jobs
-- runs runtimes such as vLLM
-- streams responses over the AI P2P network
-- publishes signed result commitments
-- receives AI job payments
+Workers gain no consensus authority.
 
-The protocol uses the term **Compute Worker**, not GPU Miner. Future workers may use GPUs, CPUs, multi-accelerator systems, or distributed clusters.
+## Wallet / Agent layer
 
-### Service Node
+The wallet is the V1 Agent home/control plane. Private conversation history and Agent memory are wallet/client-local and encrypted by default. Spending keys are separate from chat-content encryption keys. Portals receive only bounded delegated capabilities.
 
-A bonded service provider capable of one or more services:
+## Storage/service layer
 
-- model storage and retrieval
-- memory storage
-- artifact or dataset storage
-- routing
-- indexing
-- archival
-- future verification support
+Decentralized storage is optional and deferred for the first ordinary AI milestone. Future storage/service providers do not vote on canonical chain state.
 
-Service nodes are paid for measurable service and are not part of base-chain fork choice.
-
-### Agent
-
-A persistent portable network identity composed of:
-
-- stable agent identity
-- immutable versioned definitions
-- model and execution policy
-- capabilities and permissions
-- memory policy and state roots
-- economic policy
-- optional wallet/treasury
-- governance controller
-
-No physical machine is "the agent."
-
-## Consensus / EVM boundary
-
-The target architecture uses a custom CPU-PoW consensus client and a mature EVM execution engine.
-
-Working Prototype 0 direction:
-
-- RandomX CPU PoW
-- ~30 second block target
-- highest cumulative work fork choice
-- Reth as EVM execution engine
-- authenticated consensus/execution interface
-
-The PoW client owns:
-
-- parent selection
-- cumulative work
-- difficulty
-- timestamps
-- PoW header rules
-- RandomX mining and validation
-- fork choice and reorganizations
-
-The execution engine owns:
-
-- transaction pool
-- EVM execution
-- gas accounting
-- receipts
-- logs
-- state root
-- Ethereum-compatible JSON-RPC
-
-The AI protocol must not be encoded into PoW consensus rules.
-
-## Fast path vs settlement path
-
-Interactive requests use two parallel paths.
+## Fast path and settlement path
 
 ```text
 FAST PATH
-
-client -> selected worker -> vLLM -> streamed tokens -> client
-
+wallet/client -> selected worker -> streamed response -> wallet/client
 
 SETTLEMENT PATH
-
-job commitment
-      |
-      v
-verification / audit
-      |
-      v
-on-chain result commitment
-      |
-      v
-payment settlement
+wallet opens bounded ComputeChannel
+        -> off-chain usage receipts
+        -> final Settle or timeout Refund
+        -> native chain state transition
 ```
-
-A user should not wait for multiple blocks before seeing generated tokens.
-
-## Protocol families
-
-### Chain P2P
-
-- blocks
-- headers
-- transactions
-- fork synchronization
-
-### AI P2P
-
-- worker advertisements
-- job announcements
-- assignments
-- payload retrieval
-- token streams
-- execution receipts
-- audit and challenge traffic
-
-### Storage P2P
-
-- manifests
-- chunk discovery
-- chunk transfer
-- replication
-- availability proofs
-
-These may share transport and identity primitives while remaining logically independent protocols.
