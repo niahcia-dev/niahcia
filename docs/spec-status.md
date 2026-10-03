@@ -35,6 +35,8 @@ This file is a living audit of protocol status. Implementation alone does not ma
 | Native Execution V1 | IMPLEMENTED + VECTORED | Active deterministic native execution path. |
 | NativeState V1 | IMPLEMENTED + VECTORED | Active accounts-only state/snapshot path. |
 | NativeBlockBody V1 | IMPLEMENTED | Active canonical non-empty block-body path. |
+| NativeBlockBody V2 | IMPLEMENTED (DEV) + INACTIVE | Versioned canonical body for ordered V1/V2 signed transactions; not admitted to active runtime. |
+| Native Execution Commitment V2 | IMPLEMENTED (DEV) + REVIEW REQUIRED + INACTIVE | Domain-separated ReceiptV2/ExecutionResultV2 commits transaction schema/action, per-transaction post-state roots, aggregate state/gas/fees; vectors and persistence activation work remain open. |
 | Native smart-contract runtime | REQUIRED + REVIEW REQUIRED + INACTIVE | Smart contracts are a core protocol requirement. ContractCall/ContractCreate are reserved in NativeTransaction V1, but runtime/state/storage/gas/revert/receipt semantics are not yet implemented. |
 | NativeState V2 | IMPLEMENTED (DEV) + VECTORED + INACTIVE | Accounts + ComputeChannel state; no activation height set. |
 | NativeTransaction V2 | IMPLEMENTED (DEV) + VECTORED + INACTIVE | Explicit ComputeChannel actions; not admitted to active mempool/P2P/mining. |
@@ -63,9 +65,9 @@ Persistence/restart/reorg proof is now implemented for transition-derived V2 sta
 
 Still required before activation:
 
-1. explicit successor block-body support for versioned V1/V2 signed transactions;
-2. explicit successor execution/receipt commitment that commits NativeStateV2 without changing NativeExecutionV1;
-3. inactive integration of compute batches with that successor block/state persistence boundary;
+1. inactive version-aware persistence for NativeBlockBodyV2 + NativeBlockExecutionResultV2 + NativeStateV2;
+2. restart/reorg proof for mixed transfer + ComputeChannel V2 blocks through that persistence boundary;
+3. locked NativeReceiptV2 / NativeBlockExecutionResultV2 interoperability vectors;
 4. explicit fee/gas schedule;
 5. activation network parameter;
 6. final interoperability vectors covering activation/migration execution.
@@ -122,9 +124,9 @@ The active reference node is native-execution only.
 
 ## Highest-priority open protocol work
 
-1. Define the versioned block-body and execution-commitment successor required to carry NativeTransactionV2 / NativeStateV2 without reinterpreting V1.
-2. Specify the native smart-contract runtime boundary (code format, contract state/storage, deterministic call/create/revert, gas, receipts, persistence, activation) without reintroducing an external EVM dependency.
-3. Integrate inactive compute batches with that successor persistence boundary.
+1. Integrate NativeBlockBodyV2 + NativeBlockExecutionResultV2 + NativeStateV2 into an inactive version-aware persistence/restart/reorg boundary without changing active V1 behavior.
+2. Lock interoperability vectors for NativeReceiptV2 / NativeBlockExecutionResultV2.
+3. Specify the native smart-contract runtime boundary (code format, contract state/storage, deterministic call/create/revert, gas, receipts, persistence, activation) without reintroducing an external EVM dependency.
 4. Review and assign compute intrinsic gas/fee rules before any activation.
 5. Define explicit NativeStateV2 / NativeTransactionV2 activation parameters and migration vectors.
 6. Resolve stock miner/pool RandomX interoperability.

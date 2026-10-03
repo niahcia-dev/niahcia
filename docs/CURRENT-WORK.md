@@ -242,9 +242,16 @@ The inactive NativeStateV2 / NativeTransactionV2 compute-channel foundation is n
 - an inactive candidate-batch executor applies multiple compute transactions against cloned state and publishes the candidate state only if every transaction succeeds;
 - failed later transactions roll back all earlier tentative batch mutations;
 - successful batch results prove state-root continuity between ordered transitions;
-- empty inactive batches are deterministic no-ops.
+- empty inactive batches are deterministic no-ops;
+- NativeBlockBodyV2 carries canonical V1 and V2 signed transactions without reinterpreting NativeBlockBodyV1;
+- inactive versioned block execution atomically handles V1 Transfer, V2 Transfer, and ComputeChannel Open/Settle/Refund against one NativeStateV2 candidate state;
+- V2 Transfer preserves the active V1 transfer accounting semantics exactly;
+- ContractCall/ContractCreate remain explicitly rejected by the inactive V2 executor pending the required native smart-contract runtime;
+- compute actions require zero placeholder gas/fee fields in the inactive executor so undefined compute gas rules cannot silently become consensus behavior;
+- NativeReceiptV2 commits transaction schema version, action, transaction ID, exact post-transaction NativeStateV2 root, gas, and fee accounting;
+- NativeBlockExecutionResultV2 now provides domain-separated V2 receipt and execution commitments with strict canonical round-trip validation and tamper rejection.
 
-As of green checkpoint `1e683c838444c4483c80c7ac1136accd3f69f7e6`, Rust CI passes formatting, Cargo check, **286 tests**, and Clippy. Post-Open, post-Settle, and post-Refund NativeStateV2 snapshots survive restart with exact roots, and branch tests prove detached compute effects are removed by restoring the winning branch's persisted V2 state.
+As of green checkpoint `048893ffea85e75668c7cfa96ab0a3794c6f1e01`, Rust CI passes formatting, Cargo check, **305 tests**, and Clippy. Post-Open, post-Settle, and post-Refund NativeStateV2 snapshots survive restart with exact roots, branch tests prove detached compute effects are removed by restoring the winning branch's persisted V2 state, and the new V2 execution commitment remains disconnected from active runtime behavior.
 
 The runtime boundary remains unchanged:
 
@@ -256,17 +263,18 @@ The runtime boundary remains unchanged:
 - no fee-bearing compute transition is active;
 - NativeStateV1 / NativeTransactionV1 behavior and locked vectors remain unchanged.
 
-Next implementation priority is the explicit **V2 block/execution integration boundary** before any activation:
+Next implementation priority is the explicit **inactive V2 persistence boundary** before any activation:
 
-1. Do not feed SignedNativeTransactionV2 bytes into NativeBlockBodyV1. Its decoder is intentionally V1-only.
-2. Do not persist NativeStateV2 through NativeBlockExecutionResultV1. Its execution commitment is intentionally bound to NativeStateV1.
-3. Define a versioned successor block-body/execution boundary that can distinguish canonical V1 and V2 signed transactions without reinterpreting existing V1 bytes or roots.
-4. Define the successor execution commitment/receipt structure before binding inactive compute batches to BlockHeaderV1 persistence. Preserve the 164-byte header itself.
-5. Keep compute gas constants deliberately unset until payload/signature-verification costs and the native fee schedule are reviewed; do not invent consensus gas values locally.
-6. Keep the successor body/execution path inactive and disconnected from mempool/P2P/mining until activation rules and vectors exist.
-7. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
-8. Do not add worker/operator on-chain registration or bonds to the first ordinary paid-compute milestone.
-9. Preserve CPU-PoW cumulative-work fork choice, P2P V3's active V1 behavior, and all locked V1 transaction/execution/state vectors.
+1. Do not feed SignedNativeTransactionV2 bytes into NativeBlockBodyV1. Its decoder remains intentionally V1-only.
+2. Do not persist NativeStateV2 through NativeBlockExecutionResultV1. Its execution commitment remains intentionally bound to NativeStateV1.
+3. Add version-aware inactive persistence for NativeBlockBodyV2 + NativeBlockExecutionResultV2 + NativeStateV2 without changing the 164-byte BlockHeaderV1 or active V1 tables/semantics.
+4. Prove exact restart/reload and reorg restoration for a versioned V2 block containing both transfer and ComputeChannel transitions.
+5. Add locked interoperability vectors for NativeReceiptV2 / NativeBlockExecutionResultV2 before any activation.
+6. Keep compute gas constants deliberately unset until payload/signature-verification costs and the native fee schedule are reviewed; zero fields are placeholders only.
+7. Keep the successor body/execution path inactive and disconnected from mempool/P2P/mining until activation rules and vectors exist.
+8. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
+9. Do not add worker/operator on-chain registration or bonds to the first ordinary paid-compute milestone.
+10. Preserve CPU-PoW cumulative-work fork choice, P2P V3's active V1 behavior, and all locked V1 transaction/execution/state vectors.
 
 Deliberate consensus review still needed for RandomX stock miner/pool interoperability, public-testnet RandomX epoch/seed parameters, remaining monetary constants, genesis/network parameters, and chain-ID finalization.
 
@@ -307,6 +315,7 @@ Relevant new specs include:
 - `spec/native-compute-action-payloads-v1.md`;
 - `spec/native-transaction-v2-compute-actions.md`;
 - `spec/native-state-v2-compute-channels.md`;
+- `spec/native-execution-commitment-v2.md`;
 - `spec/native-block-body-v1.md`;
 - `spec/p2p-native-block-transfer-v3.md`.
 
