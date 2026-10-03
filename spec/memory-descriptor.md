@@ -86,6 +86,6 @@ Content addressing does not imply confidentiality.
 5. A compute worker MUST NOT require custody of the user's durable memory merely to execute an inference job.
 6. Wallet-local memory remains valid protocol behavior without any StorageAgreement or service-node registration.
 
-## Prototype 0
+## first implementation milestone
 
-Prototype 0 initially uses wallet/client-local encrypted SESSION memory. Decentralized storage is explicitly deferred and is not a dependency of the first end-to-end AI compute milestone. Other scopes remain valid protocol concepts.
+first implementation milestone initially uses wallet/client-local encrypted SESSION memory. Decentralized storage is explicitly deferred and is not a dependency of the first end-to-end AI compute milestone. Other scopes remain valid protocol concepts.
