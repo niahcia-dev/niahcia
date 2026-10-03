@@ -1,72 +1,45 @@
 # Economic Architecture
 
-NIAHCIA deliberately separates compensation for different network services.
+NIAHCIA separates compensation for distinct network services.
 
 ## CPU security economy
 
-CPU miners receive:
+CPU miners may receive protocol issuance and native transaction fees according to the active monetary/fee policy.
 
-- protocol block subsidy
-- transaction gas fees
-
-Their work secures consensus, transaction ordering, EVM state, AI settlement, and service-node state.
+Their work secures consensus and transaction ordering. AI workers and service providers do not receive consensus authority through payment or collateral.
 
 ## Compute economy
 
-Compute workers receive payment from AI workloads.
+Compute workers are paid from user/Agent-authorized value, initially through bounded ComputeChannels.
 
-Sources may include:
+The compute service payment is separate from the native transaction fee used to open/settle/refund a channel.
 
-- direct user job fees
-- agent budgets
-- smart-contract job escrow
-- temporary bootstrap incentives if explicitly enabled by network policy
-
-Compute rewards are not a fixed percentage of the CPU block subsidy.
+Compute settlement does not mint value.
 
 ## Service economy
 
-Service nodes receive payment for measurable services such as:
+Future service/storage providers may receive payment for measurable storage, retrieval, routing, indexing, or availability work.
 
-- model persistence
-- retrieval bandwidth
-- memory persistence
-- artifact storage
-- routing
-- availability commitments
-
-Owning collateral by itself does not create a right to rewards.
+Collateral by itself must not create an automatic reward entitlement or consensus privilege.
 
 ## Agent economy
 
-Agents may define application-level pricing, including:
+Agents may use bounded budgets and application-level pricing such as free/subsidized use, metered compute, session budgets, or Agent-to-Agent child-job budgets.
 
-- free/subsidized use
-- fixed request price
-- metered compute price
-- subscription or session budgets at the application layer
-- agent-to-agent child-job budgets
+## Payment-plan flexibility
 
-## Generic PaymentPlan
+The broader object model may support separate buckets for executor, verifier, storage, child-Agent, creator, protocol, and refund policies.
 
-The protocol object model should support flexible payment buckets:
+No global hard-coded percentage split should be assumed unless explicitly specified by activated network policy.
+
+## Current milestone
+
+The first paid-compute milestone focuses on exact value conservation:
 
 ```text
-PaymentPlan
-├── max_total
-├── escrow
-├── executor_budget
-├── verifier_budget
-├── storage_budget
-├── child_agent_budget
-├── creator_fee
-├── protocol_fee
-├── refund_policy
-└── settlement_policy
+funding account
+  -> locked ComputeChannel value
+  -> worker payment + wallet refund
 ```
 
-No global hard-coded percentage split should be assumed by the protocol specification.
-
-## Prototype 0
-
-Prototype 0 uses test currency only. Its purpose is to verify accounting and settlement correctness, not finalize mainnet monetary policy.
+Mainnet issuance and fee policy remain separate consensus work.
