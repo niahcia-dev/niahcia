@@ -251,7 +251,7 @@ The inactive NativeStateV2 / NativeTransactionV2 compute-channel foundation is n
 - NativeReceiptV2 commits transaction schema version, action, transaction ID, exact post-transaction NativeStateV2 root, gas, and fee accounting;
 - NativeBlockExecutionResultV2 now provides domain-separated V2 receipt and execution commitments with strict canonical round-trip validation and tamper rejection.
 
-As of green checkpoint `92dec88dc53d7853b131a5fe811415e1e590d964`, Rust CI passes formatting, Cargo check, **318 tests**, and Clippy. NativeReceiptV2 / NativeBlockExecutionResultV2 vectors are locked; mixed Transfer + ComputeChannel restart/reorg behavior is proven; inactive V2 has a single atomic header + body + execution + NativeStateV2 insertion path; and an explicit inactive V2 activation/migration boundary helper now defines V1-before / V2-at-and-after behavior without assigning any real network activation height.
+As of green checkpoint `557b4e8b589101950695c83a96be27131c3cbeea`, Rust CI passes formatting, Cargo check, **339 tests**, and Clippy. ContractCreate payload V1 is vector-locked, and Native Contract Runtime Registry V1 now provides deterministic unknown/inactive/retired-runtime rejection plus per-runtime payload bounds while the active reference node keeps an empty registry and therefore activates no contract VM.
 
 The runtime boundary remains unchanged:
 
