@@ -468,8 +468,7 @@ pub fn execute_inactive_compute_transaction_v2(
             AppliedComputeTransitionV1::Settle(plan)
         }
         NativeActionV2::ComputeChannelRefund => {
-            let plan =
-                plan_compute_channel_refund_v1(&next, transaction, network, current_height)?;
+            let plan = plan_compute_channel_refund_v1(&next, transaction, network, current_height)?;
             apply_compute_channel_refund_v1(&mut next, &plan)?;
             AppliedComputeTransitionV1::Refund(plan)
         }
