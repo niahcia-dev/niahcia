@@ -122,9 +122,9 @@ pub fn execute_inactive_versioned_block_v2(
                 match transaction.body.action {
                     NativeActionV2::Transfer => {
                         let outcome = execute_transfer_v2(
-                                &mut next,
-                                &transaction,
-                                network,
+                            &mut next,
+                            &transaction,
+                            network,
                             NativeExecutionContextV1 {
                                 base_fee_per_gas,
                                 cpu_producer: body.producer_fee_recipient,
@@ -168,8 +168,8 @@ pub fn execute_inactive_versioned_block_v2(
                     NativeActionV2::ContractCall | NativeActionV2::ContractCreate => return Err(
                         "inactive V2 block executor does not yet execute smart-contract actions"
                             .into(),
-                        ),
-                    }
+                    ),
+                }
             }
         };
 
