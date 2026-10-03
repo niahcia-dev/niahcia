@@ -862,7 +862,8 @@ mod tests {
         let after_root = state.state_root().unwrap();
 
         assert_ne!(after_root, before_root);
-        let restored = NativeStateV2::from_canonical_bytes(&state.canonical_bytes().unwrap()).unwrap();
+        let restored =
+            NativeStateV2::from_canonical_bytes(&state.canonical_bytes().unwrap()).unwrap();
         assert_eq!(restored.state_root().unwrap(), after_root);
         assert_eq!(restored, state);
     }
@@ -879,7 +880,8 @@ mod tests {
         let after_root = state.state_root().unwrap();
 
         assert_ne!(after_root, before_root);
-        let restored = NativeStateV2::from_canonical_bytes(&state.canonical_bytes().unwrap()).unwrap();
+        let restored =
+            NativeStateV2::from_canonical_bytes(&state.canonical_bytes().unwrap()).unwrap();
         assert_eq!(restored.state_root().unwrap(), after_root);
         assert_eq!(restored, state);
     }
@@ -896,7 +898,8 @@ mod tests {
         let after_root = state.state_root().unwrap();
 
         assert_ne!(after_root, before_root);
-        let restored = NativeStateV2::from_canonical_bytes(&state.canonical_bytes().unwrap()).unwrap();
+        let restored =
+            NativeStateV2::from_canonical_bytes(&state.canonical_bytes().unwrap()).unwrap();
         assert_eq!(restored.state_root().unwrap(), after_root);
         assert_eq!(restored, state);
     }
