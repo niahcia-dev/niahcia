@@ -216,7 +216,7 @@ The inactive NativeStateV2 / NativeTransactionV2 compute-channel foundation is n
 - successful batch results prove state-root continuity between ordered transitions;
 - empty inactive batches are deterministic no-ops.
 
-As of green checkpoint `f454655d9daa7a3efd28258859c72d18c41816fe`, Rust CI passes formatting, Cargo check, **280 tests**, and Clippy.
+As of green checkpoint `1e683c838444c4483c80c7ac1136accd3f69f7e6`, Rust CI passes formatting, Cargo check, **286 tests**, and Clippy. Post-Open, post-Settle, and post-Refund NativeStateV2 snapshots survive restart with exact roots, and branch tests prove detached compute effects are removed by restoring the winning branch's persisted V2 state.
 
 The runtime boundary remains unchanged:
 
@@ -228,15 +228,17 @@ The runtime boundary remains unchanged:
 - no fee-bearing compute transition is active;
 - NativeStateV1 / NativeTransactionV1 behavior and locked vectors remain unchanged.
 
-Next implementation priority is to finish persistence/reorg proof before considering activation:
+Next implementation priority is the explicit **V2 block/execution integration boundary** before any activation:
 
-1. Extend NativeStateV2 persistence tests so post-Open, post-Settle, and post-Refund snapshots survive restart with exact roots and channel/account state.
-2. Add reorg-focused tests proving detached Open/Settle/Refund effects disappear when canonical state is restored from the appropriate ancestor/winning-branch snapshot.
-3. Bind the inactive compute batch result to the existing candidate native block/state persistence boundary without exposing V2 transactions to active mempool/P2P/mining.
-4. Keep compute gas constants deliberately unset until payload/signature-verification costs and the native fee schedule are reviewed; do not invent consensus gas values locally.
-5. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
-6. Do not add worker/operator on-chain registration or bonds to the first ordinary paid-compute milestone.
-7. Preserve the 164-byte BlockHeaderV1, CPU-PoW cumulative-work fork choice, P2P V3 baseline, and all locked V1 transaction/execution/state vectors.
+1. Do not feed SignedNativeTransactionV2 bytes into NativeBlockBodyV1. Its decoder is intentionally V1-only.
+2. Do not persist NativeStateV2 through NativeBlockExecutionResultV1. Its execution commitment is intentionally bound to NativeStateV1.
+3. Define a versioned successor block-body/execution boundary that can distinguish canonical V1 and V2 signed transactions without reinterpreting existing V1 bytes or roots.
+4. Define the successor execution commitment/receipt structure before binding inactive compute batches to BlockHeaderV1 persistence. Preserve the 164-byte header itself.
+5. Keep compute gas constants deliberately unset until payload/signature-verification costs and the native fee schedule are reviewed; do not invent consensus gas values locally.
+6. Keep the successor body/execution path inactive and disconnected from mempool/P2P/mining until activation rules and vectors exist.
+7. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
+8. Do not add worker/operator on-chain registration or bonds to the first ordinary paid-compute milestone.
+9. Preserve CPU-PoW cumulative-work fork choice, P2P V3's active V1 behavior, and all locked V1 transaction/execution/state vectors.
 
 Deliberate consensus review still needed for RandomX stock miner/pool interoperability, public-testnet RandomX epoch/seed parameters, remaining monetary constants, genesis/network parameters, and chain-ID finalization.
 
