@@ -840,11 +840,25 @@ mod tests {
         .unwrap();
         let schedule = vector["schedule"].as_object().unwrap();
         let expected = [
-            ("STOP", 1), ("PUSH_U64", 2), ("PUSH_BYTES32", 2), ("POP", 1),
-            ("DUP", 1), ("ADD_U64", 3), ("SUB_U64", 3), ("EQ", 3),
-            ("JUMP", 3), ("JUMP_IF", 3), ("INPUT_LEN", 2), ("CALLER", 2),
-            ("CALL_VALUE", 2), ("STORAGE_GET", 50), ("STORAGE_SET", 200),
-            ("STORAGE_DELETE", 100), ("KECCAK256", 30), ("RETURN", 1), ("REVERT", 1),
+            ("STOP", 1),
+            ("PUSH_U64", 2),
+            ("PUSH_BYTES32", 2),
+            ("POP", 1),
+            ("DUP", 1),
+            ("ADD_U64", 3),
+            ("SUB_U64", 3),
+            ("EQ", 3),
+            ("JUMP", 3),
+            ("JUMP_IF", 3),
+            ("INPUT_LEN", 2),
+            ("CALLER", 2),
+            ("CALL_VALUE", 2),
+            ("STORAGE_GET", 50),
+            ("STORAGE_SET", 200),
+            ("STORAGE_DELETE", 100),
+            ("KECCAK256", 30),
+            ("RETURN", 1),
+            ("REVERT", 1),
         ];
         for (name, cost) in expected {
             assert_eq!(schedule[name].as_u64(), Some(cost), "{name}");
@@ -853,7 +867,10 @@ mod tests {
         assert_eq!(schedule["INPUT_COPY_PER_32_BYTES_CEIL"].as_u64(), Some(1));
 
         let vectors = vector["vectors"].as_array().unwrap();
-        let exact = vectors.iter().find(|v| v["name"] == "exact-stop-budget").unwrap();
+        let exact = vectors
+            .iter()
+            .find(|v| v["name"] == "exact-stop-budget")
+            .unwrap();
         let instructions = hex::decode(exact["instruction_bytes_hex"].as_str().unwrap()).unwrap();
         let code = module(
             exact["instruction_count"].as_u64().unwrap() as u32,
@@ -867,7 +884,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result.halt, Nvm1Halt::Stop);
-        assert_eq!(result.gas_used, exact["expected_gas_used"].as_u64().unwrap());
+        assert_eq!(
+            result.gas_used,
+            exact["expected_gas_used"].as_u64().unwrap()
+        );
         assert_eq!(
             u64::from(result.instructions_executed),
             exact["expected_instructions_executed"].as_u64().unwrap()
