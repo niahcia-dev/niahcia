@@ -1338,7 +1338,9 @@ mod tests {
     ) -> (crate::native_state_v2::NativeStateV2, [u8; 20]) {
         use crate::address::AddressNetwork;
         use crate::native_execution::{AccountStateV1, NativeStateV1};
-        use crate::native_transaction::{DEVNET_CHAIN_ID, DEVNET_NETWORK_ID, NATIVE_TRANSFER_GAS_V1};
+        use crate::native_transaction::{
+            DEVNET_CHAIN_ID, DEVNET_NETWORK_ID, NATIVE_TRANSFER_GAS_V1,
+        };
         use crate::native_transaction_v2::{NativeActionV2, NativeTransactionBodyV2};
 
         let probe = sign_v2_for_state_test(
@@ -1362,23 +1364,18 @@ mod tests {
             .payload;
 
         let mut accounts = NativeStateV1::default();
-        accounts.set_account(
-            funding,
-            AccountStateV1 {
-                balance,
-                nonce: 0,
-            },
-        );
+        accounts.set_account(funding, AccountStateV1 { balance, nonce: 0 });
 
-        (crate::native_state_v2::NativeStateV2::from_v1(accounts), funding)
+        (
+            crate::native_state_v2::NativeStateV2::from_v1(accounts),
+            funding,
+        )
     }
 
     #[test]
     fn inactive_v2_mixed_block_restart_and_reorg_restore_winning_branch_state() {
         use crate::address::AddressNetwork;
-        use crate::native_block_body_v2::{
-            NativeBlockBodyV2, VersionedSignedNativeTransaction,
-        };
+        use crate::native_block_body_v2::{NativeBlockBodyV2, VersionedSignedNativeTransaction};
         use crate::native_block_execution_v2::execute_inactive_versioned_block_v2;
         use crate::native_compute_payloads::ComputeChannelOpenPayloadV1;
         use crate::native_execution_commitment_v2::build_inactive_execution_result_v2;
@@ -1502,10 +1499,7 @@ mod tests {
             .store_inactive_native_v2_bundle(a_id, &body_a, &execution_a, &state_a)
             .unwrap();
 
-        assert_eq!(
-            store.best_chain_head().unwrap().unwrap().block_id(),
-            a_id
-        );
+        assert_eq!(store.best_chain_head().unwrap().unwrap().block_id(), a_id);
         assert_eq!(state_a.accounts().account(funding).nonce, 2);
         assert_eq!(state_a.channel_count(), 1);
 
@@ -1549,7 +1543,9 @@ mod tests {
             .store_inactive_native_v2_bundle(b_id, &body_b, &execution_b, &state_b)
             .unwrap();
 
-        let reorg = outcome_b.reorg.expect("harder V2 branch must become canonical");
+        let reorg = outcome_b
+            .reorg
+            .expect("harder V2 branch must become canonical");
         assert_eq!(reorg.old_head, a_id);
         assert_eq!(reorg.new_head, b_id);
         assert_eq!(reorg.common_ancestor, genesis_id);
@@ -1590,15 +1586,11 @@ mod tests {
             .block_id();
         assert_eq!(reopened_canonical, b_id);
         assert_eq!(
-            reopened
-                .inactive_native_block_body_v2(b_id)
-                .unwrap(),
+            reopened.inactive_native_block_body_v2(b_id).unwrap(),
             Some(body_b)
         );
         assert_eq!(
-            reopened
-                .inactive_native_block_execution_v2(b_id)
-                .unwrap(),
+            reopened.inactive_native_block_execution_v2(b_id).unwrap(),
             Some(execution_b)
         );
         assert_eq!(
@@ -1608,9 +1600,7 @@ mod tests {
             Some(state_b)
         );
         assert_eq!(
-            reopened
-                .inactive_native_state_v2_snapshot(a_id)
-                .unwrap(),
+            reopened.inactive_native_state_v2_snapshot(a_id).unwrap(),
             Some(state_a)
         );
 
