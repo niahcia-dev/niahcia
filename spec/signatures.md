@@ -8,7 +8,7 @@ This specification defines how NIAHCIA signs protocol objects and messages.
 
 ## Design goals
 
-- EVM-native controller compatibility
+- native NIAHCIA account/controller compatibility
 - deterministic verification
 - replay protection
 - separation between protocol authorization and transport identity
