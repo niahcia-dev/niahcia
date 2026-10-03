@@ -4,6 +4,7 @@ pub const NVM1_MAGIC: [u8; 4] = *b"NVM1";
 
 pub const NVM1_MAX_INSTRUCTIONS: u32 = 16_384;
 pub const NVM1_MAX_STACK_ITEMS: u16 = 256;
+pub const NVM1_INACTIVE_EXECUTION_STEP_LIMIT: u32 = 65_536;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Nvm1CodeHeader {
@@ -212,9 +213,14 @@ pub fn execute_nvm1_core(code: &[u8]) -> Result<Nvm1ExecutionResult, String> {
                 "NVM1 execution fell past final instruction",
             ));
         };
-        executed = executed
-            .checked_add(1)
-            .ok_or_else(|| "NVM1 executed-instruction counter overflow".to_string())?;
+        if executed >= NVM1_INACTIVE_EXECUTION_STEP_LIMIT {
+            return Ok(trap_result(
+                stack,
+                executed,
+                "NVM1 inactive execution step limit exceeded",
+            ));
+        }
+        executed += 1;
 
         match instruction.opcode {
             0x00 => {
@@ -473,6 +479,17 @@ mod tests {
         assert_eq!(
             deferred.halt,
             Nvm1Halt::Trap("NVM1 opcode 0x10 execution semantics are not active".to_string())
+        );
+    }
+
+    #[test]
+    fn core_traps_on_infinite_jump_at_inactive_step_limit() {
+        let code = module(1, 1, &[0x08, 0, 0, 0, 0]);
+        let result = execute_nvm1_core(&code).unwrap();
+        assert_eq!(result.instructions_executed, NVM1_INACTIVE_EXECUTION_STEP_LIMIT);
+        assert_eq!(
+            result.halt,
+            Nvm1Halt::Trap("NVM1 inactive execution step limit exceeded".to_string())
         );
     }
 
