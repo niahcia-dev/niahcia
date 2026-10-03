@@ -244,19 +244,27 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            vectors["intrinsic_gas"]["transfer_baseline"].as_u64().unwrap(),
+            vectors["intrinsic_gas"]["transfer_baseline"]
+                .as_u64()
+                .unwrap(),
             crate::native_transaction::NATIVE_TRANSFER_GAS_V1
         );
         assert_eq!(
-            vectors["intrinsic_gas"]["compute_channel_open"].as_u64().unwrap(),
+            vectors["intrinsic_gas"]["compute_channel_open"]
+                .as_u64()
+                .unwrap(),
             NATIVE_COMPUTE_CHANNEL_OPEN_GAS_V1
         );
         assert_eq!(
-            vectors["intrinsic_gas"]["compute_channel_settle"].as_u64().unwrap(),
+            vectors["intrinsic_gas"]["compute_channel_settle"]
+                .as_u64()
+                .unwrap(),
             NATIVE_COMPUTE_CHANNEL_SETTLE_GAS_V1
         );
         assert_eq!(
-            vectors["intrinsic_gas"]["compute_channel_refund"].as_u64().unwrap(),
+            vectors["intrinsic_gas"]["compute_channel_refund"]
+                .as_u64()
+                .unwrap(),
             NATIVE_COMPUTE_CHANNEL_REFUND_GAS_V1
         );
 
@@ -268,11 +276,7 @@ mod tests {
             .unwrap()
             .parse()
             .unwrap();
-        let max_fee_per_gas: u128 = sample["max_fee_per_gas"]
-            .as_str()
-            .unwrap()
-            .parse()
-            .unwrap();
+        let max_fee_per_gas: u128 = sample["max_fee_per_gas"].as_str().unwrap().parse().unwrap();
         let max_priority_fee_per_gas: u128 = sample["max_priority_fee_per_gas"]
             .as_str()
             .unwrap()
