@@ -4,8 +4,7 @@ use crate::native_contract_runtime_registry_v1::NativeContractRuntimeRegistryV1;
 use crate::native_contract_state_v1::ContractStateV1;
 use crate::native_contract_vm_v1::{
     execute_nvm1_core_with_context_and_gas, validate_nvm1_code, validate_nvm1_jump_targets,
-    Nvm1ExecutionContext, Nvm1ExecutionResult, Nvm1Halt, NVM1_CODE_FORMAT_VERSION,
-    NVM1_RUNTIME_ID,
+    Nvm1ExecutionContext, Nvm1ExecutionResult, Nvm1Halt, NVM1_CODE_FORMAT_VERSION, NVM1_RUNTIME_ID,
 };
 use crate::native_state_v3::NativeStateV3;
 use crate::work::Hash32;
@@ -70,10 +69,9 @@ pub fn execute_inactive_contract_create_transition_v1(
     let contract_created = matches!(execution.halt, Nvm1Halt::Stop | Nvm1Halt::Return(_));
 
     if contract_created {
-        let storage = execution
-            .committed_storage
-            .as_ref()
-            .ok_or_else(|| "successful NVM1 create execution omitted committed storage".to_string())?;
+        let storage = execution.committed_storage.as_ref().ok_or_else(|| {
+            "successful NVM1 create execution omitted committed storage".to_string()
+        })?;
 
         let mut contract =
             ContractStateV1::new(contract_id, value, payload.runtime_id, payload.code.clone());
@@ -198,10 +196,7 @@ mod tests {
 
         assert!(transition.contract_created);
         assert_eq!(
-            state
-                .contract(transition.contract_id)
-                .unwrap()
-                .storage(key),
+            state.contract(transition.contract_id).unwrap().storage(key),
             Some(stored)
         );
     }
@@ -262,9 +257,13 @@ mod tests {
         let creator = [0x77; 20];
         let nonce = 5;
         let chain_id = 0x0000_0002_4449_4148;
-        let contract_id =
-            NiahciaAddressV1::contract_from_creator(AddressNetwork::Devnet, chain_id, creator, nonce)
-                .payload;
+        let contract_id = NiahciaAddressV1::contract_from_creator(
+            AddressNetwork::Devnet,
+            chain_id,
+            creator,
+            nonce,
+        )
+        .payload;
 
         let mut state = NativeStateV3::default();
         state
