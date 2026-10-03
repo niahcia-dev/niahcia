@@ -403,9 +403,9 @@ impl StateStore {
         execution: &NativeBlockExecutionResultV2,
         state: &NativeStateV2,
     ) -> Result<(), String> {
-        let block = self
-            .load_chain_block(block_id)?
-            .ok_or_else(|| "cannot persist inactive V2 bundle for an unpersisted block".to_string())?;
+        let block = self.load_chain_block(block_id)?.ok_or_else(|| {
+            "cannot persist inactive V2 bundle for an unpersisted block".to_string()
+        })?;
 
         let transactions_root = body.transactions_root();
         if transactions_root != block.header.transactions_root
@@ -1356,11 +1356,15 @@ mod tests {
             Some(body)
         );
         assert_eq!(
-            reopened.inactive_native_block_execution_v2(block_id).unwrap(),
+            reopened
+                .inactive_native_block_execution_v2(block_id)
+                .unwrap(),
             Some(execution)
         );
         assert_eq!(
-            reopened.inactive_native_state_v2_snapshot(block_id).unwrap(),
+            reopened
+                .inactive_native_state_v2_snapshot(block_id)
+                .unwrap(),
             Some(state)
         );
 
