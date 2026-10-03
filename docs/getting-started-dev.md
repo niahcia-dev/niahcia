@@ -1,18 +1,13 @@
 # Developer Quick Start
 
-NIAHCIA is pre-alpha. This document currently covers only the first runnable Rust bootstrap.
-
-## Requirements
-
-- Rust stable toolchain
-- Cargo
+NIAHCIA is pre-alpha. The current reference node includes native CPU-PoW chain, persistence, mining RPC, and P2P functionality.
 
 ## Build
 
 ```bash
 git clone https://github.com/niahcia/niahcia.git
 cd niahcia
-cargo build
+cargo build --release
 ```
 
 ## Run
@@ -21,42 +16,19 @@ cargo build
 cargo run -p niahcia
 ```
 
-Expected output:
+Or copy `config/niahcia.example.toml` and pass it with `--config`.
 
-```text
-NIAHCIA 0.1.0-dev
-pre-alpha node bootstrap
-No network services are implemented yet.
-```
-
-## Version
+## Check
 
 ```bash
-cargo run -p niahcia -- --version
+cargo fmt --all -- --check
+cargo check --workspace
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Expected:
+The active path does not require Reth, an Ethereum execution client, Engine API, or JWT secret.
 
-```text
-niahcia 0.1.0-dev
-```
+NativeTransaction V2 / NativeStateV2 compute-channel work exists behind an inactive boundary and is not yet accepted by the active devnet mempool/P2P/mining path.
 
-## Help
-
-```bash
-cargo run -p niahcia -- --help
-```
-
-## Scope
-
-This bootstrap does not yet include:
-
-- Reth
-- Engine API
-- RandomX
-- P2P
-- EVM RPC
-- mining RPC
-- chain state
-
-Those are added incrementally under the v0.1.0 development issues.
+See `docs/CURRENT-WORK.md` before continuing development.
