@@ -45,6 +45,20 @@ impl ContractStateV1 {
         self.storage.len()
     }
 
+    pub fn storage_entries(
+        &self,
+    ) -> impl Iterator<Item = (&ContractStorageKey, &ContractStorageValue)> {
+        self.storage.iter()
+    }
+
+    pub fn credit(&mut self, amount: u128) -> Result<(), String> {
+        self.balance = self
+            .balance
+            .checked_add(amount)
+            .ok_or_else(|| "contract balance overflow".to_string())?;
+        Ok(())
+    }
+
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, String> {
         let code_len = u32::try_from(self.code.len())
             .map_err(|_| "contract code length exceeds u32".to_string())?;
