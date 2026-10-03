@@ -833,6 +833,48 @@ mod tests {
     }
 
     #[test]
+    fn checked_in_gas_vector_matches_interpreter_schedule() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../test-vectors/native-contract-nvm1-gas-v1.json"
+        ))
+        .unwrap();
+        let schedule = vector["schedule"].as_object().unwrap();
+        let expected = [
+            ("STOP", 1), ("PUSH_U64", 2), ("PUSH_BYTES32", 2), ("POP", 1),
+            ("DUP", 1), ("ADD_U64", 3), ("SUB_U64", 3), ("EQ", 3),
+            ("JUMP", 3), ("JUMP_IF", 3), ("INPUT_LEN", 2), ("CALLER", 2),
+            ("CALL_VALUE", 2), ("STORAGE_GET", 50), ("STORAGE_SET", 200),
+            ("STORAGE_DELETE", 100), ("KECCAK256", 30), ("RETURN", 1), ("REVERT", 1),
+        ];
+        for (name, cost) in expected {
+            assert_eq!(schedule[name].as_u64(), Some(cost), "{name}");
+        }
+        assert_eq!(schedule["INPUT_COPY_BASE"].as_u64(), Some(3));
+        assert_eq!(schedule["INPUT_COPY_PER_32_BYTES_CEIL"].as_u64(), Some(1));
+
+        let vectors = vector["vectors"].as_array().unwrap();
+        let exact = vectors.iter().find(|v| v["name"] == "exact-stop-budget").unwrap();
+        let instructions = hex::decode(exact["instruction_bytes_hex"].as_str().unwrap()).unwrap();
+        let code = module(
+            exact["instruction_count"].as_u64().unwrap() as u32,
+            exact["max_stack_items"].as_u64().unwrap() as u16,
+            &instructions,
+        );
+        let result = execute_nvm1_core_with_context_and_gas(
+            &code,
+            &Nvm1ExecutionContext::default(),
+            exact["gas_limit"].as_u64().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(result.halt, Nvm1Halt::Stop);
+        assert_eq!(result.gas_used, exact["expected_gas_used"].as_u64().unwrap());
+        assert_eq!(
+            u64::from(result.instructions_executed),
+            exact["expected_instructions_executed"].as_u64().unwrap()
+        );
+    }
+
+    #[test]
     fn gas_schedule_v1_costs_are_locked() {
         let cases = [
             (vec![0x00], 1),
