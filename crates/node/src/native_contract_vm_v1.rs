@@ -374,17 +374,17 @@ pub fn execute_nvm1_core_with_context(
             }
             0x11 => {
                 let Some(offset) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, "NVM1 INPUT_COPY stack underflow"));
+                    return Ok(trap_result(\n                        stack,\n                        executed,\n                        "NVM1 INPUT_COPY stack underflow",\n                    ));
                 };
                 let Nvm1Value::U64(offset) = offset else {
-                    return Ok(trap_result(stack, executed, "NVM1 INPUT_COPY type mismatch"));
+                    return Ok(trap_result(\n                        stack,\n                        executed,\n                        "NVM1 INPUT_COPY type mismatch",\n                    ));
                 };
                 let offset = usize::try_from(offset)
                     .map_err(|_| "NVM1 INPUT_COPY offset does not fit usize".to_string())?;
                 let length =
                     u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as usize;
                 let Some(end) = offset.checked_add(length) else {
-                    return Ok(trap_result(stack, executed, "NVM1 INPUT_COPY range overflow"));
+                    return Ok(trap_result(\n                        stack,\n                        executed,\n                        "NVM1 INPUT_COPY range overflow",\n                    ));
                 };
                 if end > context.input.len() {
                     return Ok(trap_result(stack, executed, "NVM1 INPUT_COPY out of range"));
@@ -615,15 +615,18 @@ mod tests {
             5,
             1,
             &[
-                0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0, 0, 0xff, 0xff, 0x01, 0, 0, 0, 0, 0,
-                0, 0, 0, 0x11, 0, 0, 0, 2, 0x40,
+                0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0, 0, 0xff, 0xff, 0x01, 0, 0, 0, 0, 0, 0, 0, 0,
+                0x11, 0, 0, 0, 2, 0x40,
             ],
         );
         assert_eq!(
-            execute_nvm1_core_with_context(&memory_overflow, &Nvm1ExecutionContext {
-                input,
-                call_value: 0,
-            })
+            execute_nvm1_core_with_context(
+                &memory_overflow,
+                &Nvm1ExecutionContext {
+                    input,
+                    call_value: 0,
+                }
+            )
             .unwrap()
             .halt,
             Nvm1Halt::Trap("NVM1 memory limit exceeded".to_string())
@@ -642,7 +645,9 @@ mod tests {
             call_value: 0,
         };
         assert_eq!(
-            execute_nvm1_core_with_context(&code, &context).unwrap().halt,
+            execute_nvm1_core_with_context(&code, &context)
+                .unwrap()
+                .halt,
             Nvm1Halt::Revert(vec![7, 8])
         );
     }
