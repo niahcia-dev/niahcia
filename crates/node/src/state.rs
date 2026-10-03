@@ -1065,7 +1065,6 @@ impl StateStore {
         })
     }
 
-
     pub fn insert_inactive_native_v2_block_with_body_and_execution_outcome(
         &self,
         header: BlockHeaderV1,
@@ -1249,7 +1248,9 @@ impl StateStore {
 
         let current_best = self
             .best_chain_head()?
-            .ok_or_else(|| "inactive V2 block transaction committed without a best head".to_string())?
+            .ok_or_else(|| {
+                "inactive V2 block transaction committed without a best head".to_string()
+            })?
             .block_id();
 
         let reorg = match previous_best {
@@ -1599,10 +1600,7 @@ mod tests {
 
         let outcome = store
             .insert_inactive_native_v2_block_with_body_and_execution_outcome(
-                header,
-                &body,
-                &execution,
-                &state,
+                header, &body, &execution, &state,
             )
             .unwrap();
 
@@ -1653,10 +1651,7 @@ mod tests {
 
         let error = store
             .insert_inactive_native_v2_block_with_body_and_execution_outcome(
-                header,
-                &body,
-                &execution,
-                &state,
+                header, &body, &execution, &state,
             )
             .unwrap_err();
 
