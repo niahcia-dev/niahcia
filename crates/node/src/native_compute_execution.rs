@@ -28,6 +28,7 @@ pub struct ValidatedComputeChannelSettleV1 {
     pub cumulative_spent: u128,
     pub worker_payment: u128,
     pub funding_refund: u128,
+    pub channel_state_before: ComputeChannelStateV1,
     pub channel_state_after: ComputeChannelStateV1,
 }
 
@@ -38,6 +39,7 @@ pub struct ValidatedComputeChannelRefundV1 {
     pub funding_account: [u8; 20],
     pub expected_nonce: u64,
     pub refund_amount: u128,
+    pub channel_state_before: ComputeChannelStateV1,
     pub channel_state_after: ComputeChannelStateV1,
 }
 
@@ -195,6 +197,7 @@ pub fn plan_compute_channel_settle_v1(
         .checked_sub(receipt.cumulative_spent)
         .ok_or_else(|| "ComputeChannelSettle refund arithmetic underflow".to_string())?;
 
+    let channel_state_before = channel.clone();
     let mut channel_state_after = channel;
     channel_state_after.settled_amount = receipt.cumulative_spent;
     channel_state_after.state = ComputeChannelStatusV1::Settled;
@@ -209,6 +212,7 @@ pub fn plan_compute_channel_settle_v1(
         cumulative_spent: receipt.cumulative_spent,
         worker_payment: receipt.cumulative_spent,
         funding_refund,
+        channel_state_before,
         channel_state_after,
     })
 }
@@ -261,6 +265,7 @@ pub fn plan_compute_channel_refund_v1(
         .checked_sub(channel.settled_amount)
         .ok_or_else(|| "ComputeChannelRefund arithmetic underflow".to_string())?;
 
+    let channel_state_before = channel.clone();
     let mut channel_state_after = channel;
     channel_state_after.state = ComputeChannelStatusV1::Refunded;
     channel_state_after.validate()?;
@@ -271,8 +276,128 @@ pub fn plan_compute_channel_refund_v1(
         funding_account,
         expected_nonce: transaction.body.nonce,
         refund_amount,
+        channel_state_before,
         channel_state_after,
     })
+}
+
+pub fn apply_compute_channel_open_v1(
+    state: &mut NativeStateV2,
+    plan: &ValidatedComputeChannelOpenV1,
+) -> Result<(), String> {
+    plan.channel_state.validate()?;
+    if plan.channel_state.channel_id != plan.channel_id
+        || plan.channel_state.funding_account != plan.funding_account
+        || plan.channel_state.authorized_amount != plan.authorized_amount
+        || plan.channel_state.state != ComputeChannelStatusV1::Open
+        || plan.channel_state.settled_amount != 0
+    {
+        return Err("ComputeChannelOpen validated plan is internally inconsistent".into());
+    }
+
+    let mut next = state.clone();
+    if next.channel(plan.channel_id).is_some() {
+        return Err("ComputeChannelOpen channel_id already exists during apply".into());
+    }
+
+    next.accounts_mut()
+        .debit(plan.funding_account, plan.authorized_amount)?;
+    next.accounts_mut()
+        .consume_nonce(plan.funding_account, plan.expected_nonce)?;
+    next.set_channel(plan.channel_state.clone())?;
+
+    *state = next;
+    Ok(())
+}
+
+pub fn apply_compute_channel_settle_v1(
+    state: &mut NativeStateV2,
+    plan: &ValidatedComputeChannelSettleV1,
+) -> Result<(), String> {
+    plan.channel_state_before.validate()?;
+    plan.channel_state_after.validate()?;
+
+    if plan.channel_state_before.channel_id != plan.channel_id
+        || plan.channel_state_after.channel_id != plan.channel_id
+        || plan.submitter_account != plan.channel_state_before.worker_payment_account
+        || plan.channel_state_before.state != ComputeChannelStatusV1::Open
+        || plan.channel_state_after.state != ComputeChannelStatusV1::Settled
+        || plan.channel_state_after.settled_amount != plan.worker_payment
+        || plan.cumulative_spent != plan.worker_payment
+    {
+        return Err("ComputeChannelSettle validated plan is internally inconsistent".into());
+    }
+
+    let total = plan
+        .worker_payment
+        .checked_add(plan.funding_refund)
+        .ok_or_else(|| "ComputeChannelSettle settlement arithmetic overflow".to_string())?;
+    if total != plan.channel_state_before.authorized_amount {
+        return Err("ComputeChannelSettle validated plan does not conserve channel value".into());
+    }
+
+    let mut next = state.clone();
+    let current = next
+        .channel(plan.channel_id)
+        .ok_or_else(|| "ComputeChannelSettle channel disappeared before apply".to_string())?;
+    if current != &plan.channel_state_before {
+        return Err("ComputeChannelSettle validated plan is stale".into());
+    }
+
+    next.accounts_mut()
+        .credit(plan.channel_state_before.worker_payment_account, plan.worker_payment)?;
+    next.accounts_mut()
+        .credit(plan.channel_state_before.funding_account, plan.funding_refund)?;
+    next.accounts_mut()
+        .consume_nonce(plan.submitter_account, next.accounts().account(plan.submitter_account).nonce)?;
+    next.set_channel(plan.channel_state_after.clone())?;
+
+    *state = next;
+    Ok(())
+}
+
+pub fn apply_compute_channel_refund_v1(
+    state: &mut NativeStateV2,
+    plan: &ValidatedComputeChannelRefundV1,
+) -> Result<(), String> {
+    plan.channel_state_before.validate()?;
+    plan.channel_state_after.validate()?;
+
+    if plan.channel_state_before.channel_id != plan.channel_id
+        || plan.channel_state_after.channel_id != plan.channel_id
+        || plan.channel_state_before.funding_account != plan.funding_account
+        || plan.channel_state_after.funding_account != plan.funding_account
+        || plan.channel_state_before.state != ComputeChannelStatusV1::Open
+        || plan.channel_state_after.state != ComputeChannelStatusV1::Refunded
+    {
+        return Err("ComputeChannelRefund validated plan is internally inconsistent".into());
+    }
+
+    let expected_refund = plan
+        .channel_state_before
+        .authorized_amount
+        .checked_sub(plan.channel_state_before.settled_amount)
+        .ok_or_else(|| "ComputeChannelRefund arithmetic underflow".to_string())?;
+    if expected_refund != plan.refund_amount {
+        return Err("ComputeChannelRefund validated plan refund amount mismatch".into());
+    }
+
+    let mut next = state.clone();
+    let current = next
+        .channel(plan.channel_id)
+        .ok_or_else(|| "ComputeChannelRefund channel disappeared before apply".to_string())?;
+    if current != &plan.channel_state_before {
+        return Err("ComputeChannelRefund validated plan is stale".into());
+    }
+
+    next.accounts_mut()
+        .credit(plan.funding_account, plan.refund_amount)?;
+    next.accounts_mut()
+        .consume_nonce(plan.funding_account, plan.expected_nonce)?;
+    next.set_channel(plan.channel_state_after.clone())?;
+
+    *state = next;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -585,6 +710,117 @@ mod tests {
             plan.channel_state_after.state,
             ComputeChannelStatusV1::Settled
         );
+    }
+
+    #[test]
+    fn open_apply_locks_value_consumes_nonce_and_records_channel() {
+        let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
+        let transaction = signed_open(&signing_key, 3, 1_000, 100);
+        let mut state = state_for(&transaction, 5_000, 3);
+        let plan =
+            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50).unwrap();
+
+        apply_compute_channel_open_v1(&mut state, &plan).unwrap();
+
+        assert_eq!(state.accounts().account(plan.funding_account).balance, 4_000);
+        assert_eq!(state.accounts().account(plan.funding_account).nonce, 4);
+        assert_eq!(state.channel(plan.channel_id), Some(&plan.channel_state));
+    }
+
+    #[test]
+    fn open_apply_rolls_back_when_nonce_overflows() {
+        let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
+        let transaction = signed_open(&signing_key, u64::MAX, 1_000, 100);
+        let mut state = state_for(&transaction, 5_000, u64::MAX);
+        let plan =
+            plan_compute_channel_open_v1(&state, &transaction, AddressNetwork::Devnet, 50).unwrap();
+        let before = state.clone();
+
+        let error = apply_compute_channel_open_v1(&mut state, &plan).unwrap_err();
+        assert!(error.contains("nonce overflow"));
+        assert_eq!(state, before);
+    }
+
+    #[test]
+    fn settle_apply_pays_worker_refunds_funder_and_closes_channel() {
+        let (mut state, transaction, _, _) = settle_fixture();
+        let plan =
+            plan_compute_channel_settle_v1(&state, &transaction, AddressNetwork::Devnet, 110)
+                .unwrap();
+
+        apply_compute_channel_settle_v1(&mut state, &plan).unwrap();
+
+        assert_eq!(
+            state.accounts().account(plan.submitter_account),
+            AccountStateV1 {
+                balance: 470,
+                nonce: 3,
+            }
+        );
+        assert_eq!(
+            state.accounts().account(plan.channel_state_before.funding_account).balance,
+            630
+        );
+        assert_eq!(state.channel(plan.channel_id), Some(&plan.channel_state_after));
+    }
+
+    #[test]
+    fn settle_apply_rolls_back_on_credit_overflow() {
+        let (mut state, transaction, _, _) = settle_fixture();
+        let plan =
+            plan_compute_channel_settle_v1(&state, &transaction, AddressNetwork::Devnet, 110)
+                .unwrap();
+        state.accounts_mut().set_account(
+            plan.channel_state_before.funding_account,
+            AccountStateV1 {
+                balance: u128::MAX,
+                nonce: 0,
+            },
+        );
+        let before = state.clone();
+
+        let error = apply_compute_channel_settle_v1(&mut state, &plan).unwrap_err();
+        assert!(error.contains("balance overflow"));
+        assert_eq!(state, before);
+    }
+
+    #[test]
+    fn refund_apply_returns_locked_value_consumes_nonce_and_closes_channel() {
+        let (mut state, transaction, _) = refund_fixture();
+        let plan =
+            plan_compute_channel_refund_v1(&state, &transaction, AddressNetwork::Devnet, 121)
+                .unwrap();
+
+        apply_compute_channel_refund_v1(&mut state, &plan).unwrap();
+
+        assert_eq!(
+            state.accounts().account(plan.funding_account),
+            AccountStateV1 {
+                balance: 1_250,
+                nonce: 5,
+            }
+        );
+        assert_eq!(state.channel(plan.channel_id), Some(&plan.channel_state_after));
+    }
+
+    #[test]
+    fn refund_apply_rolls_back_on_credit_overflow() {
+        let (mut state, transaction, _) = refund_fixture();
+        let plan =
+            plan_compute_channel_refund_v1(&state, &transaction, AddressNetwork::Devnet, 121)
+                .unwrap();
+        state.accounts_mut().set_account(
+            plan.funding_account,
+            AccountStateV1 {
+                balance: u128::MAX,
+                nonce: plan.expected_nonce,
+            },
+        );
+        let before = state.clone();
+
+        let error = apply_compute_channel_refund_v1(&mut state, &plan).unwrap_err();
+        assert!(error.contains("balance overflow"));
+        assert_eq!(state, before);
     }
 
     #[test]
