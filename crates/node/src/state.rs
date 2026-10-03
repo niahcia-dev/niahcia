@@ -1206,7 +1206,8 @@ impl StateStore {
             let meta = write
                 .open_table(CHAIN_META)
                 .map_err(|e| format!("failed to open chain metadata table: {e}"))?;
-            meta.get(BEST_HEAD_KEY)
+            let current = meta
+                .get(BEST_HEAD_KEY)
                 .map_err(|e| format!("failed to read current best head: {e}"))?
                 .map(|best_id| {
                     best_id
@@ -1214,7 +1215,8 @@ impl StateStore {
                         .try_into()
                         .map_err(|_| "invalid persisted best-head ID length".to_string())
                 })
-                .transpose()?
+                .transpose()?;
+            current
         };
 
         let should_promote = match current_best_id {
