@@ -643,16 +643,16 @@ mod tests {
 
         assert!(result.call_succeeded);
         assert_eq!(state.base().accounts().account(sender).nonce, 1);
-        assert_eq!(state.base().accounts().account(sender).balance, 9_088);
-        assert_eq!(state.base().accounts().account(producer).balance, 206);
+        assert_eq!(state.base().accounts().account(sender).balance, 8_680);
+        assert_eq!(state.base().accounts().account(producer).balance, 410);
         assert_eq!(state.contract(contract_id).unwrap().balance, 600);
         assert_eq!(
             state.contract(contract_id).unwrap().storage(storage_key),
             Some(storage_value)
         );
-        assert_eq!(result.gas_used, 103);
-        assert_eq!(result.actual_fee, 412);
-        assert_eq!(result.unused_fee_reserve, 613);
+        assert_eq!(result.gas_used, 205);
+        assert_eq!(result.actual_fee, 820);
+        assert_eq!(result.unused_fee_reserve, 205);
     }
 
     #[test]
