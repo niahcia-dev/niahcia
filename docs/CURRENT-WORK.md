@@ -26,7 +26,7 @@
 
 ## Non-negotiable boundaries
 
-CPU PoW alone determines canonical chain by cumulative valid work. Service/storage nodes do not vote on canonical chain. Execution hosts are replaceable and do not automatically own/control Agents. Fixed Prototype-0 universal 2-of-3 verification is superseded by policy-driven verification. Storage may preserve ciphertext without decryption/governance/treasury/succession authority. Distinct provider keys do not prove independent durability. NCE/1 deterministic CBOR is canonical serialization foundation.
+CPU PoW alone determines canonical chain by cumulative valid work. Service/storage nodes do not vote on canonical chain. Execution hosts are replaceable and do not automatically own/control Agents. The former fixed universal 2-of-3 verification profile is superseded by policy-driven verification. Storage may preserve ciphertext without decryption/governance/treasury/succession authority. Distinct provider keys do not prove independent durability. NCE/1 deterministic CBOR is canonical serialization foundation.
 
 ## Primary Agent — core objective
 
@@ -132,7 +132,7 @@ Still open: succession mechanics, privacy classes, scheduling, reputation, recei
 
 `StorageAgreementV1`: exact content, duration, provider targets, profile, challenge/retrieval policy, budget, privacy, renewal, recovery.
 
-`StorageHealthV1`: `HEALTHY -> DEGRADED -> AT_RISK -> RECOVERING -> HEALTHY`, plus `UNAVAILABLE`/`EXPIRED`. Health is service state, not finality. `niahcia/niahcia#27` remains non-consensus telemetry after CI is green.
+`StorageHealthV1`: `HEALTHY -> DEGRADED -> AT_RISK -> RECOVERING -> HEALTHY`, plus `UNAVAILABLE`/`EXPIRED`. Health is service state, not finality and remains candidate non-consensus telemetry.
 
 `StorageProviderIndependenceV1`: `SAME_OPERATOR`, `SHARED_DOMAIN`, `UNKNOWN`, `EVIDENCE_OF_SEPARATION`; no central KYC/geolocation/cloud authority.
 
@@ -156,7 +156,7 @@ Implemented on `main`:
 - Address V1 account derivation/interoperability work;
 - wallet-native encrypted chat protocol specification (specified only; not runtime implementation).
 
-Relevant completed checkpoints include native transaction signing, native Transfer execution, native block execution commitments, deterministic state snapshots, atomic native block/execution/state persistence, native mining migration, P2P Version 2 header-only native block validation, startup/restart migration, and complete removal of the legacy Reth execution path. The native node suite has advanced substantially beyond the earlier 175-test checkpoint. As of current main commit `49a09ad282a020c72d7ac6e96454c9e367725e88`, Rust CI is fully green: formatting, Cargo check, full tests, and Clippy all pass.
+Relevant completed checkpoints include native transaction signing, native Transfer execution, native block execution commitments, deterministic state snapshots, atomic native block/body/execution/state persistence, native mining migration, P2P Version 3 full-body validation/relay, startup/restart migration, and complete removal of the legacy external execution path.
 
 P2P Version 3 is now the active devnet implementation path for native blocks and transactions. The completed V3 baseline includes:
 
@@ -190,8 +190,6 @@ Current direction: **8 decimals**; integer consensus/accounting arithmetic only.
 RandomX remains PoW direction. Ordinary/common RandomX miner/pool compatibility is preferred where protocol-safe. Do not change locked RandomX inputs/vectors merely for miner convenience. Dedicated NIAHCIA miner remains lower priority.
 
 ## Current work
-
-The previous handoff's `#266` blocker is stale: the referenced issue is not currently retrievable from `niahcia/niahcia`. Do not treat it as an active blocker without fresh GitHub evidence.
 
 Current priority has moved past transaction propagation/non-empty block transport: the P2P V3 baseline is green.
 
@@ -294,7 +292,7 @@ Repository cleanup audit completed after the native-execution migration:
 - README, roadmap, architecture, configuration, build, milestone, repository-family, and prototype documentation realigned to the native-chain architecture;
 - current dev guidance now treats native execution/P2P V3 as active and ComputeChannel V2 work as inactive.
 
-A fresh CI run on the cleanup head must remain green before resuming compute-dispatcher implementation.
+Keep the cleanup head green before resuming compute-dispatcher implementation; if a later head fails CI, diagnose that head rather than relying on an older green checkpoint.
 
 ## Development doctrine
 

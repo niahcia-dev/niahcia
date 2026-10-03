@@ -1,6 +1,6 @@
 # First Decentralized AI Milestone
 
-The former Reth/EVM + fixed 2-of-3 Prototype 0 profile is superseded.
+Earlier external-execution and fixed universal 2-of-3 designs are superseded by the native-chain, policy-driven architecture below.
 
 ## Chain
 

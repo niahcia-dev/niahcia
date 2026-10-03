@@ -32,11 +32,9 @@ The active devnet path includes RandomX CPU PoW, the 164-byte `BlockHeaderV1`, c
 
 Inactive development work includes `ComputeChannelOpen`, `ComputeChannelSettle`, and `ComputeChannelRefund`. No compute intrinsic-gas constants or V2 activation height are currently assigned.
 
-## Download
+## Releases
 
-**[Latest release](https://github.com/niahcia/niahcia/releases/latest)**
-
-When binary releases begin, this repository will be the canonical distribution point.
+There is no public binary release yet. When binary releases begin, this repository's [Releases](https://github.com/niahcia/niahcia/releases) page will be the canonical distribution point. Release policy and expected assets are documented in [RELEASES.md](RELEASES.md).
 
 ## Quick links
 

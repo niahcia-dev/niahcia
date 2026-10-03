@@ -1,38 +1,15 @@
 # Downloads
 
-The canonical user-facing download path for NIAHCIA is:
+NIAHCIA is pre-alpha and there is currently **no public binary release**.
 
-https://github.com/niahcia/niahcia/releases/latest
+The canonical release page is:
+
+https://github.com/niahcia/niahcia/releases
 
 The project download portal is:
 
 https://niahcia.github.io/downloads.html
 
-## Package selection
+Release channels, expected asset naming, checksums, manifests, and verification policy are maintained in [../RELEASES.md](../RELEASES.md). This file intentionally does not duplicate that policy.
 
-| Goal | Package |
-|---|---|
-| Full node | `niahcia-node-<platform>-<arch>` |
-| CPU mining | `niahcia-miner-<platform>-<arch>` |
-| AI compute | `niahcia-compute-<platform>-<arch>` |
-| Standard operator stack | `niahcia-full-<platform>-<arch>` |
-
-## Verification
-
-Every packaged release must include `SHA256SUMS`.
-
-Linux example:
-
-```bash
-sha256sum -c SHA256SUMS
-```
-
-Do not trust a binary whose published checksum cannot be verified.
-
-## Source downloads
-
-GitHub automatically provides source archives for every tag.
-
-Those source archives are not the same thing as the packaged NIAHCIA runtime binaries.
-
-Normal users should use the attached release packages.
+GitHub source archives for tags are source snapshots; they are not packaged NIAHCIA runtime binaries.

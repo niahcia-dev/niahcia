@@ -2,9 +2,9 @@
 
 ## Status
 
-Candidate — development wire protocol for the current native-execution milestone.
+**SUPERSEDED / historical.** Version 2 was the header-only native block-transfer development protocol. The active reference-node devnet uses P2P Version 3.
 
-This document defines the current Version 2 native block-transfer behavior. It is intentionally narrower than a complete future P2P specification.
+This document is retained to record the incompatible Version 1 -> Version 2 transition and the constraints that motivated Version 3. It is not an active wire-protocol specification.
 
 ## Version transition
 
@@ -42,9 +42,9 @@ For each received header, a validating node MUST independently:
 
 A peer-provided state snapshot is never chain authority.
 
-## Current empty-block limitation
+## Historical empty-block limitation
 
-Version 2 currently transports headers only. Therefore the present implementation is valid only for the development milestone in which networked blocks contain the canonical empty native transaction set.
+Version 2 transported headers only. It was therefore limited to the development milestone in which networked blocks contained the canonical empty native transaction set.
 
 For an empty transaction set:
 
@@ -54,9 +54,9 @@ For an empty transaction set:
 
 This limitation MUST be removed before non-empty native transaction blocks are relayed between peers.
 
-## Required next versioned extension
+## Requirement that produced Version 3
 
-Before fee-bearing or otherwise non-empty transaction blocks become network-valid, the protocol MUST define and implement:
+To support fee-bearing or otherwise non-empty transaction blocks, the successor protocol needed:
 
 - canonical transaction/block-body transport;
 - transaction propagation or retrieval;
@@ -73,6 +73,6 @@ The 164-byte `BlockHeaderV1`, CPU-PoW cumulative-work fork choice, canonical tra
 
 ## Successor
 
-`spec/p2p-native-block-transfer-v3.md` defines the candidate full-body successor for non-empty native transaction blocks, including canonical transaction transport, transaction relay direction, and producer-fee-recipient validation.
+`spec/p2p-native-block-transfer-v3.md` is the implemented active devnet successor for non-empty native transaction blocks, including canonical transaction transport, transaction relay, and producer-fee-recipient validation.
 
-V2 remains the header-only empty-block development protocol and is not silently extended.
+V2 remains historical and MUST NOT be negotiated or treated as the active reference-node transport.
