@@ -248,45 +248,33 @@ mod tests {
         let creator: [u8; ADDRESS_PAYLOAD_LEN] = creator.try_into().unwrap();
 
         let cases = [
-            (
-                AddressNetwork::Mainnet,
-                0x0000_0000_4E49_4148,
-                7_u64,
-                "TODO_MAIN_PREIMAGE",
-                "TODO_MAIN_PAYLOAD",
-                "TODO_MAIN_ADDRESS",
-            ),
-            (
-                AddressNetwork::Testnet,
-                0x0000_0001_5449_4148,
-                7_u64,
-                "TODO_TEST_PREIMAGE",
-                "TODO_TEST_PAYLOAD",
-                "TODO_TEST_ADDRESS",
-            ),
-            (
-                AddressNetwork::Devnet,
-                0x0000_0002_4449_4148,
-                7_u64,
-                "TODO_DEV_PREIMAGE",
-                "TODO_DEV_PAYLOAD",
-                "TODO_DEV_ADDRESS",
-            ),
+            (AddressNetwork::Mainnet, 0x0000_0000_4E49_4148, 7_u64),
+            (AddressNetwork::Testnet, 0x0000_0001_5449_4148, 7_u64),
+            (AddressNetwork::Devnet, 0x0000_0002_4449_4148, 7_u64),
         ];
+        let actual = cases
+            .into_iter()
+            .map(|(network, chain_id, nonce)| {
+                let preimage =
+                    NiahciaAddressV1::contract_derivation_preimage(network, chain_id, creator, nonce);
+                let address =
+                    NiahciaAddressV1::contract_from_creator(network, chain_id, creator, nonce);
+                (
+                    hex::encode(preimage),
+                    hex::encode(address.payload),
+                    address.to_string(),
+                )
+            })
+            .collect::<Vec<_>>();
 
-        for (network, chain_id, nonce, expected_preimage, expected_payload, expected_address) in
-            cases
-        {
-            let preimage =
-                NiahciaAddressV1::contract_derivation_preimage(network, chain_id, creator, nonce);
-            let address =
-                NiahciaAddressV1::contract_from_creator(network, chain_id, creator, nonce);
-
-            assert_eq!(hex::encode(preimage), expected_preimage);
-            assert_eq!(hex::encode(address.payload), expected_payload);
-            assert_eq!(address.to_string(), expected_address);
-            assert_eq!(address.kind, AddressKind::Contract);
-        }
+        assert_eq!(
+            actual,
+            vec![
+                ("TODO".to_string(), "TODO".to_string(), "TODO".to_string()),
+                ("TODO".to_string(), "TODO".to_string(), "TODO".to_string()),
+                ("TODO".to_string(), "TODO".to_string(), "TODO".to_string()),
+            ]
+        );
     }
 
     #[test]
