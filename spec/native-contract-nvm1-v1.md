@@ -209,13 +209,15 @@ The candidate V1 memory ceiling is **65,536 bytes**. Any operation whose resulti
 
 ### Call context
 
-Each execution receives immutable call input bytes and a native `u64` call value.
+Each execution receives immutable call input bytes and the full native `u128` call value.
 
 ```text
 INPUT_LEN          [] -> [U64(input_length)]
 CALL_VALUE         [] -> [U64(call_value)]
 INPUT_COPY n       [U64(input_offset)] -> append input[input_offset..input_offset+n] to memory
 ```
+
+CALL_VALUE preserves the complete native `u128` transaction value. It is encoded as a `Bytes32` value with 16 leading zero bytes followed by the 16-byte big-endian unsigned amount. This avoids truncating NIAHCIA's native value domain to `u64`.
 
 For `INPUT_COPY n`, the immediate `u32` operand is the byte count. The stack supplies the input offset. The offset plus length must be wholly within call input; otherwise execution traps. A zero-length copy is valid when the offset is at most the input length. Successful copy consumes the offset and appends exactly the selected bytes to memory.
 

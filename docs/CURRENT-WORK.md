@@ -201,6 +201,8 @@ Still required before those actions can be activated:
 - persistence/restart/reorg behavior;
 - canonical vectors and an explicit activation/version boundary.
 
+NVM1's candidate execution surface now has deterministic stack/control, bounded byte memory, caller representation, persistent storage isolation, KECCAK256, RETURN/REVERT, and a vectored gas schedule. CALL_VALUE now preserves the full native u128 value domain as a 32-byte stack value rather than truncating it to u64.
+
 Consensus contract execution must not perform AI inference or depend on external network/filesystem/wall-clock services. Off-chain AI may provide signed/committed evidence to contracts only through explicitly specified deterministic verification rules.
 
 See `spec/native-contract-runtime-v1.md`.

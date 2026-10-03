@@ -209,7 +209,7 @@ pub enum Nvm1Halt {
 pub struct Nvm1ExecutionContext {
     pub input: Vec<u8>,
     pub caller_payload: [u8; 20],
-    pub call_value: u64,
+    pub call_value: u128,
     pub storage: BTreeMap<[u8; 32], [u8; 32]>,
 }
 
@@ -552,10 +552,12 @@ pub fn execute_nvm1_core_with_context_and_gas(
                 pc += 1;
             }
             0x13 => {
+                let mut value = [0u8; 32];
+                value[16..].copy_from_slice(&context.call_value.to_be_bytes());
                 if let Some(result) = push_value(
                     &mut stack,
                     validated.header.max_stack_items,
-                    Nvm1Value::U64(context.call_value),
+                    Nvm1Value::Bytes32(value),
                     executed,
                     gas_used,
                 ) {
@@ -780,6 +782,23 @@ mod tests {
         assert_eq!(result.gas_used, 5);
         assert_eq!(result.instructions_executed, 2);
         assert_eq!(result.committed_storage, None);
+    }
+
+    #[test]
+    fn call_value_preserves_full_u128_native_amount() {
+        let code = module(2, 1, &[0x13, 0x00]);
+        let context = Nvm1ExecutionContext {
+            call_value: u128::MAX - 7,
+            ..Default::default()
+        };
+        let result = execute_nvm1_core_with_context_and_gas(&code, &context, 3).unwrap();
+
+        let mut expected = [0u8; 32];
+        expected[16..].copy_from_slice(&(u128::MAX - 7).to_be_bytes());
+
+        assert_eq!(result.halt, Nvm1Halt::Stop);
+        assert_eq!(result.stack, vec![Nvm1Value::Bytes32(expected)]);
+        assert_eq!(result.gas_used, 3);
     }
 
     #[test]
