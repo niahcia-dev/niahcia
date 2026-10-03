@@ -437,11 +437,13 @@ impl StateStore {
             let mut table = write
                 .open_table(INACTIVE_NATIVE_BLOCK_BODIES_V2)
                 .map_err(|e| format!("failed to open inactive V2 body table: {e}"))?;
-            if let Some(existing) = table
+            let existing = table
                 .get(block_id.as_slice())
                 .map_err(|e| format!("failed to inspect inactive V2 body: {e}"))?
-            {
-                if existing.value() != encoded_body.as_slice() {
+                .map(|value| value.value().to_vec());
+
+            if let Some(existing) = existing {
+                if existing.as_slice() != encoded_body.as_slice() {
                     return Err("block already has a different inactive V2 body".into());
                 }
             } else {
@@ -455,11 +457,13 @@ impl StateStore {
             let mut table = write
                 .open_table(INACTIVE_NATIVE_BLOCK_EXECUTION_V2)
                 .map_err(|e| format!("failed to open inactive V2 execution table: {e}"))?;
-            if let Some(existing) = table
+            let existing = table
                 .get(block_id.as_slice())
                 .map_err(|e| format!("failed to inspect inactive V2 execution: {e}"))?
-            {
-                if existing.value() != encoded_execution.as_slice() {
+                .map(|value| value.value().to_vec());
+
+            if let Some(existing) = existing {
+                if existing.as_slice() != encoded_execution.as_slice() {
                     return Err("block already has a different inactive V2 execution".into());
                 }
             } else {
@@ -473,11 +477,13 @@ impl StateStore {
             let mut table = write
                 .open_table(INACTIVE_NATIVE_STATE_SNAPSHOTS_V2)
                 .map_err(|e| format!("failed to open inactive V2 state table: {e}"))?;
-            if let Some(existing) = table
+            let existing = table
                 .get(block_id.as_slice())
                 .map_err(|e| format!("failed to inspect inactive V2 state: {e}"))?
-            {
-                if existing.value() != encoded_state.as_slice() {
+                .map(|value| value.value().to_vec());
+
+            if let Some(existing) = existing {
+                if existing.as_slice() != encoded_state.as_slice() {
                     return Err("block already has a different inactive V2 state".into());
                 }
             } else {
