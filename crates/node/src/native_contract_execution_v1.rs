@@ -285,6 +285,201 @@ pub fn execute_inactive_accepted_contract_create_v1(
     })
 }
 
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InactiveAcceptedContractCallV1 {
+    pub transaction_id: Hash32,
+    pub sender: AccountId,
+    pub contract_id: [u8; 20],
+    pub call_succeeded: bool,
+    pub gas_used: u64,
+    pub max_execution_charge: u128,
+    pub effective_fee_per_gas: u128,
+    pub base_fee_burned: u128,
+    pub producer_priority_fee: u128,
+    pub actual_fee: u128,
+    pub unused_fee_reserve: u128,
+    pub nonce_before: u64,
+    pub nonce_after: u64,
+    pub state_root_before: Hash32,
+    pub state_root_after: Hash32,
+    pub execution: Nvm1ExecutionResult,
+}
+
+/// Executes an accepted schema-V2 ContractCall against an existing NVM1 contract.
+///
+/// Pre-execution validation errors reject atomically. Once accepted, nonce and gas effects persist.
+/// Contract storage and call value commit only for STOP/RETURN; REVERT and traps discard both.
+pub fn execute_inactive_accepted_contract_call_v1(
+    state: &mut NativeStateV3,
+    transaction: &SignedNativeTransactionV2,
+    network: AddressNetwork,
+    context: NativeExecutionContextV1,
+) -> Result<InactiveAcceptedContractCallV1, String> {
+    transaction.body.validate(network)?;
+    if transaction.body.action != NativeActionV2::ContractCall {
+        return Err("accepted ContractCall executor requires ContractCall action".into());
+    }
+
+    let sender = transaction.authenticated_sender(network)?.payload;
+    let contract_id: [u8; 20] = transaction
+        .body
+        .target_payload
+        .as_slice()
+        .try_into()
+        .map_err(|_| "ContractCall target must be exactly 20 bytes".to_string())?;
+    let contract = state
+        .contract(contract_id)
+        .cloned()
+        .ok_or_else(|| "ContractCall target contract does not exist".to_string())?;
+    if contract.runtime_id != NVM1_RUNTIME_ID {
+        return Err(format!(
+            "inactive ContractCall executor supports only NVM1 runtime_id {}",
+            NVM1_RUNTIME_ID
+        ));
+    }
+    validate_nvm1_code(&contract.code)?;
+    validate_nvm1_jump_targets(&contract.code)?;
+
+    let sender_before = state.base().accounts().account(sender);
+    if sender_before.nonce != transaction.body.nonce {
+        return Err(format!(
+            "native account nonce mismatch: expected {}, found {}",
+            sender_before.nonce, transaction.body.nonce
+        ));
+    }
+    if transaction.body.max_fee_per_gas < context.base_fee_per_gas {
+        return Err(format!(
+            "native transaction V2 max_fee_per_gas {} is below base_fee_per_gas {}",
+            transaction.body.max_fee_per_gas, context.base_fee_per_gas
+        ));
+    }
+    let max_execution_charge = transaction
+        .body
+        .max_fee_per_gas
+        .checked_mul(transaction.body.gas_limit as u128)
+        .ok_or_else(|| "ContractCall maximum execution charge overflow".to_string())?;
+    let required_balance = transaction
+        .body
+        .value
+        .checked_add(max_execution_charge)
+        .ok_or_else(|| "ContractCall required balance overflow".to_string())?;
+    if sender_before.balance < required_balance {
+        return Err(format!(
+            "insufficient native account balance: required {}, available {}",
+            required_balance, sender_before.balance
+        ));
+    }
+    contract
+        .balance
+        .checked_add(transaction.body.value)
+        .ok_or_else(|| "ContractCall target balance overflow".to_string())?;
+
+    let state_root_before = state.state_root()?;
+    let storage = contract
+        .storage_entries()
+        .map(|(key, value)| (*key, *value))
+        .collect();
+    let vm_context = Nvm1ExecutionContext {
+        input: transaction.body.data.clone(),
+        caller_payload: sender,
+        call_value: transaction.body.value,
+        storage,
+    };
+    let execution =
+        execute_nvm1_core_with_context_and_gas(&contract.code, &vm_context, transaction.body.gas_limit)?;
+    let call_succeeded = matches!(execution.halt, Nvm1Halt::Stop | Nvm1Halt::Return(_));
+    let gas_used = if matches!(execution.halt, Nvm1Halt::Trap(_)) {
+        transaction.body.gas_limit
+    } else {
+        execution.gas_used
+    };
+
+    let priority_headroom = transaction
+        .body
+        .max_fee_per_gas
+        .checked_sub(context.base_fee_per_gas)
+        .ok_or_else(|| "ContractCall priority fee headroom underflow".to_string())?;
+    let priority_fee_per_gas = transaction
+        .body
+        .max_priority_fee_per_gas
+        .min(priority_headroom);
+    let effective_fee_per_gas = context
+        .base_fee_per_gas
+        .checked_add(priority_fee_per_gas)
+        .ok_or_else(|| "ContractCall effective fee overflow".to_string())?;
+    let base_fee_burned = context
+        .base_fee_per_gas
+        .checked_mul(gas_used as u128)
+        .ok_or_else(|| "ContractCall base fee burn overflow".to_string())?;
+    let producer_priority_fee = priority_fee_per_gas
+        .checked_mul(gas_used as u128)
+        .ok_or_else(|| "ContractCall producer priority fee overflow".to_string())?;
+    let actual_fee = base_fee_burned
+        .checked_add(producer_priority_fee)
+        .ok_or_else(|| "ContractCall actual fee overflow".to_string())?;
+    let unused_fee_reserve = max_execution_charge
+        .checked_sub(actual_fee)
+        .ok_or_else(|| "ContractCall actual fee exceeds maximum reserve".to_string())?;
+
+    let mut next = state.clone();
+    if call_succeeded {
+        let committed = execution
+            .committed_storage
+            .as_ref()
+            .ok_or_else(|| "successful NVM1 call omitted committed storage".to_string())?;
+        let target = next
+            .contract_mut(contract_id)
+            .ok_or_else(|| "ContractCall target disappeared during execution".to_string())?;
+        target.credit(transaction.body.value)?;
+        let old_keys: Vec<_> = target.storage_entries().map(|(key, _)| *key).collect();
+        for key in old_keys {
+            target.remove_storage(key);
+        }
+        for (key, value) in committed {
+            target.set_storage(*key, *value);
+        }
+    }
+
+    next.base_mut()
+        .accounts_mut()
+        .consume_nonce(sender, transaction.body.nonce)?;
+    let sender_debit = actual_fee
+        .checked_add(if call_succeeded {
+            transaction.body.value
+        } else {
+            0
+        })
+        .ok_or_else(|| "ContractCall sender debit overflow".to_string())?;
+    next.base_mut().accounts_mut().debit(sender, sender_debit)?;
+    next.base_mut()
+        .accounts_mut()
+        .credit(context.cpu_producer, producer_priority_fee)?;
+
+    let nonce_after = next.base().accounts().account(sender).nonce;
+    let state_root_after = next.state_root()?;
+    *state = next;
+
+    Ok(InactiveAcceptedContractCallV1 {
+        transaction_id: transaction.tx_id()?,
+        sender,
+        contract_id,
+        call_succeeded,
+        gas_used,
+        max_execution_charge,
+        effective_fee_per_gas,
+        base_fee_burned,
+        producer_priority_fee,
+        actual_fee,
+        unused_fee_reserve,
+        nonce_before: sender_before.nonce,
+        nonce_after,
+        state_root_before,
+        state_root_after,
+        execution,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
