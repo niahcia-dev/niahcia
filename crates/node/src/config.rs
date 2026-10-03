@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct NodeConfig {
     pub network: String,
     pub data_dir: PathBuf,
@@ -123,8 +123,8 @@ impl NodeConfig {
 
     fn normalize_fee_recipient_for_execution(&mut self) -> Result<(), String> {
         if let Some(address) = self.native_fee_recipient()? {
-            // NIAHCIA exposes the Bech32m address at its native boundary, while
-            // Reth's Engine API consumes the same account as its 20-byte payload.
+            // NIAHCIA exposes Bech32m at its native boundary while internal
+            // execution stores the same account as its canonical 20-byte payload.
             self.fee_recipient = format!("0x{}", hex::encode(address.payload));
         }
         Ok(())
@@ -151,6 +151,17 @@ impl NodeConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn obsolete_or_unknown_config_fields_are_rejected() {
+        let error = toml::from_str::<NodeConfig>(
+            r#"network = "devnet"
+reth_engine_api = "http://127.0.0.1:8551"
+"#,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("unknown field"));
+    }
 
     #[test]
     fn native_devnet_account_normalizes_to_fee_recipient() {
