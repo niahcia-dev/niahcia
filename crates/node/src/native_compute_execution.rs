@@ -149,7 +149,9 @@ pub fn plan_compute_channel_settle_v1(
 
     let submitter = transaction.authenticated_sender(network)?.payload;
     if submitter != channel.worker_payment_account {
-        return Err("ComputeChannelSettle sender is not the committed worker_payment_account".into());
+        return Err(
+            "ComputeChannelSettle sender is not the committed worker_payment_account".into(),
+        );
     }
 
     let account = state.accounts().account(submitter);
@@ -631,9 +633,13 @@ mod tests {
         .unwrap();
         resign_v2(&mut expired_transaction, &worker_key);
 
-        let error =
-            plan_compute_channel_settle_v1(&state, &expired_transaction, AddressNetwork::Devnet, 110)
-                .unwrap_err();
+        let error = plan_compute_channel_settle_v1(
+            &state,
+            &expired_transaction,
+            AddressNetwork::Devnet,
+            110,
+        )
+        .unwrap_err();
         assert!(error.contains("receipt is expired"));
     }
 
@@ -660,9 +666,13 @@ mod tests {
         .unwrap();
         resign_v2(&mut identity_transaction, &worker_key);
 
-        let error =
-            plan_compute_channel_settle_v1(&state, &identity_transaction, AddressNetwork::Devnet, 110)
-                .unwrap_err();
+        let error = plan_compute_channel_settle_v1(
+            &state,
+            &identity_transaction,
+            AddressNetwork::Devnet,
+            110,
+        )
+        .unwrap_err();
         assert!(error.contains("worker_id mismatch"));
 
         let mut tampered_payload =
@@ -709,9 +719,13 @@ mod tests {
         .unwrap();
         resign_v2(&mut overspend_transaction, &worker_key);
 
-        let error =
-            plan_compute_channel_settle_v1(&state, &overspend_transaction, AddressNetwork::Devnet, 110)
-                .unwrap_err();
+        let error = plan_compute_channel_settle_v1(
+            &state,
+            &overspend_transaction,
+            AddressNetwork::Devnet,
+            110,
+        )
+        .unwrap_err();
         assert!(error.contains("exceeds channel authorization"));
 
         let mut value_transaction = transaction;
