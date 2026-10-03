@@ -530,7 +530,67 @@ mod tests {
     use crate::native_state_v2::ComputeChannelSettlementPolicyV1;
     use crate::native_transaction::{DEVNET_CHAIN_ID, DEVNET_NETWORK_ID};
     use crate::native_transaction_v2::NativeTransactionBodyV2;
+    use crate::state::{NativeStateSnapshotVersion, StateStore};
+    use crate::work::BlockHeaderV1;
     use k256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_compute_state_path(name: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "niahcia-compute-{name}-{}-{nonce}.redb",
+            std::process::id()
+        ))
+    }
+
+    fn assert_v2_snapshot_survives_restart(name: &str, marker: u8, state: &NativeStateV2) {
+        let path = temp_compute_state_path(name);
+        let expected = state.clone();
+        let expected_root = expected.state_root().unwrap();
+        let block = BlockHeaderV1 {
+            version: 1,
+            parent_hash: [0_u8; 32],
+            height: 0,
+            timestamp: 1_800_100_000 + marker as u64,
+            transactions_root: [marker; 32],
+            execution_root: expected_root,
+            target: [0xff; 32],
+            nonce: marker as u64,
+            extra_nonce: 0,
+        };
+        let block_id = block.block_id();
+
+        {
+            let store = StateStore::open(&path).unwrap();
+            store.insert_chain_block(block).unwrap();
+            store
+                .store_native_state_v2_snapshot(block_id, &expected)
+                .unwrap();
+
+            assert_eq!(
+                store.native_state_snapshot_version(block_id).unwrap(),
+                Some(NativeStateSnapshotVersion::V2)
+            );
+            let loaded = store.native_state_v2_snapshot(block_id).unwrap().unwrap();
+            assert_eq!(loaded, expected);
+            assert_eq!(loaded.state_root().unwrap(), expected_root);
+        }
+
+        {
+            let reopened = StateStore::open(&path).unwrap();
+            let loaded = reopened
+                .native_state_v2_snapshot(block_id)
+                .unwrap()
+                .unwrap();
+            assert_eq!(loaded, expected);
+            assert_eq!(loaded.state_root().unwrap(), expected_root);
+        }
+
+        let _ = std::fs::remove_file(path);
+    }
 
     fn open_payload(expiry_height: u64) -> ComputeChannelOpenPayloadV1 {
         let channel_key = SigningKey::from_slice(&[0x22; 32]).unwrap();
@@ -1259,6 +1319,65 @@ mod tests {
         assert!(result.transactions.is_empty());
         assert_eq!(result.state_root_before, result.state_root_after);
         assert_eq!(state, before);
+    }
+
+    #[test]
+    fn post_open_native_state_v2_snapshot_survives_restart() {
+        let signing_key = SigningKey::from_slice(&[0x11; 32]).unwrap();
+        let transaction = signed_open(&signing_key, 3, 1_000, 100);
+        let mut state = state_for(&transaction, 5_000, 3);
+
+        let result = execute_inactive_compute_transaction_v2(
+            &mut state,
+            &transaction,
+            AddressNetwork::Devnet,
+            50,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &result.transition,
+            AppliedComputeTransitionV1::Open(_)
+        ));
+        assert_v2_snapshot_survives_restart("post-open", 0xc1, &state);
+    }
+
+    #[test]
+    fn post_settle_native_state_v2_snapshot_survives_restart() {
+        let (mut state, transaction, _, _) = settle_fixture();
+
+        let result = execute_inactive_compute_transaction_v2(
+            &mut state,
+            &transaction,
+            AddressNetwork::Devnet,
+            110,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &result.transition,
+            AppliedComputeTransitionV1::Settle(_)
+        ));
+        assert_v2_snapshot_survives_restart("post-settle", 0xc2, &state);
+    }
+
+    #[test]
+    fn post_refund_native_state_v2_snapshot_survives_restart() {
+        let (mut state, transaction, _) = refund_fixture();
+
+        let result = execute_inactive_compute_transaction_v2(
+            &mut state,
+            &transaction,
+            AddressNetwork::Devnet,
+            121,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            &result.transition,
+            AppliedComputeTransitionV1::Refund(_)
+        ));
+        assert_v2_snapshot_survives_restart("post-refund", 0xc3, &state);
     }
 
     #[test]
