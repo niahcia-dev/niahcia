@@ -64,7 +64,7 @@ mainnet  0x000000004E494148  1313423688
 
 A node rejects a signed native transaction when either its network identifier or native `chain_id` differs from the node's configured consensus identity.
 
-An EVM/execution chain ID is a separate execution-domain identifier and must not replace or reinterpret the NIAHCIA native signed-transaction domain.
+No implementation-specific or external chain identifier may replace or reinterpret the NIAHCIA native signed-transaction domain.
 
 ## Fee arithmetic
 
@@ -105,7 +105,7 @@ sender_charge = value + charged_fee
 
 Every operation is checked integer arithmetic. Any overflow, underflow, or violated bound makes the transaction/result invalid.
 
-The disposition of execution base fees or other fee components—burn, producer compensation, treasury, or another explicitly versioned destination—is an economic-policy decision and is not silently inherited from an execution engine.
+The disposition of execution base fees or other fee components—burn, producer compensation, treasury, or another explicitly versioned destination—is an economic-policy decision and is not silently inherited from implementation defaults.
 
 ## RPC representation
 
