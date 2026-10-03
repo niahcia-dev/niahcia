@@ -27,7 +27,7 @@ The defining architectural choice is **separation of responsibilities**.
              |            and jobs        archival
              +--------------+--------------+
                             |
-                       EVM / CONTRACTS
+                   NATIVE SETTLEMENT
                             |
                           AGENTS
                             |
@@ -173,13 +173,13 @@ The Primary Agent adds one special economic category: a bounded protocol public-
 
 Exact funding/reward mechanics remain open and require explicit economic/security design.
 
-## 19. Smart contracts are part of the substrate
+## 19. Native settlement is part of the substrate
 
-NIAHCIA integrates EVM execution through Reth rather than inventing an isolated contract VM. The consensus daemon remains responsible for NIAHCIA ordering/PoW; Reth provides EVM execution/state validation across an authenticated boundary.
+NIAHCIA uses native transactions, execution, and state for balances, commitments, authorization, and settlement. Smart-contract runtime semantics may be added only when explicitly specified; the base chain does not depend on an external EVM execution engine.
 
 ## 20. Common infrastructure should remain common where practical
 
-NIAHCIA should reuse mature infrastructure where safe: standard RandomX, common miner/pool interoperability where possible, EVM via Reth, and versioned AI runtimes rather than unnecessary branded forks.
+NIAHCIA should reuse mature infrastructure where it does not create hidden authority: standard RandomX, common miner/pool interoperability where possible, proven cryptographic libraries, and versioned AI runtimes rather than unnecessary branded forks.
 
 ## 21. Decentralized scheduling should not become a hidden coordinator
 
@@ -187,7 +187,7 @@ Worker discovery, eligibility, assignment, execution, verification, timeout, rea
 
 ## 22. Protocol-first interoperability
 
-NIAHCIA maintains a separate protocol repository so the Rust implementation is not the sole definition of the network. Interoperability-critical objects require deterministic serialization, domain separation, versioning, and vectors so independent implementations can eventually interoperate.
+NIAHCIA maintains explicit protocol specifications and a synchronized protocol mirror so the Rust implementation is not allowed to silently redefine the network. Interoperability-critical objects require deterministic serialization, domain separation, versioning, and vectors so independent implementations can eventually interoperate.
 
 ## What NIAHCIA is not
 
