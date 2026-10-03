@@ -218,6 +218,7 @@ pub struct Nvm1ExecutionResult {
     pub halt: Nvm1Halt,
     pub stack: Vec<Nvm1Value>,
     pub instructions_executed: u32,
+    pub gas_used: u64,
     pub committed_storage: Option<BTreeMap<[u8; 32], [u8; 32]>>,
 }
 
@@ -231,7 +232,7 @@ fn nvm1_gas_cost(instruction: &DecodedInstruction) -> Result<u64, String> {
     let cost = match instruction.opcode {
         0x00 | 0x03 | 0x04 | 0x40 | 0x41 => 1,
         0x01 | 0x02 | 0x10 | 0x12 | 0x13 => 2,
-        0x05 | 0x06 | 0x07 | 0x08 | 0x09 => 3,
+        0x05..=0x09 => 3,
         0x11 => {
             let length = u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as u64;
             3 + length.div_ceil(32)
@@ -253,6 +254,14 @@ pub fn execute_nvm1_core_with_context(
     code: &[u8],
     context: &Nvm1ExecutionContext,
 ) -> Result<Nvm1ExecutionResult, String> {
+    execute_nvm1_core_with_context_and_gas(code, context, u64::MAX)
+}
+
+pub fn execute_nvm1_core_with_context_and_gas(
+    code: &[u8],
+    context: &Nvm1ExecutionContext,
+    gas_limit: u64,
+) -> Result<Nvm1ExecutionResult, String> {
     let validated = validate_nvm1_code(code)?;
     validate_nvm1_jump_targets(code)?;
     let instructions = decode_instructions(&validated.instruction_bytes)?;
@@ -262,6 +271,7 @@ pub fn execute_nvm1_core_with_context(
     let mut storage = context.storage.clone();
     let mut pc = 0usize;
     let mut executed = 0u32;
+    let mut gas_used = 0u64;
 
     loop {
         let Some(instruction) = instructions.get(pc) else {
@@ -270,6 +280,16 @@ pub fn execute_nvm1_core_with_context(
         if executed >= NVM1_INACTIVE_EXECUTION_STEP_LIMIT {
             return Ok(trap_result(stack, executed, Nvm1Trap::StepLimitExceeded));
         }
+        let gas_cost = nvm1_gas_cost(instruction)?;
+        if gas_cost > gas_limit.saturating_sub(gas_used) {
+            return Ok(trap_result_with_gas(
+                stack,
+                executed,
+                gas_used,
+                Nvm1Trap::OutOfGas,
+            ));
+        }
+        gas_used += gas_cost;
         executed += 1;
 
         match instruction.opcode {
@@ -278,6 +298,7 @@ pub fn execute_nvm1_core_with_context(
                     halt: Nvm1Halt::Stop,
                     stack,
                     instructions_executed: executed,
+                    gas_used,
                     committed_storage: Some(storage),
                 });
             }
@@ -490,6 +511,7 @@ pub fn execute_nvm1_core_with_context(
                     halt: Nvm1Halt::Return(memory),
                     stack,
                     instructions_executed: executed,
+                    gas_used,
                     committed_storage: Some(storage),
                 });
             }
@@ -498,6 +520,7 @@ pub fn execute_nvm1_core_with_context(
                     halt: Nvm1Halt::Revert(memory),
                     stack,
                     instructions_executed: executed,
+                    gas_used,
                     committed_storage: None,
                 });
             }
@@ -563,11 +586,21 @@ fn push_value(
     None
 }
 
-fn trap_result(_stack: Vec<Nvm1Value>, executed: u32, trap: Nvm1Trap) -> Nvm1ExecutionResult {
+fn trap_result(stack: Vec<Nvm1Value>, executed: u32, trap: Nvm1Trap) -> Nvm1ExecutionResult {
+    trap_result_with_gas(stack, executed, 0, trap)
+}
+
+fn trap_result_with_gas(
+    _stack: Vec<Nvm1Value>,
+    executed: u32,
+    gas_used: u64,
+    trap: Nvm1Trap,
+) -> Nvm1ExecutionResult {
     Nvm1ExecutionResult {
         halt: Nvm1Halt::Trap(trap),
         stack: Vec::new(),
         instructions_executed: executed,
+        gas_used,
         committed_storage: None,
     }
 }
