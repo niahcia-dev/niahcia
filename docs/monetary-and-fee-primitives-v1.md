@@ -23,7 +23,7 @@ Execution-engine quantities that use a different internal scale are an implement
 
 ## Consensus value representation
 
-TransactionEnvelopeV1 already defines `value` and `max_fee_per_gas` as unsigned 128-bit integers. V1 therefore locks native monetary quantities at the NIAHCIA transaction/protocol boundary to `u128` unless a field is explicitly specified otherwise.
+NativeTransactionBodyV1 defines `value` and `max_fee_per_gas` as unsigned 128-bit integers. V1 therefore locks native monetary quantities at the NIAHCIA transaction/protocol boundary to `u128` unless a field is explicitly specified otherwise.
 
 Canonical binary representation of a `u128` monetary field is exactly 16 bytes, unsigned, big-endian.
 
@@ -51,7 +51,7 @@ This document does **not** choose the NIAHCIA initial block subsidy, emission cu
 
 ## Network identifiers
 
-TransactionEnvelopeV1 reserves `0x00` mainnet, `0x01` testnet, and `0x02` devnet. These values are part of the signed transaction domain and MUST NOT be reused for a different NIAHCIA network.
+NativeTransaction V1 reserves `0x00` mainnet, `0x01` testnet, and `0x02` devnet. These values are part of the signed transaction domain and MUST NOT be reused for a different NIAHCIA network.
 
 ## NIAHCIA chain IDs
 
@@ -63,17 +63,17 @@ V1 locks:
 - Testnet: `0x0000000154494148` (`5709054280` decimal; namespace `1` + ASCII `TIAH`)
 - Devnet: `0x0000000244494148` (`9735586120` decimal; namespace `2` + ASCII `DIAH`)
 
-A node MUST reject a signed transaction when either its `network` or `chain_id` differs from the node's configured consensus identity. Internal execution-chain identifiers MUST NOT replace or reinterpret the NIAHCIA signed transaction domain.
+A node MUST reject a signed transaction when either its `network` or `chain_id` differs from the node's configured consensus identity. Internal implementation identifiers MUST NOT replace or reinterpret the NIAHCIA signed transaction domain.
 
 ## Fee arithmetic
 
-TransactionEnvelopeV1 contains `gas_limit: u64` and `max_fee_per_gas: u128`. All native fee-per-gas values are integer `aniah` per gas unit.
+NativeTransactionBodyV1 contains `gas_limit: u64` and `max_fee_per_gas: u128`. All native fee-per-gas values are integer `aniah` per gas unit.
 
 `max_fee_reserve = gas_limit * max_fee_per_gas`
 
 `required_balance = value + max_fee_reserve`
 
-The execution engine determines `gas_used`, where `0 <= gas_used <= gas_limit`, and the effective fee must satisfy `effective_fee_per_gas <= max_fee_per_gas`.
+Native execution determines `gas_used`, where `0 <= gas_used <= gas_limit`, and the effective fee must satisfy `effective_fee_per_gas <= max_fee_per_gas`.
 
 `charged_fee = gas_used * effective_fee_per_gas`
 
@@ -81,7 +81,7 @@ The execution engine determines `gas_used`, where `0 <= gas_used <= gas_limit`, 
 
 The sender is charged exactly `value + charged_fee`. All arithmetic uses checked integers; overflow is invalid.
 
-The execution layer may expose a protocol base fee. Its eventual burn/redirect/producer-compensation policy remains a separate explicit economic decision and MUST NOT be inferred from execution-engine defaults.
+The execution layer may expose a protocol base fee. Its eventual burn/redirect/producer-compensation policy remains a separate explicit economic decision and MUST NOT be inferred from implementation defaults.
 
 ## Canonical RPC representation
 
@@ -111,7 +111,7 @@ Before native transaction submission is enabled, implementation tests MUST lock 
 10. `gas_used > gas_limit` rejection;
 11. `effective_fee_per_gas > max_fee_per_gas` rejection;
 12. exact unused-reserve/refund arithmetic;
-13. execution-chain ID cannot substitute for NIAHCIA `chain_id`.
+13. no implementation-specific identifier can substitute for NIAHCIA `chain_id`.
 
 ## Compatibility rule
 
