@@ -193,13 +193,26 @@ RandomX remains PoW direction. Ordinary/common RandomX miner/pool compatibility 
 
 The previous handoff's `#266` blocker is stale: the referenced issue is not currently retrievable from `niahcia/niahcia`. Do not treat it as an active blocker without fresh GitHub evidence.
 
-Current priority has moved past transaction propagation/non-empty block transport: that V3 baseline is green.
+Current priority has moved past transaction propagation/non-empty block transport: the P2P V3 baseline is green.
 
-NativeStateV2 inactive foundation is now implemented and green. Current implementation includes:
+The inactive NativeStateV2 / NativeTransactionV2 compute-channel foundation is now substantially implemented and remains deliberately isolated from the active runtime. Current green implementation includes:
 
-Inactive compute-settlement codec/signing foundation is now implemented and green. This layer remains **inactive at runtime** and includes:
+- deterministic NativeStateV2 account + compute-channel state root and canonical version-2 snapshots;
+- V1 -> V2 migration with an empty channel map and explicit V1/V2 snapshot discrimination;
+- NativeTransaction schema V2 canonical codecs, signing domain, transaction-ID domain, and V1/V2 cross-decoder rejection;
+- explicit V2 ComputeChannelOpen / ComputeChannelSettle / ComputeChannelRefund actions;
+- canonical Open / Settle / Refund payload codecs and domain-separated channel-ID derivation;
+- canonical ComputeUsageReceiptV1 codec and low-S secp256k1 channel-signature verification;
+- inactive validated transition planners for Open, Settle, and Refund;
+- inactive atomic transition application helpers for Open, Settle, and Refund;
+- Open application locks exactly `authorized_amount`, consumes the planned funding-account nonce, and creates the committed OPEN channel;
+- Settle application binds to the exact planned pre-transition channel state and submitter nonce, credits the worker payment plus funding refund, enforces exact value conservation, and produces only the expected SETTLED channel mutation;
+- Refund application binds to the exact planned pre-transition channel state and funding-account nonce, returns the exact remaining locked value, and produces only the expected REFUNDED channel mutation;
+- all three application helpers mutate a cloned NativeStateV2 and publish the new state only after every checked balance/nonce/channel operation succeeds, preserving rollback-on-error behavior;
+- stale Settle/Refund plans are rejected when the current channel no longer exactly matches the validated pre-state;
+- overflow and rollback-focused application tests are present alongside planner negative-path tests.
 
-Inactive compute-settlement validation foundation is fully green on current main. The integrated stack now has one canonical receipt decoder/signature implementation used by Settle payload parsing, and CI passes formatting, Cargo check, the full test suite, and Clippy.
+As of current main commit `c4af51d0a0eb89b62edef28dda761abb55cdd965`, Rust CI is fully green with **267 tests passing**, plus formatting, Cargo check, and Clippy.
 
 The runtime boundary remains unchanged:
 
@@ -208,57 +221,20 @@ The runtime boundary remains unchanged:
 - no compute action is accepted by the active mempool/P2P/mining path;
 - no V2 activation height/network parameter is set;
 - no compute intrinsic gas constants are assigned;
-- no compute payment state transition executes yet.
+- no fee-bearing compute transition is active;
+- NativeStateV1 / NativeTransactionV1 behavior and locked vectors remain unchanged.
 
-The next implementation step is intentionally non-mutating: build and test a validated ComputeChannelOpen transition plan before defining fee-bearing execution.
+Next implementation priority is to finish the inactive transition proof before considering activation:
 
-- NativeTransaction schema V2 body/signed canonical codecs;
-- explicit V2 action values for Transfer/ContractCall/ContractCreate plus ComputeChannelOpen/Settle/Refund;
-- V2-only signing domain `SIGN/NATIVE_TRANSACTION/V2` and transaction-ID domain `NIAHCIA/TX-ID/V2`;
-- strict V1/V2 cross-decoder rejection and network/domain separation;
-- locked `test-vectors/native-transaction-v2.json` mirrored to `niahcia-protocol`;
-- canonical ComputeChannelOpenPayloadV1 / SettlePayloadV1 / RefundPayloadV1 codecs;
-- domain-separated ComputeChannel ID derivation from the V2 Open transaction ID;
-- locked `test-vectors/native-compute-action-payloads-v1.json` mirrored to `niahcia-protocol`;
-- canonical ComputeUsageReceiptV1 codec with network-bound `SIGN/COMPUTE_USAGE_RECEIPT` digest;
-- canonical low-S secp256k1 channel-signature verification;
-- Settle payload parsing now uses the single canonical ComputeUsageReceiptV1 decoder;
-- locked deterministic `test-vectors/compute-usage-receipt-v1.json` mirrored to `niahcia-protocol`;
-- current full Rust CI green with **243 tests passing**, plus formatting, Cargo check, and Clippy.
-
-No NativeTransaction V2 action is accepted by the active mempool/execution path yet. No StateV2 activation height is set. No compute action intrinsic gas constant has been assigned.
-
-- deterministic NativeStateV2 account + compute-channel state root;
-- canonical version-2 snapshot encoding/strict decoding;
-- V1 account-root reuse without changing NativeStateV1 bytes or vectors;
-- ComputeChannelStateV1 canonical 363-byte record commitment;
-- strict timeline/value/state validation;
-- strict valid-uncompressed-secp256k1 channel public-key validation;
-- lexicographically ordered channel-root construction;
-- V1 -> V2 migration with an empty channel map;
-- restart-safe V2 snapshot persistence using explicit V2 APIs;
-- explicit V1/V2 snapshot-version discrimination rather than decoder fallback;
-- conflict prevention between V1 and V2 snapshots for the same block;
-- locked JSON interoperability vectors in `test-vectors/native-state-v2.json`, mirrored to `niahcia-protocol`;
-- Rust tests that recompute and enforce the migration root, channel record hash, channel root, V2 state root, and exact snapshot bytes.
-
-This StateV2 code remains inactive at runtime. No activation height is set and no NativeTransaction V2 compute action executes yet.
-
-Next implementation priority is to prepare the **explicit NativeStateV2 / NativeTransactionV2 activation boundary** for compute-channel settlement without modifying or invalidating NativeStateV1/NativeTransactionV1 behavior.
-
-Proceed in small validated milestones:
-
-1. Preserve the now-green P2P V3 + NativeBlockBodyV1 + NativeMempoolV1 path unchanged.
-2. Preserve the now-green inactive NativeStateV2 codec, persistence, migration vectors, and version discriminator unchanged.
-3. Preserve the now-green inactive NativeTransaction V2 codec/signing/transaction-ID layer and its locked vectors.
-4. Preserve the now-green Open/Settle/Refund payload codecs, ComputeUsageReceiptV1 signature layer, and locked vectors.
-5. Implement **ComputeChannelOpen state-transition semantics first** behind an inactive helper boundary. Reuse NativeStateV2 and existing native account nonce/balance rules; do not activate V2 transactions in mempool/P2P/mining yet.
-6. Add atomicity/negative-path tests for Open: wrong action, wrong network/signature, wrong tx value, insufficient balance, nonce mismatch, duplicate channel ID, invalid height window, and exact state-root mutation.
-7. Only after Open transition semantics are green, implement Settle and then Refund.
-7. Keep gas constants deliberately unset until the action payload sizes/signature-verification costs are reviewed; do not invent consensus gas values locally.
-8. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
-9. Do not add worker/operator on-chain registration or bonds to the first ordinary paid-compute milestone.
-10. Preserve the 164-byte BlockHeaderV1, CPU-PoW cumulative-work fork choice, and all locked V1 transaction/execution/state vectors.
+1. Add exact deterministic state-root assertions for Open, Settle, and Refund application results.
+2. Add explicit stale-plan / duplicate-terminal tests proving an already changed channel cannot accept a previously validated Settle or Refund plan.
+3. Add an inactive end-to-end V2 compute execution helper that dispatches one signed V2 compute transaction through planner -> atomic apply against NativeStateV2, without exposing it to the active mempool/P2P/mining path.
+4. Add inactive multi-transaction atomicity tests proving that a later failed compute transition cannot leave an earlier mutation partially committed when executed as one candidate block transition.
+5. Extend restart/persistence/reorg coverage for post-transition NativeStateV2 snapshots before activation.
+6. Keep compute gas constants deliberately unset until payload/signature-verification costs and the native fee schedule are reviewed; do not invent consensus gas values locally.
+7. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
+8. Do not add worker/operator on-chain registration or bonds to the first ordinary paid-compute milestone.
+9. Preserve the 164-byte BlockHeaderV1, CPU-PoW cumulative-work fork choice, P2P V3 baseline, and all locked V1 transaction/execution/state vectors.
 
 Deliberate consensus review still needed for RandomX stock miner/pool interoperability, public-testnet RandomX epoch/seed parameters, remaining monetary constants, genesis/network parameters, and chain-ID finalization.
 
