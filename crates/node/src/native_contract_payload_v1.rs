@@ -38,11 +38,11 @@ impl ContractCreatePayloadV1 {
 
     pub fn canonical_payload(&self) -> Result<Vec<u8>, String> {
         self.validate()?;
-        Ok(encode_map(&[
+        encode_map(&[
             (1, encode_unsigned(self.runtime_id as u64)),
             (2, encode_bytes(&self.code)),
             (3, encode_bytes(&self.init_data)),
-        ]))
+        ])
     }
 
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, String> {
