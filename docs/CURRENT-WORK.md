@@ -208,9 +208,15 @@ The inactive NativeStateV2 / NativeTransactionV2 compute-channel foundation is n
 - Refund application binds to the exact planned pre-transition channel state and funding-account nonce, returns the exact remaining locked value, and produces only the expected REFUNDED channel mutation;
 - all three application helpers mutate a cloned NativeStateV2 and publish the new state only after every checked balance/nonce/channel operation succeeds, preserving rollback-on-error behavior;
 - stale Settle/Refund plans are rejected when the current channel no longer exactly matches the validated pre-state;
-- overflow and rollback-focused application tests are present alongside planner negative-path tests.
+- overflow and rollback-focused application tests are present alongside planner negative-path tests;
+- an inactive signed-V2 compute dispatcher now routes ComputeChannelOpen / Settle / Refund through planner -> atomic apply while rejecting every non-compute V2 action;
+- dispatcher results bind the applied transition to exact before/after NativeStateV2 roots;
+- an inactive candidate-batch executor applies multiple compute transactions against cloned state and publishes the candidate state only if every transaction succeeds;
+- failed later transactions roll back all earlier tentative batch mutations;
+- successful batch results prove state-root continuity between ordered transitions;
+- empty inactive batches are deterministic no-ops.
 
-As of green checkpoint `0242622c93b5c980ed5c87839625c7dc7c1c6eb4`, Rust CI passes formatting, Cargo check, the full test suite, and Clippy. State-root round-trip tests and stale/duplicate terminal-transition tests for Open/Settle/Refund are included.
+As of green checkpoint `f454655d9daa7a3efd28258859c72d18c41816fe`, Rust CI passes formatting, Cargo check, **280 tests**, and Clippy.
 
 The runtime boundary remains unchanged:
 
@@ -222,11 +228,11 @@ The runtime boundary remains unchanged:
 - no fee-bearing compute transition is active;
 - NativeStateV1 / NativeTransactionV1 behavior and locked vectors remain unchanged.
 
-Next implementation priority is to finish the inactive transition proof before considering activation:
+Next implementation priority is to finish persistence/reorg proof before considering activation:
 
-1. Add an inactive end-to-end V2 compute execution helper that dispatches one signed V2 compute transaction through planner -> atomic apply against NativeStateV2, without exposing it to the active mempool/P2P/mining path.
-2. Add inactive multi-transaction atomicity tests proving that a later failed compute transition cannot leave an earlier mutation partially committed when executed as one candidate block transition.
-3. Extend restart/persistence/reorg coverage for post-transition NativeStateV2 snapshots before activation.
+1. Extend NativeStateV2 persistence tests so post-Open, post-Settle, and post-Refund snapshots survive restart with exact roots and channel/account state.
+2. Add reorg-focused tests proving detached Open/Settle/Refund effects disappear when canonical state is restored from the appropriate ancestor/winning-branch snapshot.
+3. Bind the inactive compute batch result to the existing candidate native block/state persistence boundary without exposing V2 transactions to active mempool/P2P/mining.
 4. Keep compute gas constants deliberately unset until payload/signature-verification costs and the native fee schedule are reviewed; do not invent consensus gas values locally.
 5. Keep Jobs, prompts, WorkerAdvertisements, pricing, PaymentAuthorization, ResultCommitmentV2, and ordinary ComputeUsageReceipt exchange off-chain.
 6. Do not add worker/operator on-chain registration or bonds to the first ordinary paid-compute milestone.
