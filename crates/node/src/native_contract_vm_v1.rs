@@ -544,10 +544,10 @@ fn push_value(
     None
 }
 
-fn trap_result(stack: Vec<Nvm1Value>, executed: u32, trap: Nvm1Trap) -> Nvm1ExecutionResult {
+fn trap_result(_stack: Vec<Nvm1Value>, executed: u32, trap: Nvm1Trap) -> Nvm1ExecutionResult {
     Nvm1ExecutionResult {
         halt: Nvm1Halt::Trap(trap),
-        stack,
+        stack: Vec::new(),
         instructions_executed: executed,
         committed_storage: None,
     }
@@ -555,6 +555,19 @@ fn trap_result(stack: Vec<Nvm1Value>, executed: u32, trap: Nvm1Trap) -> Nvm1Exec
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn traps_do_not_expose_partially_consumed_stack() {
+        let code = module(
+            3,
+            2,
+            &[0x01, 0, 0, 0, 0, 0, 0, 0, 7, 0x05, 0x00],
+        );
+        let result = execute_nvm1_core(&code).unwrap();
+        assert_eq!(result.halt, Nvm1Halt::Trap(Nvm1Trap::StackUnderflow));
+        assert!(result.stack.is_empty());
+        assert_eq!(result.committed_storage, None);
+    }
 
     #[test]
     fn core_executes_checked_arithmetic_and_equality() {
