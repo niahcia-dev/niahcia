@@ -170,7 +170,6 @@ fn operand_len(opcode: u8) -> Result<usize, String> {
     }
 }
 
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Nvm1Value {
     U64(u64),
@@ -207,7 +206,11 @@ pub fn execute_nvm1_core(code: &[u8]) -> Result<Nvm1ExecutionResult, String> {
 
     loop {
         let Some(instruction) = instructions.get(pc) else {
-            return Ok(trap_result(stack, executed, "NVM1 execution fell past final instruction"));
+            return Ok(trap_result(
+                stack,
+                executed,
+                "NVM1 execution fell past final instruction",
+            ));
         };
         executed = executed
             .checked_add(1)
@@ -224,7 +227,12 @@ pub fn execute_nvm1_core(code: &[u8]) -> Result<Nvm1ExecutionResult, String> {
             0x01 => {
                 let value = u64::from_be_bytes(instruction.operand[..8].try_into().unwrap());
                 if let Some(result) =
-                    push_value(&mut stack, validated.header.max_stack_items, Nvm1Value::U64(value), executed)
+                    push_value(
+                        &mut stack,
+                        validated.header.max_stack_items,
+                        Nvm1Value::U64(value),
+                        executed,
+                    )
                 {
                     return Ok(result);
                 }
@@ -233,7 +241,12 @@ pub fn execute_nvm1_core(code: &[u8]) -> Result<Nvm1ExecutionResult, String> {
             0x02 => {
                 let value: [u8; 32] = instruction.operand[..32].try_into().unwrap();
                 if let Some(result) =
-                    push_value(&mut stack, validated.header.max_stack_items, Nvm1Value::Bytes32(value), executed)
+                    push_value(
+                        &mut stack,
+                        validated.header.max_stack_items,
+                        Nvm1Value::Bytes32(value),
+                        executed,
+                    )
                 {
                     return Ok(result);
                 }
@@ -258,13 +271,25 @@ pub fn execute_nvm1_core(code: &[u8]) -> Result<Nvm1ExecutionResult, String> {
             }
             0x05 | 0x06 => {
                 let Some(rhs) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, "NVM1 arithmetic stack underflow"));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 arithmetic stack underflow",
+                    ));
                 };
                 let Some(lhs) = stack.pop() else {
-                    return Ok(trap_result(stack, executed, "NVM1 arithmetic stack underflow"));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 arithmetic stack underflow",
+                    ));
                 };
                 let (Nvm1Value::U64(lhs), Nvm1Value::U64(rhs)) = (lhs, rhs) else {
-                    return Ok(trap_result(stack, executed, "NVM1 arithmetic type mismatch"));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 arithmetic type mismatch",
+                    ));
                 };
                 let value = if instruction.opcode == 0x05 {
                     lhs.checked_add(rhs)
@@ -272,7 +297,11 @@ pub fn execute_nvm1_core(code: &[u8]) -> Result<Nvm1ExecutionResult, String> {
                     lhs.checked_sub(rhs)
                 };
                 let Some(value) = value else {
-                    return Ok(trap_result(stack, executed, "NVM1 arithmetic overflow or underflow"));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 arithmetic overflow or underflow",
+                    ));
                 };
                 stack.push(Nvm1Value::U64(value));
                 pc += 1;
@@ -379,13 +408,8 @@ mod tests {
             7,
             3,
             &[
-                0x01, 0, 0, 0, 0, 0, 0, 0, 7,
-                0x01, 0, 0, 0, 0, 0, 0, 0, 5,
-                0x05,
-                0x01, 0, 0, 0, 0, 0, 0, 0, 12,
-                0x07,
-                0x04,
-                0x00,
+                0x01, 0, 0, 0, 0, 0, 0, 0, 7, 0x01, 0, 0, 0, 0, 0, 0, 0, 5, 0x05, 0x01, 0, 0, 0, 0,
+                0, 0, 0, 12, 0x07, 0x04, 0x00,
             ],
         );
         let result = execute_nvm1_core(&code).unwrap();
@@ -400,11 +424,8 @@ mod tests {
             5,
             2,
             &[
-                0x01, 0, 0, 0, 0, 0, 0, 0, 1,
-                0x09, 0, 0, 0, 4,
-                0x01, 0, 0, 0, 0, 0, 0, 0, 99,
-                0x00,
-                0x00,
+                0x01, 0, 0, 0, 0, 0, 0, 0, 1, 0x09, 0, 0, 0, 4, 0x01, 0, 0, 0, 0, 0, 0, 0, 99,
+                0x00, 0x00,
             ],
         );
         let result = execute_nvm1_core(&code).unwrap();
@@ -431,10 +452,8 @@ mod tests {
             4,
             2,
             &[
-                0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                0x01, 0, 0, 0, 0, 0, 0, 0, 1,
-                0x05,
-                0x00,
+                0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0, 0, 0, 0, 0, 0, 0, 1,
+                0x05, 0x00,
             ],
         );
         assert_eq!(
@@ -445,15 +464,7 @@ mod tests {
 
     #[test]
     fn core_enforces_declared_stack_bound_and_rejects_deferred_opcodes() {
-        let bound = module(
-            3,
-            1,
-            &[
-                0x01, 0, 0, 0, 0, 0, 0, 0, 1,
-                0x04,
-                0x00,
-            ],
-        );
+        let bound = module(3, 1, &[0x01, 0, 0, 0, 0, 0, 0, 0, 1, 0x04, 0x00]);
         assert_eq!(
             execute_nvm1_core(&bound).unwrap().halt,
             Nvm1Halt::Trap("NVM1 declared stack bound exceeded".to_string())
@@ -468,18 +479,12 @@ mod tests {
 
     #[test]
     fn core_traps_on_fallthrough() {
-        let result = execute_nvm1_core(&module(
-            1,
-            1,
-            &[0x01, 0, 0, 0, 0, 0, 0, 0, 1],
-        ))
-        .unwrap();
+        let result = execute_nvm1_core(&module(1, 1, &[0x01, 0, 0, 0, 0, 0, 0, 0, 1])).unwrap();
         assert_eq!(
             result.halt,
             Nvm1Halt::Trap("NVM1 execution fell past final instruction".to_string())
         );
     }
-
 
     use super::*;
 
