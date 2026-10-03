@@ -65,9 +65,8 @@ Persistence/restart/reorg proof is now implemented for transition-derived V2 sta
 
 Still required before activation:
 
-1. inactive version-aware persistence for NativeBlockBodyV2 + NativeBlockExecutionResultV2 + NativeStateV2;
-2. restart/reorg proof for mixed transfer + ComputeChannel V2 blocks through that persistence boundary;
-3. locked NativeReceiptV2 / NativeBlockExecutionResultV2 interoperability vectors;
+1. mixed transfer + ComputeChannel restart/reorg proof through the dedicated inactive V2 persistence tables;
+2. locked NativeReceiptV2 / NativeBlockExecutionResultV2 interoperability vectors;
 4. explicit fee/gas schedule;
 5. activation network parameter;
 6. final interoperability vectors covering activation/migration execution.
@@ -124,7 +123,7 @@ The active reference node is native-execution only.
 
 ## Highest-priority open protocol work
 
-1. Integrate NativeBlockBodyV2 + NativeBlockExecutionResultV2 + NativeStateV2 into an inactive version-aware persistence/restart/reorg boundary without changing active V1 behavior.
+1. Extend the dedicated inactive V2 persistence boundary with mixed transfer + ComputeChannel restart/reorg tests while preserving active V1 isolation.
 2. Lock interoperability vectors for NativeReceiptV2 / NativeBlockExecutionResultV2.
 3. Specify the native smart-contract runtime boundary (code format, contract state/storage, deterministic call/create/revert, gas, receipts, persistence, activation) without reintroducing an external EVM dependency.
 4. Review and assign compute intrinsic gas/fee rules before any activation.

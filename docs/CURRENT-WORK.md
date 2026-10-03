@@ -251,7 +251,7 @@ The inactive NativeStateV2 / NativeTransactionV2 compute-channel foundation is n
 - NativeReceiptV2 commits transaction schema version, action, transaction ID, exact post-transaction NativeStateV2 root, gas, and fee accounting;
 - NativeBlockExecutionResultV2 now provides domain-separated V2 receipt and execution commitments with strict canonical round-trip validation and tamper rejection.
 
-As of green checkpoint `048893ffea85e75668c7cfa96ab0a3794c6f1e01`, Rust CI passes formatting, Cargo check, **305 tests**, and Clippy. Post-Open, post-Settle, and post-Refund NativeStateV2 snapshots survive restart with exact roots, branch tests prove detached compute effects are removed by restoring the winning branch's persisted V2 state, and the new V2 execution commitment remains disconnected from active runtime behavior.
+As of green checkpoint `50ff28fc04e05b4027bdf3a42480b62f7223755a`, Rust CI passes formatting, Cargo check, **306 tests**, and Clippy. Inactive V2 persistence now uses dedicated V2 body/execution/state tables, exact root binding to the persisted BlockHeaderV1, atomic bundle writes, restart round-trip proof, and explicit tests that active V1 body/execution/state tables remain untouched.
 
 The runtime boundary remains unchanged:
 
@@ -267,8 +267,8 @@ Next implementation priority is the explicit **inactive V2 persistence boundary*
 
 1. Do not feed SignedNativeTransactionV2 bytes into NativeBlockBodyV1. Its decoder remains intentionally V1-only.
 2. Do not persist NativeStateV2 through NativeBlockExecutionResultV1. Its execution commitment remains intentionally bound to NativeStateV1.
-3. Add version-aware inactive persistence for NativeBlockBodyV2 + NativeBlockExecutionResultV2 + NativeStateV2 without changing the 164-byte BlockHeaderV1 or active V1 tables/semantics.
-4. Prove exact restart/reload and reorg restoration for a versioned V2 block containing both transfer and ComputeChannel transitions.
+3. Extend the inactive V2 persistence proof from the current empty-bundle restart case to a mixed versioned block containing transfer + ComputeChannel transitions.
+4. Prove winning-branch reorg restoration through the dedicated inactive V2 body/execution/state tables.
 5. Add locked interoperability vectors for NativeReceiptV2 / NativeBlockExecutionResultV2 before any activation.
 6. Keep compute gas constants deliberately unset until payload/signature-verification costs and the native fee schedule are reviewed; zero fields are placeholders only.
 7. Keep the successor body/execution path inactive and disconnected from mempool/P2P/mining until activation rules and vectors exist.
