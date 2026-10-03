@@ -1,14 +1,14 @@
 use crate::address::{AddressNetwork, NiahciaAddressV1};
 use crate::native_contract_payload_v1::ContractCreatePayloadV1;
-use crate::native_execution::{AccountId, NativeExecutionContextV1};
-use crate::native_transaction_v2::{NativeActionV2, SignedNativeTransactionV2};
 use crate::native_contract_runtime_registry_v1::NativeContractRuntimeRegistryV1;
 use crate::native_contract_state_v1::ContractStateV1;
 use crate::native_contract_vm_v1::{
     execute_nvm1_core_with_context_and_gas, validate_nvm1_code, validate_nvm1_jump_targets,
     Nvm1ExecutionContext, Nvm1ExecutionResult, Nvm1Halt, NVM1_CODE_FORMAT_VERSION, NVM1_RUNTIME_ID,
 };
+use crate::native_execution::{AccountId, NativeExecutionContextV1};
 use crate::native_state_v3::NativeStateV3;
+use crate::native_transaction_v2::{NativeActionV2, SignedNativeTransactionV2};
 use crate::work::Hash32;
 use std::collections::BTreeMap;
 
@@ -115,7 +115,6 @@ pub fn execute_inactive_contract_create_transition_v1(
         contract_created,
     })
 }
-
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InactiveAcceptedContractCreateV1 {
@@ -251,7 +250,11 @@ pub fn execute_inactive_accepted_contract_create_v1(
 
     // Value moves only when creation succeeds. Failed constructors still pay their execution fee.
     let sender_debit = actual_fee
-        .checked_add(if contract_created { transaction.body.value } else { 0 })
+        .checked_add(if contract_created {
+            transaction.body.value
+        } else {
+            0
+        })
         .ok_or_else(|| "ContractCreate sender debit overflow".to_string())?;
     next.base_mut().accounts_mut().debit(sender, sender_debit)?;
     next.base_mut()
