@@ -170,8 +170,317 @@ fn operand_len(opcode: u8) -> Result<usize, String> {
     }
 }
 
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Nvm1Value {
+    U64(u64),
+    Bytes32([u8; 32]),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Nvm1Halt {
+    Stop,
+    Trap(String),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Nvm1ExecutionResult {
+    pub halt: Nvm1Halt,
+    pub stack: Vec<Nvm1Value>,
+    pub instructions_executed: u32,
+}
+
+#[derive(Clone, Debug)]
+struct DecodedInstruction {
+    opcode: u8,
+    operand: Vec<u8>,
+}
+
+pub fn execute_nvm1_core(code: &[u8]) -> Result<Nvm1ExecutionResult, String> {
+    let validated = validate_nvm1_code(code)?;
+    validate_nvm1_jump_targets(code)?;
+    let instructions = decode_instructions(&validated.instruction_bytes)?;
+
+    let mut stack = Vec::<Nvm1Value>::new();
+    let mut pc = 0usize;
+    let mut executed = 0u32;
+
+    loop {
+        let Some(instruction) = instructions.get(pc) else {
+            return Ok(trap_result(stack, executed, "NVM1 execution fell past final instruction"));
+        };
+        executed = executed
+            .checked_add(1)
+            .ok_or_else(|| "NVM1 executed-instruction counter overflow".to_string())?;
+
+        match instruction.opcode {
+            0x00 => {
+                return Ok(Nvm1ExecutionResult {
+                    halt: Nvm1Halt::Stop,
+                    stack,
+                    instructions_executed: executed,
+                });
+            }
+            0x01 => {
+                let value = u64::from_be_bytes(instruction.operand[..8].try_into().unwrap());
+                if let Some(result) =
+                    push_value(&mut stack, validated.header.max_stack_items, Nvm1Value::U64(value), executed)
+                {
+                    return Ok(result);
+                }
+                pc += 1;
+            }
+            0x02 => {
+                let value: [u8; 32] = instruction.operand[..32].try_into().unwrap();
+                if let Some(result) =
+                    push_value(&mut stack, validated.header.max_stack_items, Nvm1Value::Bytes32(value), executed)
+                {
+                    return Ok(result);
+                }
+                pc += 1;
+            }
+            0x03 => {
+                if stack.pop().is_none() {
+                    return Ok(trap_result(stack, executed, "NVM1 POP stack underflow"));
+                }
+                pc += 1;
+            }
+            0x04 => {
+                let Some(value) = stack.last().cloned() else {
+                    return Ok(trap_result(stack, executed, "NVM1 DUP stack underflow"));
+                };
+                if let Some(result) =
+                    push_value(&mut stack, validated.header.max_stack_items, value, executed)
+                {
+                    return Ok(result);
+                }
+                pc += 1;
+            }
+            0x05 | 0x06 => {
+                let Some(rhs) = stack.pop() else {
+                    return Ok(trap_result(stack, executed, "NVM1 arithmetic stack underflow"));
+                };
+                let Some(lhs) = stack.pop() else {
+                    return Ok(trap_result(stack, executed, "NVM1 arithmetic stack underflow"));
+                };
+                let (Nvm1Value::U64(lhs), Nvm1Value::U64(rhs)) = (lhs, rhs) else {
+                    return Ok(trap_result(stack, executed, "NVM1 arithmetic type mismatch"));
+                };
+                let value = if instruction.opcode == 0x05 {
+                    lhs.checked_add(rhs)
+                } else {
+                    lhs.checked_sub(rhs)
+                };
+                let Some(value) = value else {
+                    return Ok(trap_result(stack, executed, "NVM1 arithmetic overflow or underflow"));
+                };
+                stack.push(Nvm1Value::U64(value));
+                pc += 1;
+            }
+            0x07 => {
+                let Some(rhs) = stack.pop() else {
+                    return Ok(trap_result(stack, executed, "NVM1 EQ stack underflow"));
+                };
+                let Some(lhs) = stack.pop() else {
+                    return Ok(trap_result(stack, executed, "NVM1 EQ stack underflow"));
+                };
+                let equal = match (&lhs, &rhs) {
+                    (Nvm1Value::U64(a), Nvm1Value::U64(b)) => a == b,
+                    (Nvm1Value::Bytes32(a), Nvm1Value::Bytes32(b)) => a == b,
+                    _ => return Ok(trap_result(stack, executed, "NVM1 EQ type mismatch")),
+                };
+                stack.push(Nvm1Value::U64(u64::from(equal)));
+                pc += 1;
+            }
+            0x08 => {
+                pc = u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as usize;
+            }
+            0x09 => {
+                let Some(condition) = stack.pop() else {
+                    return Ok(trap_result(stack, executed, "NVM1 JUMP_IF stack underflow"));
+                };
+                let Nvm1Value::U64(condition) = condition else {
+                    return Ok(trap_result(stack, executed, "NVM1 JUMP_IF type mismatch"));
+                };
+                if condition != 0 {
+                    pc = u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as usize;
+                } else {
+                    pc += 1;
+                }
+            }
+            0x10..=0x41 => {
+                return Ok(trap_result(
+                    stack,
+                    executed,
+                    &format!(
+                        "NVM1 opcode 0x{:02x} execution semantics are not active",
+                        instruction.opcode
+                    ),
+                ));
+            }
+            _ => unreachable!("static validation rejects unknown opcodes"),
+        }
+    }
+}
+
+fn decode_instructions(bytes: &[u8]) -> Result<Vec<DecodedInstruction>, String> {
+    let mut instructions = Vec::new();
+    let mut offset = 0usize;
+    while offset < bytes.len() {
+        let opcode = bytes[offset];
+        offset += 1;
+        let len = operand_len(opcode)?;
+        let end = offset
+            .checked_add(len)
+            .ok_or_else(|| "NVM1 instruction operand length overflow".to_string())?;
+        if end > bytes.len() {
+            return Err(format!("truncated operand for NVM1 opcode 0x{opcode:02x}"));
+        }
+        instructions.push(DecodedInstruction {
+            opcode,
+            operand: bytes[offset..end].to_vec(),
+        });
+        offset = end;
+    }
+    Ok(instructions)
+}
+
+fn push_value(
+    stack: &mut Vec<Nvm1Value>,
+    max_stack_items: u16,
+    value: Nvm1Value,
+    executed: u32,
+) -> Option<Nvm1ExecutionResult> {
+    if stack.len() >= max_stack_items as usize {
+        return Some(trap_result(
+            stack.clone(),
+            executed,
+            "NVM1 declared stack bound exceeded",
+        ));
+    }
+    stack.push(value);
+    None
+}
+
+fn trap_result(stack: Vec<Nvm1Value>, executed: u32, message: &str) -> Nvm1ExecutionResult {
+    Nvm1ExecutionResult {
+        halt: Nvm1Halt::Trap(message.to_string()),
+        stack,
+        instructions_executed: executed,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn core_executes_checked_arithmetic_and_equality() {
+        let code = module(
+            7,
+            3,
+            &[
+                0x01, 0, 0, 0, 0, 0, 0, 0, 7,
+                0x01, 0, 0, 0, 0, 0, 0, 0, 5,
+                0x05,
+                0x01, 0, 0, 0, 0, 0, 0, 0, 12,
+                0x07,
+                0x04,
+                0x00,
+            ],
+        );
+        let result = execute_nvm1_core(&code).unwrap();
+        assert_eq!(result.halt, Nvm1Halt::Stop);
+        assert_eq!(result.stack, vec![Nvm1Value::U64(1), Nvm1Value::U64(1)]);
+        assert_eq!(result.instructions_executed, 7);
+    }
+
+    #[test]
+    fn core_jump_if_uses_nonzero_u64_truth() {
+        let code = module(
+            5,
+            2,
+            &[
+                0x01, 0, 0, 0, 0, 0, 0, 0, 1,
+                0x09, 0, 0, 0, 4,
+                0x01, 0, 0, 0, 0, 0, 0, 0, 99,
+                0x00,
+                0x00,
+            ],
+        );
+        let result = execute_nvm1_core(&code).unwrap();
+        assert_eq!(result.halt, Nvm1Halt::Stop);
+        assert!(result.stack.is_empty());
+        assert_eq!(result.instructions_executed, 3);
+    }
+
+    #[test]
+    fn core_traps_deterministically_on_underflow_type_and_arithmetic_failure() {
+        let underflow = execute_nvm1_core(&module(2, 1, &[0x03, 0x00])).unwrap();
+        assert!(matches!(underflow.halt, Nvm1Halt::Trap(_)));
+
+        let mut mixed = vec![0x02];
+        mixed.extend_from_slice(&[0u8; 32]);
+        mixed.extend_from_slice(&[0x01, 0, 0, 0, 0, 0, 0, 0, 1, 0x07, 0x00]);
+        let mismatch = execute_nvm1_core(&module(4, 2, &mixed)).unwrap();
+        assert_eq!(
+            mismatch.halt,
+            Nvm1Halt::Trap("NVM1 EQ type mismatch".to_string())
+        );
+
+        let overflow = module(
+            4,
+            2,
+            &[
+                0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0x01, 0, 0, 0, 0, 0, 0, 0, 1,
+                0x05,
+                0x00,
+            ],
+        );
+        assert_eq!(
+            execute_nvm1_core(&overflow).unwrap().halt,
+            Nvm1Halt::Trap("NVM1 arithmetic overflow or underflow".to_string())
+        );
+    }
+
+    #[test]
+    fn core_enforces_declared_stack_bound_and_rejects_deferred_opcodes() {
+        let bound = module(
+            3,
+            1,
+            &[
+                0x01, 0, 0, 0, 0, 0, 0, 0, 1,
+                0x04,
+                0x00,
+            ],
+        );
+        assert_eq!(
+            execute_nvm1_core(&bound).unwrap().halt,
+            Nvm1Halt::Trap("NVM1 declared stack bound exceeded".to_string())
+        );
+
+        let deferred = execute_nvm1_core(&module(2, 1, &[0x10, 0x00])).unwrap();
+        assert_eq!(
+            deferred.halt,
+            Nvm1Halt::Trap("NVM1 opcode 0x10 execution semantics are not active".to_string())
+        );
+    }
+
+    #[test]
+    fn core_traps_on_fallthrough() {
+        let result = execute_nvm1_core(&module(
+            1,
+            1,
+            &[0x01, 0, 0, 0, 0, 0, 0, 0, 1],
+        ))
+        .unwrap();
+        assert_eq!(
+            result.halt,
+            Nvm1Halt::Trap("NVM1 execution fell past final instruction".to_string())
+        );
+    }
+
+
     use super::*;
 
     fn module(instruction_count: u32, max_stack: u16, instructions: &[u8]) -> Vec<u8> {
