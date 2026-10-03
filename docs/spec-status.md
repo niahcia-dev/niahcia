@@ -42,7 +42,7 @@ This file is a living audit of protocol status. Implementation alone does not ma
 
 ## Compute settlement
 
-Open, Settle, and Refund planners plus inactive atomic application helpers are implemented and tested.
+Open, Settle, and Refund planners, inactive atomic application helpers, the signed-V2 compute dispatcher, and candidate-batch atomic execution are implemented and tested.
 
 Current guarantees include:
 
@@ -52,16 +52,19 @@ Current guarantees include:
 - stale-plan rejection;
 - duplicate-terminal rejection;
 - rollback-on-error via clone-then-commit state mutation;
-- deterministic state-root/snapshot round trips.
+- deterministic state-root/snapshot round trips;
+- non-compute V2 actions are rejected by the inactive compute dispatcher;
+- ordered dispatcher results expose exact before/after NativeStateV2 roots;
+- multi-transaction candidate batches publish no mutation unless every compute transaction succeeds;
+- successful batch transitions form one deterministic state-root chain.
 
 Still required before activation:
 
-1. inactive signed-V2 transaction dispatcher;
-2. candidate-block multi-transaction atomicity;
-3. post-transition persistence/restart/reorg coverage;
-4. explicit fee/gas schedule;
-5. activation network parameter;
-6. final interoperability vectors covering activation/migration execution.
+1. post-transition persistence/restart/reorg coverage;
+2. inactive integration with the candidate native block/state persistence boundary;
+3. explicit fee/gas schedule;
+4. activation network parameter;
+5. final interoperability vectors covering activation/migration execution.
 
 ## AI / Agent architecture
 
@@ -115,7 +118,7 @@ The active reference node is native-execution only.
 
 ## Highest-priority open protocol work
 
-1. Finish inactive ComputeChannel execution proof through dispatcher/block atomicity/persistence/reorg tests.
+1. Finish inactive ComputeChannel persistence/restart/reorg proof and candidate block/state integration.
 2. Review and assign compute intrinsic gas/fee rules before any activation.
 3. Define explicit NativeStateV2 / NativeTransactionV2 activation parameters and migration vectors.
 4. Resolve stock miner/pool RandomX interoperability.
