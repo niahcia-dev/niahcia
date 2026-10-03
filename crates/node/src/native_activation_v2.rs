@@ -229,7 +229,10 @@ mod tests {
             } else {
                 NativeExecutionVersion::V2
             };
-            assert_eq!(activation.execution_version_at_height(height).unwrap(), expected);
+            assert_eq!(
+                activation.execution_version_at_height(height).unwrap(),
+                expected
+            );
         }
     }
 
