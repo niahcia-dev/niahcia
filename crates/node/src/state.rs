@@ -1,6 +1,8 @@
 use crate::consensus::block_work;
 use crate::native_block_body::NativeBlockBodyV1;
+use crate::native_block_body_v2::NativeBlockBodyV2;
 use crate::native_execution::{NativeBlockExecutionResultV1, NativeStateV1};
+use crate::native_execution_commitment_v2::NativeBlockExecutionResultV2;
 use crate::native_state_v2::NativeStateV2;
 use crate::native_transaction::native_transactions_root_v1;
 use crate::work::{BlockHeaderV1, Hash32, BLOCK_HEADER_V1_LEN};
@@ -17,6 +19,12 @@ const NATIVE_BLOCK_EXECUTION: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("native_block_execution_v1");
 const NATIVE_BLOCK_BODIES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("native_block_bodies_v1");
+const INACTIVE_NATIVE_BLOCK_BODIES_V2: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("inactive_native_block_bodies_v2");
+const INACTIVE_NATIVE_BLOCK_EXECUTION_V2: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("inactive_native_block_execution_v2");
+const INACTIVE_NATIVE_STATE_SNAPSHOTS_V2: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("inactive_native_state_snapshots_v2");
 const CHAIN_META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("chain_meta_v1");
 
 const BEST_HEAD_KEY: &[u8] = b"best_head";
@@ -189,6 +197,15 @@ impl StateStore {
                 .open_table(NATIVE_BLOCK_BODIES)
                 .map_err(|e| format!("failed to initialize native block body table: {e}"))?;
             write
+                .open_table(INACTIVE_NATIVE_BLOCK_BODIES_V2)
+                .map_err(|e| format!("failed to initialize inactive V2 block body table: {e}"))?;
+            write
+                .open_table(INACTIVE_NATIVE_BLOCK_EXECUTION_V2)
+                .map_err(|e| format!("failed to initialize inactive V2 execution table: {e}"))?;
+            write
+                .open_table(INACTIVE_NATIVE_STATE_SNAPSHOTS_V2)
+                .map_err(|e| format!("failed to initialize inactive V2 state table: {e}"))?;
+            write
                 .open_table(CHAIN_META)
                 .map_err(|e| format!("failed to initialize chain metadata table: {e}"))?;
         }
@@ -301,6 +318,178 @@ impl StateStore {
         write
             .commit()
             .map_err(|e| format!("failed to commit native block body: {e}"))
+    }
+
+    pub fn inactive_native_block_body_v2(
+        &self,
+        block_id: Hash32,
+    ) -> Result<Option<NativeBlockBodyV2>, String> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("failed to begin inactive V2 body read: {e}"))?;
+        let table = read
+            .open_table(INACTIVE_NATIVE_BLOCK_BODIES_V2)
+            .map_err(|e| format!("failed to open inactive V2 body table: {e}"))?;
+
+        match table
+            .get(block_id.as_slice())
+            .map_err(|e| format!("failed to read inactive V2 body: {e}"))?
+        {
+            Some(value) => NativeBlockBodyV2::from_canonical_bytes(value.value())
+                .map(Some)
+                .map_err(|e| format!("invalid persisted inactive V2 body: {e}")),
+            None => Ok(None),
+        }
+    }
+
+    pub fn inactive_native_block_execution_v2(
+        &self,
+        block_id: Hash32,
+    ) -> Result<Option<NativeBlockExecutionResultV2>, String> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("failed to begin inactive V2 execution read: {e}"))?;
+        let table = read
+            .open_table(INACTIVE_NATIVE_BLOCK_EXECUTION_V2)
+            .map_err(|e| format!("failed to open inactive V2 execution table: {e}"))?;
+
+        match table
+            .get(block_id.as_slice())
+            .map_err(|e| format!("failed to read inactive V2 execution: {e}"))?
+        {
+            Some(value) => NativeBlockExecutionResultV2::from_canonical_bytes(value.value())
+                .map(Some)
+                .map_err(|e| format!("invalid persisted inactive V2 execution: {e}")),
+            None => Ok(None),
+        }
+    }
+
+    pub fn inactive_native_state_v2_snapshot(
+        &self,
+        block_id: Hash32,
+    ) -> Result<Option<NativeStateV2>, String> {
+        let read = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("failed to begin inactive V2 state read: {e}"))?;
+        let table = read
+            .open_table(INACTIVE_NATIVE_STATE_SNAPSHOTS_V2)
+            .map_err(|e| format!("failed to open inactive V2 state table: {e}"))?;
+
+        let Some(value) = table
+            .get(block_id.as_slice())
+            .map_err(|e| format!("failed to read inactive V2 state: {e}"))?
+        else {
+            return Ok(None);
+        };
+        let value = value.value();
+        if value.len() < 32 {
+            return Err("persisted inactive V2 state is truncated".into());
+        }
+        let expected_root: Hash32 = value[..32].try_into().unwrap();
+        let state = NativeStateV2::from_canonical_bytes(&value[32..])?;
+        if state.state_root()? != expected_root {
+            return Err("persisted inactive V2 state root mismatch".into());
+        }
+        Ok(Some(state))
+    }
+
+    pub fn store_inactive_native_v2_bundle(
+        &self,
+        block_id: Hash32,
+        body: &NativeBlockBodyV2,
+        execution: &NativeBlockExecutionResultV2,
+        state: &NativeStateV2,
+    ) -> Result<(), String> {
+        let block = self
+            .load_chain_block(block_id)?
+            .ok_or_else(|| "cannot persist inactive V2 bundle for an unpersisted block".to_string())?;
+
+        let transactions_root = body.transactions_root();
+        if transactions_root != block.header.transactions_root
+            || execution.transactions_root != block.header.transactions_root
+        {
+            return Err("inactive V2 bundle transactions root does not match header".into());
+        }
+        if execution.execution_root != block.header.execution_root {
+            return Err("inactive V2 bundle execution root does not match header".into());
+        }
+        if state.state_root()? != execution.state_root {
+            return Err("inactive V2 state root does not match execution result".into());
+        }
+        body.validate_fee_recipient_canonicality(execution.producer_priority_fee)?;
+
+        let encoded_body = body.canonical_bytes()?;
+        let encoded_execution = execution.canonical_bytes()?;
+        let snapshot = state.canonical_bytes()?;
+        let mut encoded_state = Vec::with_capacity(32 + snapshot.len());
+        encoded_state.extend_from_slice(&execution.state_root);
+        encoded_state.extend_from_slice(&snapshot);
+
+        let write = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("failed to begin inactive V2 bundle write: {e}"))?;
+
+        {
+            let mut table = write
+                .open_table(INACTIVE_NATIVE_BLOCK_BODIES_V2)
+                .map_err(|e| format!("failed to open inactive V2 body table: {e}"))?;
+            if let Some(existing) = table
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to inspect inactive V2 body: {e}"))?
+            {
+                if existing.value() != encoded_body.as_slice() {
+                    return Err("block already has a different inactive V2 body".into());
+                }
+            } else {
+                table
+                    .insert(block_id.as_slice(), encoded_body.as_slice())
+                    .map_err(|e| format!("failed to persist inactive V2 body: {e}"))?;
+            }
+        }
+
+        {
+            let mut table = write
+                .open_table(INACTIVE_NATIVE_BLOCK_EXECUTION_V2)
+                .map_err(|e| format!("failed to open inactive V2 execution table: {e}"))?;
+            if let Some(existing) = table
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to inspect inactive V2 execution: {e}"))?
+            {
+                if existing.value() != encoded_execution.as_slice() {
+                    return Err("block already has a different inactive V2 execution".into());
+                }
+            } else {
+                table
+                    .insert(block_id.as_slice(), encoded_execution.as_slice())
+                    .map_err(|e| format!("failed to persist inactive V2 execution: {e}"))?;
+            }
+        }
+
+        {
+            let mut table = write
+                .open_table(INACTIVE_NATIVE_STATE_SNAPSHOTS_V2)
+                .map_err(|e| format!("failed to open inactive V2 state table: {e}"))?;
+            if let Some(existing) = table
+                .get(block_id.as_slice())
+                .map_err(|e| format!("failed to inspect inactive V2 state: {e}"))?
+            {
+                if existing.value() != encoded_state.as_slice() {
+                    return Err("block already has a different inactive V2 state".into());
+                }
+            } else {
+                table
+                    .insert(block_id.as_slice(), encoded_state.as_slice())
+                    .map_err(|e| format!("failed to persist inactive V2 state: {e}"))?;
+            }
+        }
+
+        write
+            .commit()
+            .map_err(|e| format!("failed to commit inactive V2 bundle: {e}"))
     }
 
     pub fn native_state_snapshot_version(
@@ -1114,6 +1303,68 @@ mod tests {
             nonce: marker as u64,
             extra_nonce: 0,
         }
+    }
+
+    #[test]
+    fn inactive_v2_bundle_round_trips_without_touching_active_v1_tables() {
+        use crate::address::AddressNetwork;
+        use crate::native_block_body_v2::NativeBlockBodyV2;
+        use crate::native_block_execution_v2::execute_inactive_versioned_block_v2;
+        use crate::native_execution_commitment_v2::build_inactive_execution_result_v2;
+        use crate::native_state_v2::NativeStateV2;
+
+        let path = temp_state_path("inactive-v2-bundle");
+        let store = StateStore::open(&path).unwrap();
+
+        let body = NativeBlockBodyV2::empty();
+        let mut state = NativeStateV2::default();
+        let transition =
+            execute_inactive_versioned_block_v2(&mut state, &body, AddressNetwork::Devnet, 0, 0)
+                .unwrap();
+        let execution = build_inactive_execution_result_v2(&body, &transition).unwrap();
+
+        let mut block = header([0_u8; 32], 0, [0xff; 32], 0x31);
+        block.transactions_root = execution.transactions_root;
+        block.execution_root = execution.execution_root;
+        let persisted = store.insert_chain_block(block).unwrap();
+        let block_id = persisted.block_id();
+
+        store
+            .store_inactive_native_v2_bundle(block_id, &body, &execution, &state)
+            .unwrap();
+
+        assert_eq!(
+            store.inactive_native_block_body_v2(block_id).unwrap(),
+            Some(body.clone())
+        );
+        assert_eq!(
+            store.inactive_native_block_execution_v2(block_id).unwrap(),
+            Some(execution.clone())
+        );
+        assert_eq!(
+            store.inactive_native_state_v2_snapshot(block_id).unwrap(),
+            Some(state.clone())
+        );
+        assert_eq!(store.native_block_body(block_id).unwrap(), None);
+        assert_eq!(store.native_block_execution(block_id).unwrap(), None);
+        assert_eq!(store.native_state_snapshot(block_id).unwrap(), None);
+
+        drop(store);
+        let reopened = StateStore::open(&path).unwrap();
+        assert_eq!(
+            reopened.inactive_native_block_body_v2(block_id).unwrap(),
+            Some(body)
+        );
+        assert_eq!(
+            reopened.inactive_native_block_execution_v2(block_id).unwrap(),
+            Some(execution)
+        );
+        assert_eq!(
+            reopened.inactive_native_state_v2_snapshot(block_id).unwrap(),
+            Some(state)
+        );
+
+        std::fs::remove_file(path).ok();
     }
 
     #[test]
