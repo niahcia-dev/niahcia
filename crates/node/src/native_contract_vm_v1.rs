@@ -514,10 +514,10 @@ mod tests {
             Nvm1Halt::Trap("NVM1 declared stack bound exceeded".to_string())
         );
 
-        let deferred = execute_nvm1_core(&module(2, 1, &[0x10, 0x00])).unwrap();
+        let deferred = execute_nvm1_core(&module(2, 1, &[0x12, 0x00])).unwrap();
         assert_eq!(
             deferred.halt,
-            Nvm1Halt::Trap("NVM1 opcode 0x10 execution semantics are not active".to_string())
+            Nvm1Halt::Trap("NVM1 opcode 0x12 execution semantics are not active".to_string())
         );
     }
 
