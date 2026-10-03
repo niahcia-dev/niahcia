@@ -57,6 +57,6 @@ EXITED
 3. Operator identity MUST NOT grant base-chain consensus power.
 4. Reputation evidence SHOULD preserve historical operator relationships.
 
-## Prototype 0
+## first implementation milestone
 
-Prototype 0 uses Operator primarily to prevent deliberate same-operator selection in redundant verification.
+first implementation milestone uses Operator primarily to prevent deliberate same-operator selection in redundant verification.
