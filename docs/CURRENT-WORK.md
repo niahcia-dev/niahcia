@@ -251,7 +251,7 @@ The inactive NativeStateV2 / NativeTransactionV2 compute-channel foundation is n
 - NativeReceiptV2 commits transaction schema version, action, transaction ID, exact post-transaction NativeStateV2 root, gas, and fee accounting;
 - NativeBlockExecutionResultV2 now provides domain-separated V2 receipt and execution commitments with strict canonical round-trip validation and tamper rejection.
 
-As of green checkpoint `5b264daa4ee32ce138c0c07ea4e2f3e15a6ee271`, Rust CI passes formatting, Cargo check, **307 tests**, and Clippy. Inactive V2 persistence proves mixed Transfer + ComputeChannel restart/reorg behavior while active V1 tables remain isolated. The next checkpoint locks NativeReceiptV2 / NativeBlockExecutionResultV2 interoperability bytes and commitments; CI status for that commit must be green before advancing.
+As of green checkpoint `7ef84a51aae49adc9a8b62822ec2ddcb0f8b79aa`, Rust CI passes formatting, Cargo check, **310 tests**, and Clippy. NativeReceiptV2 / NativeBlockExecutionResultV2 interoperability vectors are locked, mixed Transfer + ComputeChannel restart/reorg behavior is proven, and inactive V2 now has a single atomic header + body + execution + NativeStateV2 insertion path using dedicated V2 tables while active V1 persistence remains unchanged.
 
 The runtime boundary remains unchanged:
 
@@ -268,7 +268,7 @@ Next implementation priority is the explicit **inactive V2 persistence boundary*
 1. Do not feed SignedNativeTransactionV2 bytes into NativeBlockBodyV1. Its decoder remains intentionally V1-only.
 2. Do not persist NativeStateV2 through NativeBlockExecutionResultV1. Its execution commitment remains intentionally bound to NativeStateV1.
 3. NativeReceiptV2 / NativeBlockExecutionResultV2 interoperability vectors are now locked in `test-vectors/native-execution-v2.json` and enforced by Rust tests.
-4. Review whether the inactive V2 header/body/execution/state bundle should gain a single atomic insertion API before activation, preserving the current V1 atomic path unchanged.
+4. The inactive V2 header/body/execution/state bundle now has a single atomic insertion API. It validates header/body/execution/state commitments before one redb commit and preserves the current V1 atomic path unchanged.
 5. Define the explicit V2 activation/migration boundary only after fee/gas rules and the remaining runtime boundaries are reviewed.
 6. Keep compute gas constants deliberately unset until payload/signature-verification costs and the native fee schedule are reviewed; zero fields are placeholders only.
 7. Keep the successor body/execution path inactive and disconnected from mempool/P2P/mining until activation rules and vectors exist.

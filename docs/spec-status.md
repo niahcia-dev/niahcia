@@ -65,11 +65,10 @@ Persistence/restart/reorg proof is now implemented for transition-derived V2 sta
 
 Still required before activation:
 
-1. locked NativeReceiptV2 / NativeBlockExecutionResultV2 interoperability vectors;
-2. review of a single atomic inactive V2 header/body/execution/state insertion boundary before activation;
-4. explicit fee/gas schedule;
-5. activation network parameter;
-6. final interoperability vectors covering activation/migration execution.
+1. explicit fee/gas schedule;
+2. activation network parameter;
+3. final interoperability vectors covering activation/migration execution;
+4. review of how the inactive V2 atomic persistence path is promoted into the active runtime without changing locked V1 behavior.
 
 ## AI / Agent architecture
 
@@ -123,15 +122,14 @@ The active reference node is native-execution only.
 
 ## Highest-priority open protocol work
 
-1. Review and, if retained, implement one atomic inactive V2 header/body/execution/state insertion boundary without changing active V1 persistence semantics.
-2. Preserve the now-locked NativeReceiptV2 / NativeBlockExecutionResultV2 vectors; incompatible changes require an explicit successor version.
+1. Preserve the now-locked NativeReceiptV2 / NativeBlockExecutionResultV2 vectors; incompatible changes require an explicit successor version.
+2. Define the explicit NativeStateV2 / NativeTransactionV2 activation and migration boundary, using the new atomic V2 persistence path without changing active V1 semantics.
 3. Specify the native smart-contract runtime boundary (code format, contract state/storage, deterministic call/create/revert, gas, receipts, persistence, activation) without reintroducing an external EVM dependency.
 4. Review and assign compute intrinsic gas/fee rules before any activation.
-5. Define explicit NativeStateV2 / NativeTransactionV2 activation parameters and migration vectors.
-6. Resolve stock miner/pool RandomX interoperability.
-7. Resolve difficulty/timestamp hardening.
-8. Finalize public-testnet genesis/network/monetary parameters.
-9. Keep `niahcia` and the retained `niahcia-protocol` mirror synchronized for protocol-visible changes.
+5. Resolve stock miner/pool RandomX interoperability.
+6. Resolve difficulty/timestamp hardening.
+7. Finalize public-testnet genesis/network/monetary parameters.
+8. Keep `niahcia` and the retained `niahcia-protocol` mirror synchronized for protocol-visible changes.
 
 ## Documentation rule
 
