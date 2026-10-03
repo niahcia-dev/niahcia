@@ -14,7 +14,7 @@
     "runtime_id": 1,
     "code_hex": "01020304",
     "init_data_hex": "a1b2c3",
-    "canonical_hex": "TODO"
+    "canonical_hex": "a40101021818030104a301010244010203040343a1b2c3"
   },
   "semantics": {
     "transaction_target_payload_must_be_empty": true,

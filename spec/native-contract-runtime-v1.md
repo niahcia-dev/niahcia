@@ -90,7 +90,7 @@ V1 payload validation is intentionally separate from VM support:
 
 On successful creation, the persistent ContractStateV1 `code` field stores exactly the validated `code` bytes. `init_data` is constructor input and is not automatically appended to persisted code.
 
-The canonical fixture is `test-vectors/native-contract-create-payload-v1.json`.
+The canonical fixture is `test-vectors/native-contract-create-payload-v1.json`. The payload bytes are locked by the Rust `locked_contract_create_payload_vector_matches_json` test; incompatible payload changes require an explicit successor schema.
 
 ## Contract address derivation and collision rule
 
