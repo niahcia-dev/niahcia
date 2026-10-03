@@ -892,6 +892,35 @@ mod tests {
             u64::from(result.instructions_executed),
             exact["expected_instructions_executed"].as_u64().unwrap()
         );
+
+        for name in ["out-of-gas-before-stop", "infinite-jump-bounded-by-gas"] {
+            let fixture = vectors.iter().find(|v| v["name"] == name).unwrap();
+            let instructions =
+                hex::decode(fixture["instruction_bytes_hex"].as_str().unwrap()).unwrap();
+            let code = module(
+                fixture["instruction_count"].as_u64().unwrap() as u32,
+                fixture["max_stack_items"].as_u64().unwrap() as u16,
+                &instructions,
+            );
+            let result = execute_nvm1_core_with_context_and_gas(
+                &code,
+                &Nvm1ExecutionContext::default(),
+                fixture["gas_limit"].as_u64().unwrap(),
+            )
+            .unwrap();
+            assert_eq!(result.halt, Nvm1Halt::Trap(Nvm1Trap::OutOfGas), "{name}");
+            assert_eq!(
+                result.gas_used,
+                fixture["expected_gas_used"].as_u64().unwrap(),
+                "{name}"
+            );
+            assert_eq!(
+                u64::from(result.instructions_executed),
+                fixture["expected_instructions_executed"].as_u64().unwrap(),
+                "{name}"
+            );
+            assert_eq!(result.committed_storage, None, "{name}");
+        }
     }
 
     #[test]
