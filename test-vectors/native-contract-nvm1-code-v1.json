@@ -1,0 +1,24 @@
+{
+  "schema": "niahcia-native-contract-nvm1-code-v1",
+  "status": "locked",
+  "runtime_id": 1,
+  "code_format_version": 1,
+  "description": "Candidate NVM1 code-format fixture. This locks parsing/validation only; it does not activate Runtime 1 on any network.",
+  "fixture": {
+    "instruction_count": 4,
+    "max_stack_items": 4,
+    "instruction_bytes_hex": "01000000000000002a0100000000000000050540",
+    "code_hex": "4e564d3100010000000000040004000001000000000000002a0100000000000000050540"
+  },
+  "header": {
+    "magic_ascii": "NVM1",
+    "format_version": 1,
+    "flags": 0,
+    "reserved": 0
+  },
+  "limits": {
+    "max_instructions": 16384,
+    "max_stack_items": 256
+  },
+  "compatibility": "Incompatible changes to header layout, opcode decoding, operand widths, or jump-target indexing require a successor code format version."
+}

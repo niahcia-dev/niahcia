@@ -148,18 +148,11 @@ It must be native to NIAHCIA, deterministic, bounded, and versioned. It must not
 
 ## Runtime technology
 
-The exact VM/instruction technology is intentionally **not selected by this document**.
+Runtime ID 1 is now reserved as the candidate NIAHCIA Native VM V1 (NVM1), specified by `spec/native-contract-nvm1-v1.md`.
 
-Selection must be based on:
+NVM1 is a compact deterministic stack VM with an explicitly versioned bytecode container and no floating-point or implicit host-syscall surface. The first milestone locks code parsing/validation only; execution semantics and gas remain inactive until separately specified and vectored.
 
-- deterministic cross-platform execution;
-- implementation simplicity/auditability;
-- bounded resource use;
-- tooling and developer ergonomics;
-- long-term versionability;
-- ability to create reproducible consensus vectors.
-
-EVM compatibility may be evaluated as a compatibility option, but NIAHCIA does not require Reth/EVM as its base execution engine.
+The choice is intentionally native rather than importing EVM/Reth or a general WASM engine into the first consensus runtime. Future compatibility runtimes may receive separate runtime IDs without rewriting ContractCreate payloads, contract addresses, or contract state.
 
 ## Activation rule
 
