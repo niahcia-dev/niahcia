@@ -268,9 +268,8 @@ mod tests {
                 let preimage = NiahciaAddressV1::contract_derivation_preimage(
                     network, chain_id, creator, nonce,
                 );
-                let digest = NiahciaAddressV1::contract_derivation_digest(
-                    network, chain_id, creator, nonce,
-                );
+                let digest =
+                    NiahciaAddressV1::contract_derivation_digest(network, chain_id, creator, nonce);
                 let address =
                     NiahciaAddressV1::contract_from_creator(network, chain_id, creator, nonce);
                 (
