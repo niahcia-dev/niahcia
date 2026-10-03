@@ -1311,6 +1311,312 @@ mod tests {
         }
     }
 
+    fn sign_v2_for_state_test(
+        key: &k256::ecdsa::SigningKey,
+        body: crate::native_transaction_v2::NativeTransactionBodyV2,
+    ) -> crate::native_transaction_v2::SignedNativeTransactionV2 {
+        use k256::ecdsa::{signature::hazmat::PrehashSigner, Signature};
+
+        let mut transaction = crate::native_transaction_v2::SignedNativeTransactionV2 {
+            body,
+            public_key: key
+                .verifying_key()
+                .to_encoded_point(false)
+                .as_bytes()
+                .to_vec(),
+            signature: vec![0; 64],
+        };
+        let digest = transaction.signing_digest().unwrap();
+        let signature: Signature = key.sign_prehash(&digest).unwrap();
+        transaction.signature = signature.to_bytes().to_vec();
+        transaction
+    }
+
+    fn funded_native_state_v2(
+        key: &k256::ecdsa::SigningKey,
+        balance: u128,
+    ) -> (crate::native_state_v2::NativeStateV2, [u8; 20]) {
+        use crate::address::AddressNetwork;
+        use crate::native_execution::{AccountStateV1, NativeStateV1};
+        use crate::native_transaction::{DEVNET_CHAIN_ID, DEVNET_NETWORK_ID, NATIVE_TRANSFER_GAS_V1};
+        use crate::native_transaction_v2::{NativeActionV2, NativeTransactionBodyV2};
+
+        let probe = sign_v2_for_state_test(
+            key,
+            NativeTransactionBodyV2 {
+                network_id: DEVNET_NETWORK_ID,
+                chain_id: DEVNET_CHAIN_ID,
+                nonce: 0,
+                action: NativeActionV2::Transfer,
+                target_payload: vec![0x01; 20],
+                value: 1,
+                gas_limit: NATIVE_TRANSFER_GAS_V1,
+                max_fee_per_gas: 1,
+                max_priority_fee_per_gas: 0,
+                data: Vec::new(),
+            },
+        );
+        let funding = probe
+            .authenticated_sender(AddressNetwork::Devnet)
+            .unwrap()
+            .payload;
+
+        let mut accounts = NativeStateV1::default();
+        accounts.set_account(
+            funding,
+            AccountStateV1 {
+                balance,
+                nonce: 0,
+            },
+        );
+
+        (crate::native_state_v2::NativeStateV2::from_v1(accounts), funding)
+    }
+
+    #[test]
+    fn inactive_v2_mixed_block_restart_and_reorg_restore_winning_branch_state() {
+        use crate::address::AddressNetwork;
+        use crate::native_block_body_v2::{
+            NativeBlockBodyV2, VersionedSignedNativeTransaction,
+        };
+        use crate::native_block_execution_v2::execute_inactive_versioned_block_v2;
+        use crate::native_compute_payloads::ComputeChannelOpenPayloadV1;
+        use crate::native_execution_commitment_v2::build_inactive_execution_result_v2;
+        use crate::native_state_v2::ComputeChannelSettlementPolicyV1;
+        use crate::native_transaction::{
+            DEVNET_CHAIN_ID, DEVNET_NETWORK_ID, NATIVE_TRANSFER_GAS_V1,
+        };
+        use crate::native_transaction_v2::{NativeActionV2, NativeTransactionBodyV2};
+
+        let path = temp_state_path("inactive-v2-mixed-reorg");
+        let funding_key = k256::ecdsa::SigningKey::from_slice(&[0x61; 32]).unwrap();
+        let channel_key = k256::ecdsa::SigningKey::from_slice(&[0x62; 32]).unwrap();
+        let (genesis_state, funding) = funded_native_state_v2(&funding_key, 250_000);
+
+        let store = StateStore::open(&path).unwrap();
+
+        let genesis_body = NativeBlockBodyV2::empty();
+        let mut committed_genesis_state = genesis_state.clone();
+        let genesis_transition = execute_inactive_versioned_block_v2(
+            &mut committed_genesis_state,
+            &genesis_body,
+            AddressNetwork::Devnet,
+            0,
+            0,
+        )
+        .unwrap();
+        let genesis_execution =
+            build_inactive_execution_result_v2(&genesis_body, &genesis_transition).unwrap();
+
+        let mut genesis_header = header([0_u8; 32], 0, [0xff; 32], 0x60);
+        genesis_header.transactions_root = genesis_execution.transactions_root;
+        genesis_header.execution_root = genesis_execution.execution_root;
+        let genesis_record = store.insert_chain_block(genesis_header).unwrap();
+        let genesis_id = genesis_record.block_id();
+        store
+            .store_inactive_native_v2_bundle(
+                genesis_id,
+                &genesis_body,
+                &genesis_execution,
+                &committed_genesis_state,
+            )
+            .unwrap();
+
+        let transfer_a = sign_v2_for_state_test(
+            &funding_key,
+            NativeTransactionBodyV2 {
+                network_id: DEVNET_NETWORK_ID,
+                chain_id: DEVNET_CHAIN_ID,
+                nonce: 0,
+                action: NativeActionV2::Transfer,
+                target_payload: vec![0xa1; 20],
+                value: 100,
+                gas_limit: NATIVE_TRANSFER_GAS_V1,
+                max_fee_per_gas: 2,
+                max_priority_fee_per_gas: 0,
+                data: Vec::new(),
+            },
+        );
+
+        let channel_public_key: [u8; 65] = channel_key
+            .verifying_key()
+            .to_encoded_point(false)
+            .as_bytes()
+            .try_into()
+            .unwrap();
+        let open_payload = ComputeChannelOpenPayloadV1 {
+            worker_id: [0xb1; 32],
+            operator_id: [0xb2; 32],
+            channel_public_key,
+            worker_payment_account: [0xb3; 20],
+            authorized_amount: 1_000,
+            expiry_height: 20,
+            claim_deadline_height: 25,
+            refund_available_height: 26,
+            service_scope_commitment: [0xb4; 32],
+            model_scope_commitment: [0xb5; 32],
+            execution_profile_scope_commitment: [0xb6; 32],
+            settlement_policy: ComputeChannelSettlementPolicyV1::CumulativeReceipt,
+        };
+        let open_a = sign_v2_for_state_test(
+            &funding_key,
+            NativeTransactionBodyV2 {
+                network_id: DEVNET_NETWORK_ID,
+                chain_id: DEVNET_CHAIN_ID,
+                nonce: 1,
+                action: NativeActionV2::ComputeChannelOpen,
+                target_payload: Vec::new(),
+                value: 1_000,
+                gas_limit: 0,
+                max_fee_per_gas: 0,
+                max_priority_fee_per_gas: 0,
+                data: open_payload.canonical_bytes().unwrap(),
+            },
+        );
+
+        let body_a = NativeBlockBodyV2::from_versioned_transactions(
+            [0_u8; 20],
+            &[
+                VersionedSignedNativeTransaction::V2(transfer_a),
+                VersionedSignedNativeTransaction::V2(open_a),
+            ],
+        )
+        .unwrap();
+        let mut state_a = genesis_state.clone();
+        let transition_a = execute_inactive_versioned_block_v2(
+            &mut state_a,
+            &body_a,
+            AddressNetwork::Devnet,
+            1,
+            1,
+        )
+        .unwrap();
+        let execution_a = build_inactive_execution_result_v2(&body_a, &transition_a).unwrap();
+
+        let mut header_a = header(genesis_id, 1, [0xff; 32], 0x61);
+        header_a.transactions_root = execution_a.transactions_root;
+        header_a.execution_root = execution_a.execution_root;
+        let a_record = store.insert_chain_block(header_a).unwrap();
+        let a_id = a_record.block_id();
+        store
+            .store_inactive_native_v2_bundle(a_id, &body_a, &execution_a, &state_a)
+            .unwrap();
+
+        assert_eq!(
+            store.best_chain_head().unwrap().unwrap().block_id(),
+            a_id
+        );
+        assert_eq!(state_a.accounts().account(funding).nonce, 2);
+        assert_eq!(state_a.channel_count(), 1);
+
+        let transfer_b = sign_v2_for_state_test(
+            &funding_key,
+            NativeTransactionBodyV2 {
+                network_id: DEVNET_NETWORK_ID,
+                chain_id: DEVNET_CHAIN_ID,
+                nonce: 0,
+                action: NativeActionV2::Transfer,
+                target_payload: vec![0xc1; 20],
+                value: 250,
+                gas_limit: NATIVE_TRANSFER_GAS_V1,
+                max_fee_per_gas: 2,
+                max_priority_fee_per_gas: 0,
+                data: Vec::new(),
+            },
+        );
+        let body_b = NativeBlockBodyV2::from_versioned_transactions(
+            [0_u8; 20],
+            &[VersionedSignedNativeTransaction::V2(transfer_b)],
+        )
+        .unwrap();
+        let mut state_b = genesis_state.clone();
+        let transition_b = execute_inactive_versioned_block_v2(
+            &mut state_b,
+            &body_b,
+            AddressNetwork::Devnet,
+            1,
+            1,
+        )
+        .unwrap();
+        let execution_b = build_inactive_execution_result_v2(&body_b, &transition_b).unwrap();
+
+        let mut header_b = header(genesis_id, 1, [0x7f; 32], 0x62);
+        header_b.transactions_root = execution_b.transactions_root;
+        header_b.execution_root = execution_b.execution_root;
+        let outcome_b = store.insert_chain_block_with_outcome(header_b).unwrap();
+        let b_id = outcome_b.block.block_id();
+        store
+            .store_inactive_native_v2_bundle(b_id, &body_b, &execution_b, &state_b)
+            .unwrap();
+
+        let reorg = outcome_b.reorg.expect("harder V2 branch must become canonical");
+        assert_eq!(reorg.old_head, a_id);
+        assert_eq!(reorg.new_head, b_id);
+        assert_eq!(reorg.common_ancestor, genesis_id);
+        assert_eq!(reorg.detached, vec![a_id]);
+        assert_eq!(reorg.attached, vec![b_id]);
+
+        assert_eq!(state_b.accounts().account(funding).nonce, 1);
+        assert_eq!(state_b.channel_count(), 0);
+        assert_ne!(state_a.state_root().unwrap(), state_b.state_root().unwrap());
+
+        let canonical_height_one = store
+            .canonical_block_at_height(1)
+            .unwrap()
+            .unwrap()
+            .block_id();
+        assert_eq!(canonical_height_one, b_id);
+        assert_eq!(
+            store
+                .inactive_native_state_v2_snapshot(canonical_height_one)
+                .unwrap(),
+            Some(state_b.clone())
+        );
+        assert_eq!(
+            store.inactive_native_state_v2_snapshot(a_id).unwrap(),
+            Some(state_a.clone())
+        );
+
+        drop(store);
+        let reopened = StateStore::open(&path).unwrap();
+        assert_eq!(
+            reopened.best_chain_head().unwrap().unwrap().block_id(),
+            b_id
+        );
+        let reopened_canonical = reopened
+            .canonical_block_at_height(1)
+            .unwrap()
+            .unwrap()
+            .block_id();
+        assert_eq!(reopened_canonical, b_id);
+        assert_eq!(
+            reopened
+                .inactive_native_block_body_v2(b_id)
+                .unwrap(),
+            Some(body_b)
+        );
+        assert_eq!(
+            reopened
+                .inactive_native_block_execution_v2(b_id)
+                .unwrap(),
+            Some(execution_b)
+        );
+        assert_eq!(
+            reopened
+                .inactive_native_state_v2_snapshot(reopened_canonical)
+                .unwrap(),
+            Some(state_b)
+        );
+        assert_eq!(
+            reopened
+                .inactive_native_state_v2_snapshot(a_id)
+                .unwrap(),
+            Some(state_a)
+        );
+
+        std::fs::remove_file(path).ok();
+    }
+
     #[test]
     fn inactive_v2_bundle_round_trips_without_touching_active_v1_tables() {
         use crate::address::AddressNetwork;
