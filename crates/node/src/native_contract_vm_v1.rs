@@ -374,17 +374,29 @@ pub fn execute_nvm1_core_with_context(
             }
             0x11 => {
                 let Some(offset) = stack.pop() else {
-                    return Ok(trap_result(\n                        stack,\n                        executed,\n                        "NVM1 INPUT_COPY stack underflow",\n                    ));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 INPUT_COPY stack underflow",
+                    ));
                 };
                 let Nvm1Value::U64(offset) = offset else {
-                    return Ok(trap_result(\n                        stack,\n                        executed,\n                        "NVM1 INPUT_COPY type mismatch",\n                    ));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 INPUT_COPY type mismatch",
+                    ));
                 };
                 let offset = usize::try_from(offset)
                     .map_err(|_| "NVM1 INPUT_COPY offset does not fit usize".to_string())?;
                 let length =
                     u32::from_be_bytes(instruction.operand[..4].try_into().unwrap()) as usize;
                 let Some(end) = offset.checked_add(length) else {
-                    return Ok(trap_result(\n                        stack,\n                        executed,\n                        "NVM1 INPUT_COPY range overflow",\n                    ));
+                    return Ok(trap_result(
+                        stack,
+                        executed,
+                        "NVM1 INPUT_COPY range overflow",
+                    ));
                 };
                 if end > context.input.len() {
                     return Ok(trap_result(stack, executed, "NVM1 INPUT_COPY out of range"));
