@@ -1040,7 +1040,10 @@ mod tests {
         assert_eq!(result.state_root_before, expected_before_root);
         assert_eq!(result.state_root_after, state.state_root().unwrap());
         assert_ne!(result.state_root_after, result.state_root_before);
-        assert_eq!(result.transition.transaction_id(), transaction.tx_id().unwrap());
+        assert_eq!(
+            result.transition.transaction_id(),
+            transaction.tx_id().unwrap()
+        );
 
         let channel_id = result.transition.channel_id();
         assert!(state.channel(channel_id).is_some());
