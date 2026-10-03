@@ -196,6 +196,31 @@ impl<'a> NceReader<'a> {
     }
 }
 
+pub fn envelope_identity(bytes: &[u8]) -> Result<(u64, u64), String> {
+    let mut reader = NceReader::new(bytes);
+    let len = reader.map_len()?;
+    if len != 4 {
+        return Err("NCE/1 envelope must contain exactly four fields".into());
+    }
+
+    if reader.unsigned()? != 1 || reader.unsigned()? != NCE_VERSION {
+        return Err("invalid NCE/1 envelope version field".into());
+    }
+    if reader.unsigned()? != 2 {
+        return Err("invalid NCE/1 envelope object type field".into());
+    }
+    let object_type = reader.unsigned()?;
+    if reader.unsigned()? != 3 {
+        return Err("invalid NCE/1 envelope schema version field".into());
+    }
+    let schema_version = reader.unsigned()?;
+    if reader.unsigned()? != 4 {
+        return Err("invalid NCE/1 envelope payload field".into());
+    }
+
+    Ok((object_type, schema_version))
+}
+
 pub fn decode_envelope<'a>(
     bytes: &'a [u8],
     expected_object_type: u64,
@@ -296,6 +321,18 @@ mod tests {
 
         let mut r = NceReader::new(&[0x42, 0xaa]);
         assert!(r.bytes().is_err());
+    }
+
+    #[test]
+    fn envelope_identity_reads_type_and_schema_without_guessing() {
+        let encoded =
+            encode_envelope(0x0011, 2, encode_map(&[(1, encode_unsigned(7))]).unwrap()).unwrap();
+
+        assert_eq!(envelope_identity(&encoded).unwrap(), (0x0011, 2));
+
+        let mut malformed = encoded;
+        malformed[0] = 0x83;
+        assert!(envelope_identity(&malformed).is_err());
     }
 
     #[test]
