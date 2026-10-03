@@ -46,7 +46,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_help() {
     println!(
-        "NIAHCIA {VERSION}\n\nUsage:\n  niahcia [OPTIONS]\n\nOptions:\n  -c, --config <PATH>  Load TOML config file\n  -h, --help           Print help\n  -V, --version        Print version\n\nEnvironment overrides:\n  NIAHCIA_NETWORK\n  NIAHCIA_DATA_DIR\n  NIAHCIA_RETH_ENGINE_API\n  NIAHCIA_RETH_HTTP_RPC\n  NIAHCIA_FEE_RECIPIENT\n  NIAHCIA_RETH_JWT_PATH\n  NIAHCIA_MINING_RPC_BIND\n  NIAHCIA_P2P_BIND\n  NIAHCIA_P2P_PEERS\n  NIAHCIA_LOG_LEVEL\n\nStatus:\n  Pre-alpha reference node.\n"
+        "NIAHCIA {VERSION}\n\nUsage:\n  niahcia [OPTIONS]\n\nOptions:\n  -c, --config <PATH>  Load TOML config file\n  -h, --help           Print help\n  -V, --version        Print version\n\nEnvironment overrides:\n  NIAHCIA_NETWORK\n  NIAHCIA_DATA_DIR\n  NIAHCIA_FEE_RECIPIENT\n  NIAHCIA_MINING_RPC_BIND\n  NIAHCIA_P2P_BIND\n  NIAHCIA_P2P_PEERS\n  NIAHCIA_LOG_LEVEL\n\nStatus:\n  Pre-alpha reference node.\n"
     );
 }
 
