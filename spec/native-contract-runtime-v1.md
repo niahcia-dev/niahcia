@@ -128,6 +128,29 @@ The active reference node currently installs no runtime descriptors, so no contr
 
 The registry model is vectored independently of VM selection. Runtime ID 1 in the fixture is only a test value.
 
+## Inactive ContractCreate constructor transition
+
+The reference implementation now includes an inactive constructor-state transition helper that deliberately stops short of transaction fee/nonce integration.
+
+The transition:
+
+1. validates ContractCreatePayload V1;
+2. requires an active Runtime Registry descriptor;
+3. requires Runtime ID 1 / NVM1 code-format version 1 for this candidate executor;
+4. validates NVM1 code and jump targets;
+5. derives the locked Contract Address V1 from creator/network/chain/nonce;
+6. rejects an existing contract at that derived payload before constructor execution;
+7. executes constructor code with:
+   - `input = init_data`;
+   - `caller = creator payload`;
+   - `call_value = full u128 creation value`;
+   - empty initial contract storage;
+   - the supplied VM gas budget;
+8. on STOP or RETURN, creates ContractStateV1 with the exact deployed code, native value, and committed constructor storage;
+9. on REVERT or deterministic trap (including out-of-gas), creates no contract and leaves NativeStateV3 unchanged.
+
+This helper is a state-effect boundary only. It does not consume the creator account nonce, debit native account value, burn base fees, or credit CPU-producer priority fees. Those accepted-transaction semantics remain a separate required wrapper before ContractCreate can be activated.
+
 ## State atomicity
 
 Contract execution must use deterministic transactional semantics.

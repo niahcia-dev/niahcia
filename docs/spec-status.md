@@ -130,7 +130,7 @@ The active reference node is native-execution only.
 
 1. Preserve the now-locked NativeReceiptV2 / NativeBlockExecutionResultV2 vectors; incompatible changes require an explicit successor version.
 2. Preserve the locked activation/migration fixture in `test-vectors/native-execution-v2-activation.json`; only after remaining fee/gas and runtime review should a concrete network activation parameter be selected.
-3. Preserve the vectored Contract State / ContractCreate / Runtime Registry / NVM1 code+gas boundaries, then implement inactive ContractCreate/ContractCall state-transition semantics and receipts.
+3. Wrap the new inactive ContractCreate constructor transition in explicit nonce/value/fee failure semantics, then implement inactive ContractCall and contract receipts/persistence.
 4. Review the now-vectored candidate compute gas/fee schedule together with V2 activation economics before selecting a concrete activation height.
 5. Resolve stock miner/pool RandomX interoperability.
 6. Resolve difficulty/timestamp hardening.

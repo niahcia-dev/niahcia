@@ -191,17 +191,15 @@ Already reserved in NativeTransaction V1:
 
 Still required before those actions can be activated:
 
-- a versioned native contract runtime/code format;
-- canonical contract state/storage commitments;
-- deterministic create/call/revert/failure semantics;
-- native-value semantics for contract execution;
-- bounded deterministic memory and instruction/resource metering;
-- contract gas schedule;
-- receipts/execution commitments;
-- persistence/restart/reorg behavior;
-- canonical vectors and an explicit activation/version boundary.
+- accepted-transaction nonce/value/fee semantics around the now-inactive constructor transition;
+- deterministic ContractCall transition semantics;
+- contract receipts/execution commitments;
+- persistence/restart/reorg behavior for NativeStateV3;
+- canonical create/call/failure vectors and an explicit activation/version boundary.
 
-NVM1's candidate execution surface now has deterministic stack/control, bounded byte memory, caller representation, persistent storage isolation, KECCAK256, RETURN/REVERT, and a vectored gas schedule. CALL_VALUE now preserves the full native u128 value domain as a 32-byte stack value rather than truncating it to u64.
+NVM1's candidate execution surface now has deterministic stack/control, bounded byte memory, caller representation, persistent storage isolation, KECCAK256, RETURN/REVERT, and a vectored gas schedule. CALL_VALUE preserves the full native u128 value domain as a 32-byte stack value rather than truncating it to u64.
+
+Inactive ContractCreate constructor execution now exists as a state-effect transition: it validates NVM1 code, derives the locked contract address, runs init_data with empty storage, commits code/value/storage only on STOP/RETURN, and leaves NativeStateV3 unchanged on REVERT/trap/OOG. Account nonce/value debit and transaction-fee effects intentionally remain outside this helper until their accepted-failure rules are specified.
 
 Consensus contract execution must not perform AI inference or depend on external network/filesystem/wall-clock services. Off-chain AI may provide signed/committed evidence to contracts only through explicitly specified deterministic verification rules.
 
