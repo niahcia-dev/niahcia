@@ -10,6 +10,17 @@ use crate::native_state_v3::NativeStateV3;
 use crate::work::Hash32;
 use std::collections::BTreeMap;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InactiveContractCreateRequestV1 {
+    pub network: AddressNetwork,
+    pub chain_id: u64,
+    pub current_height: u64,
+    pub creator_payload: [u8; 20],
+    pub creator_nonce: u64,
+    pub value: u128,
+    pub gas_limit: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InactiveContractCreateTransitionV1 {
     pub creator_payload: [u8; 20],
@@ -26,15 +37,18 @@ pub struct InactiveContractCreateTransitionV1 {
 pub fn execute_inactive_contract_create_transition_v1(
     state: &mut NativeStateV3,
     registry: &NativeContractRuntimeRegistryV1,
-    network: AddressNetwork,
-    chain_id: u64,
-    current_height: u64,
-    creator_payload: [u8; 20],
-    creator_nonce: u64,
-    value: u128,
     payload: &ContractCreatePayloadV1,
-    gas_limit: u64,
+    request: InactiveContractCreateRequestV1,
 ) -> Result<InactiveContractCreateTransitionV1, String> {
+    let InactiveContractCreateRequestV1 {
+        network,
+        chain_id,
+        current_height,
+        creator_payload,
+        creator_nonce,
+        value,
+        gas_limit,
+    } = request;
     let descriptor = registry.validate_create_payload(current_height, payload)?;
     if descriptor.runtime_id != NVM1_RUNTIME_ID
         || descriptor.code_format_version != NVM1_CODE_FORMAT_VERSION
@@ -146,14 +160,16 @@ mod tests {
         let transition = execute_inactive_contract_create_transition_v1(
             &mut state,
             &registry(),
-            AddressNetwork::Devnet,
-            0x0000_0002_4449_4148,
-            10,
-            creator,
-            7,
-            u128::MAX - 9,
             &create,
-            1,
+            InactiveContractCreateRequestV1 {
+                network: AddressNetwork::Devnet,
+                chain_id: 0x0000_0002_4449_4148,
+                current_height: 10,
+                creator_payload: creator,
+                creator_nonce: 7,
+                value: u128::MAX - 9,
+                gas_limit: 1,
+            },
         )
         .unwrap();
 
@@ -183,14 +199,16 @@ mod tests {
         let transition = execute_inactive_contract_create_transition_v1(
             &mut state,
             &registry(),
-            AddressNetwork::Devnet,
-            0x0000_0002_4449_4148,
-            10,
-            [0x44; 20],
-            0,
-            0,
             &create,
-            205,
+            InactiveContractCreateRequestV1 {
+                network: AddressNetwork::Devnet,
+                chain_id: 0x0000_0002_4449_4148,
+                current_height: 10,
+                creator_payload: [0x44; 20],
+                creator_nonce: 0,
+                value: 0,
+                gas_limit: 205,
+            },
         )
         .unwrap();
 
@@ -210,14 +228,16 @@ mod tests {
         let transition = execute_inactive_contract_create_transition_v1(
             &mut state,
             &registry(),
-            AddressNetwork::Devnet,
-            0x0000_0002_4449_4148,
-            10,
-            [0x55; 20],
-            3,
-            99,
             &create,
-            1,
+            InactiveContractCreateRequestV1 {
+                network: AddressNetwork::Devnet,
+                chain_id: 0x0000_0002_4449_4148,
+                current_height: 10,
+                creator_payload: [0x55; 20],
+                creator_nonce: 3,
+                value: 99,
+                gas_limit: 1,
+            },
         )
         .unwrap();
 
@@ -236,14 +256,16 @@ mod tests {
         let transition = execute_inactive_contract_create_transition_v1(
             &mut state,
             &registry(),
-            AddressNetwork::Devnet,
-            0x0000_0002_4449_4148,
-            10,
-            [0x66; 20],
-            4,
-            0,
             &create,
-            0,
+            InactiveContractCreateRequestV1 {
+                network: AddressNetwork::Devnet,
+                chain_id: 0x0000_0002_4449_4148,
+                current_height: 10,
+                creator_payload: [0x66; 20],
+                creator_nonce: 4,
+                value: 0,
+                gas_limit: 0,
+            },
         )
         .unwrap();
 
@@ -279,14 +301,16 @@ mod tests {
         let error = execute_inactive_contract_create_transition_v1(
             &mut state,
             &registry(),
-            AddressNetwork::Devnet,
-            chain_id,
-            10,
-            creator,
-            nonce,
-            0,
             &payload(module(1, 1, &[0x00]), Vec::new()),
-            1,
+            InactiveContractCreateRequestV1 {
+                network: AddressNetwork::Devnet,
+                chain_id,
+                current_height: 10,
+                creator_payload: creator,
+                creator_nonce: nonce,
+                value: 0,
+                gas_limit: 1,
+            },
         )
         .unwrap_err();
 
