@@ -1223,8 +1223,12 @@ mod tests {
                 nonce: 5,
             }
         );
-        assert!(state.channel(result.transactions[0].transition.channel_id()).is_some());
-        assert!(state.channel(result.transactions[1].transition.channel_id()).is_some());
+        assert!(state
+            .channel(result.transactions[0].transition.channel_id())
+            .is_some());
+        assert!(state
+            .channel(result.transactions[1].transition.channel_id())
+            .is_some());
     }
 
     #[test]
