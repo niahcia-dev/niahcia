@@ -319,6 +319,7 @@ pub fn execute_nvm1_core_with_context_and_gas(
                     validated.header.max_stack_items,
                     Nvm1Value::U64(value),
                     executed,
+                    gas_used,
                 ) {
                     return Ok(result);
                 }
@@ -331,6 +332,7 @@ pub fn execute_nvm1_core_with_context_and_gas(
                     validated.header.max_stack_items,
                     Nvm1Value::Bytes32(value),
                     executed,
+                    gas_used,
                 ) {
                     return Ok(result);
                 }
@@ -361,6 +363,7 @@ pub fn execute_nvm1_core_with_context_and_gas(
                     validated.header.max_stack_items,
                     value,
                     executed,
+                    gas_used,
                 ) {
                     return Ok(result);
                 }
@@ -472,6 +475,7 @@ pub fn execute_nvm1_core_with_context_and_gas(
                     validated.header.max_stack_items,
                     Nvm1Value::U64(input_len),
                     executed,
+                    gas_used,
                 ) {
                     return Ok(result);
                 }
@@ -541,6 +545,7 @@ pub fn execute_nvm1_core_with_context_and_gas(
                     validated.header.max_stack_items,
                     Nvm1Value::Bytes32(caller),
                     executed,
+                    gas_used,
                 ) {
                     return Ok(result);
                 }
@@ -552,6 +557,7 @@ pub fn execute_nvm1_core_with_context_and_gas(
                     validated.header.max_stack_items,
                     Nvm1Value::U64(context.call_value),
                     executed,
+                    gas_used,
                 ) {
                     return Ok(result);
                 }
@@ -580,6 +586,7 @@ pub fn execute_nvm1_core_with_context_and_gas(
                     validated.header.max_stack_items,
                     Nvm1Value::Bytes32(value),
                     executed,
+                    gas_used,
                 ) {
                     return Ok(result);
                 }
@@ -674,6 +681,7 @@ pub fn execute_nvm1_core_with_context_and_gas(
                     validated.header.max_stack_items,
                     Nvm1Value::Bytes32(digest),
                     executed,
+                    gas_used,
                 ) {
                     return Ok(result);
                 }
@@ -711,11 +719,13 @@ fn push_value(
     max_stack_items: u16,
     value: Nvm1Value,
     executed: u32,
+    gas_used: u64,
 ) -> Option<Nvm1ExecutionResult> {
     if stack.len() >= max_stack_items as usize {
-        return Some(trap_result(
+        return Some(trap_result_with_gas(
             stack.clone(),
             executed,
+            gas_used,
             Nvm1Trap::StackOverflow,
         ));
     }
@@ -744,6 +754,22 @@ fn trap_result_with_gas(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn stack_overflow_trap_preserves_gas_already_charged() {
+        let mut instructions = vec![0x01];
+        instructions.extend_from_slice(&1u64.to_be_bytes());
+        instructions.push(0x01);
+        instructions.extend_from_slice(&2u64.to_be_bytes());
+        let code = module(2, 1, &instructions);
+        let context = Nvm1ExecutionContext::default();
+        let result = execute_nvm1_core_with_context_and_gas(&code, &context, 4).unwrap();
+        assert_eq!(result.halt, Nvm1Halt::Trap(Nvm1Trap::StackOverflow));
+        assert_eq!(result.gas_used, 4);
+        assert_eq!(result.instructions_executed, 2);
+        assert!(result.stack.is_empty());
+        assert_eq!(result.committed_storage, None);
+    }
 
     #[test]
     fn ordinary_trap_preserves_gas_already_charged() {
