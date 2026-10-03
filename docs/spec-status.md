@@ -38,6 +38,7 @@ This file is a living audit of protocol status. Implementation alone does not ma
 | NativeBlockBody V2 | IMPLEMENTED (DEV) + INACTIVE | Versioned canonical body for ordered V1/V2 signed transactions; not admitted to active runtime. |
 | Native Execution Commitment V2 | IMPLEMENTED (DEV) + VECTOR LOCKED + REVIEW REQUIRED + INACTIVE | Domain-separated ReceiptV2/ExecutionResultV2 commits transaction schema/action, per-transaction post-state roots, aggregate state/gas/fees. `test-vectors/native-execution-v2.json` locks canonical receipt/result bytes and commitments; activation remains open. |
 | Native Compute Gas V1 | IMPLEMENTED (DEV) + VECTORED + CANDIDATE + INACTIVE | Open=3,000, Settle=5,000, Refund=2,000 intrinsic gas; transfer-shaped base-fee burn / producer-priority accounting; inactive V2 only. |
+| Native Contract Runtime Registry V1 | IMPLEMENTED (DEV) + VECTORED + CANDIDATE + INACTIVE | Deterministic runtime-ID registry with inclusive activation, exclusive retirement, per-runtime payload bounds, and empty-registry=no-runtime behavior. No VM/runtime is selected or installed. |
 | ContractCreate Payload V1 | IMPLEMENTED (DEV) + VECTOR LOCKED + CANDIDATE + INACTIVE | NCE/1 runtime_id/code/init_data boundary; runtime_id zero reserved; code/init each capped at 65,536 bytes; no VM selected or activated. |
 | Native Contract State V1 | IMPLEMENTED (DEV) + VECTORED + CANDIDATE + INACTIVE | Contract balance, opaque runtime/code bytes, fixed 32-byte key/value storage, contracts root, and NativeStateV3 successor snapshot/root are defined and vectored without selecting a VM. |
 | Native Execution V2 activation boundary | IMPLEMENTED (DEV) + VECTORED + CANDIDATE + REVIEW REQUIRED + INACTIVE | Explicit V1-before / V2-at-and-after height rule plus deterministic V1 -> V2 parent-state migration helper. Locked fixture covers H-1/H/H+1, rejection, restart, and reorg classification. No real activation height is assigned or wired into active runtime. |
@@ -128,7 +129,7 @@ The active reference node is native-execution only.
 
 1. Preserve the now-locked NativeReceiptV2 / NativeBlockExecutionResultV2 vectors; incompatible changes require an explicit successor version.
 2. Preserve the locked activation/migration fixture in `test-vectors/native-execution-v2-activation.json`; only after remaining fee/gas and runtime review should a concrete network activation parameter be selected.
-3. Preserve the vectored Native Contract State V1 / NativeStateV3 and ContractCreate payload boundaries, then define the activated runtime registry/code validation and deterministic call/create/revert semantics without reintroducing an external EVM dependency.
+3. Preserve the vectored Contract State / ContractCreate / Runtime Registry boundaries, then select and specify the deterministic Runtime V1 code format/validator before implementing create/call/revert execution semantics.
 4. Review the now-vectored candidate compute gas/fee schedule together with V2 activation economics before selecting a concrete activation height.
 5. Resolve stock miner/pool RandomX interoperability.
 6. Resolve difficulty/timestamp hardening.

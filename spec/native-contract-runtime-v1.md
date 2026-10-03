@@ -118,6 +118,16 @@ Contract storage is fixed-width 32-byte keys and 32-byte values in canonical asc
 
 Native Contract State V1 is vectored by `test-vectors/native-contract-state-v1.json`; the vector locks contract-record bytes/hash, contracts root, NativeStateV3 root, and NativeStateV3 snapshot bytes without selecting a VM.
 
+## Runtime registry and activation boundary
+
+Runtime eligibility is defined by `spec/native-contract-runtime-registry-v1.md`.
+
+ContractCreate validation is intentionally layered. Canonical payload validation and an active runtime-registry entry are necessary before code can execute, but they are not sufficient: the selected runtime must also provide its own deterministic code-format validator and execution semantics.
+
+The active reference node currently installs no runtime descriptors, so no contract runtime is activated.
+
+The registry model is vectored independently of VM selection. Runtime ID 1 in the fixture is only a test value.
+
 ## State atomicity
 
 Contract execution must use deterministic transactional semantics.

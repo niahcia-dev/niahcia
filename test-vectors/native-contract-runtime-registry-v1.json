@@ -1,0 +1,27 @@
+{
+  "schema": "niahcia-native-contract-runtime-registry-v1",
+  "status": "locked",
+  "description": "Runtime-registry activation fixture. runtime_id=1 is a registry test value only and does not select a VM or activate contracts on any NIAHCIA network.",
+  "fixture": {
+    "runtime_id": 1,
+    "code_format_version": 1,
+    "activation_height": 100,
+    "retirement_height": 200,
+    "max_code_bytes": 32768,
+    "max_init_data_bytes": 16384
+  },
+  "height_cases": [
+    { "height": 99, "active": false },
+    { "height": 100, "active": true },
+    { "height": 199, "active": true },
+    { "height": 200, "active": false }
+  ],
+  "rules": {
+    "runtime_id_zero_reserved": true,
+    "code_format_version_zero_reserved": true,
+    "duplicate_runtime_ids_rejected": true,
+    "retirement_height_is_exclusive": true,
+    "empty_registry_activates_no_runtime": true,
+    "payload_validation_does_not_define_vm_semantics": true
+  }
+}
