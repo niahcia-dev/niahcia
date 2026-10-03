@@ -189,6 +189,7 @@ pub enum Nvm1Halt {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Nvm1ExecutionContext {
     pub input: Vec<u8>,
+    pub caller_payload: [u8; 20],
     pub call_value: u64,
 }
 
@@ -410,6 +411,19 @@ pub fn execute_nvm1_core_with_context(
                 memory.extend_from_slice(&context.input[offset..end]);
                 pc += 1;
             }
+            0x12 => {
+                let mut caller = [0u8; 32];
+                caller[12..].copy_from_slice(&context.caller_payload);
+                if let Some(result) = push_value(
+                    &mut stack,
+                    validated.header.max_stack_items,
+                    Nvm1Value::Bytes32(caller),
+                    executed,
+                ) {
+                    return Ok(result);
+                }
+                pc += 1;
+            }
             0x13 => {
                 if let Some(result) = push_value(
                     &mut stack,
@@ -435,7 +449,7 @@ pub fn execute_nvm1_core_with_context(
                     instructions_executed: executed,
                 });
             }
-            0x12 | 0x20..=0x30 => {
+            0x20..=0x30 => {
                 return Ok(trap_result(
                     stack,
                     executed,
@@ -580,11 +594,31 @@ mod tests {
         let code = module(3, 2, &[0x10, 0x13, 0x00]);
         let context = Nvm1ExecutionContext {
             input: vec![1, 2, 3, 4, 5],
+            caller_payload: [0u8; 20],
             call_value: 42,
         };
         let result = execute_nvm1_core_with_context(&code, &context).unwrap();
         assert_eq!(result.halt, Nvm1Halt::Stop);
         assert_eq!(result.stack, vec![Nvm1Value::U64(5), Nvm1Value::U64(42)]);
+    }
+
+    #[test]
+    fn caller_pushes_zero_left_padded_address_payload() {
+        let code = module(2, 1, &[0x12, 0x00]);
+        let mut payload = [0u8; 20];
+        for (index, byte) in payload.iter_mut().enumerate() {
+            *byte = (index + 1) as u8;
+        }
+        let context = Nvm1ExecutionContext {
+            input: Vec::new(),
+            caller_payload: payload,
+            call_value: 0,
+        };
+        let result = execute_nvm1_core_with_context(&code, &context).unwrap();
+        let mut expected = [0u8; 32];
+        expected[12..].copy_from_slice(&payload);
+        assert_eq!(result.halt, Nvm1Halt::Stop);
+        assert_eq!(result.stack, vec![Nvm1Value::Bytes32(expected)]);
     }
 
     #[test]
@@ -596,6 +630,7 @@ mod tests {
         );
         let context = Nvm1ExecutionContext {
             input: vec![10, 20, 30, 40, 50],
+            caller_payload: [0u8; 20],
             call_value: 0,
         };
         let result = execute_nvm1_core_with_context(&code, &context).unwrap();
@@ -612,6 +647,7 @@ mod tests {
         );
         let context = Nvm1ExecutionContext {
             input: vec![1, 2, 3],
+            caller_payload: [0u8; 20],
             call_value: 0,
         };
         assert_eq!(
@@ -636,7 +672,8 @@ mod tests {
                 &memory_overflow,
                 &Nvm1ExecutionContext {
                     input,
-                    call_value: 0,
+                    caller_payload: [0u8; 20],
+            call_value: 0,
                 }
             )
             .unwrap()
@@ -654,6 +691,7 @@ mod tests {
         );
         let context = Nvm1ExecutionContext {
             input: vec![7, 8],
+            caller_payload: [0u8; 20],
             call_value: 0,
         };
         assert_eq!(
