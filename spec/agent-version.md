@@ -70,9 +70,9 @@ Pure discovery metadata such as display name, icon, or description MAY be update
 4. Workers MUST execute the exact requested AgentVersion.
 5. A requester MAY explicitly choose a historical version.
 
-## Prototype 0
+## first implementation milestone
 
-Prototype 0 may use one model, one system definition, one execution profile, and one verification policy, but the full structure is retained.
+first implementation milestone may use one model, one system definition, one execution profile, and one verification policy, but the full structure is retained.
 
 
 ## Private local execution state
