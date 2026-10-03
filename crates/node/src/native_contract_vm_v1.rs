@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 pub const NVM1_RUNTIME_ID: u32 = 1;
 pub const NVM1_CODE_FORMAT_VERSION: u32 = 1;
 pub const NVM1_MAGIC: [u8; 4] = *b"NVM1";
@@ -191,6 +193,7 @@ pub struct Nvm1ExecutionContext {
     pub input: Vec<u8>,
     pub caller_payload: [u8; 20],
     pub call_value: u64,
+    pub storage: BTreeMap<[u8; 32], [u8; 32]>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -198,6 +201,7 @@ pub struct Nvm1ExecutionResult {
     pub halt: Nvm1Halt,
     pub stack: Vec<Nvm1Value>,
     pub instructions_executed: u32,
+    pub committed_storage: Option<BTreeMap<[u8; 32], [u8; 32]>>,
 }
 
 #[derive(Clone, Debug)]
@@ -246,6 +250,7 @@ pub fn execute_nvm1_core_with_context(
                     halt: Nvm1Halt::Stop,
                     stack,
                     instructions_executed: executed,
+                    committed_storage: Some(storage),
                 });
             }
             0x01 => {
@@ -435,11 +440,48 @@ pub fn execute_nvm1_core_with_context(
                 }
                 pc += 1;
             }
+            0x20 => {
+                let Some(key) = stack.pop() else {
+                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_GET stack underflow"));
+                };
+                let Nvm1Value::Bytes32(key) = key else {
+                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_GET type mismatch"));
+                };
+                let value = storage.get(&key).copied().unwrap_or([0u8; 32]);
+                if let Some(result) = push_value(&mut stack, validated.header.max_stack_items, Nvm1Value::Bytes32(value), executed) {
+                    return Ok(result);
+                }
+                pc += 1;
+            }
+            0x21 => {
+                let Some(value) = stack.pop() else {
+                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_SET stack underflow"));
+                };
+                let Some(key) = stack.pop() else {
+                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_SET stack underflow"));
+                };
+                let (Nvm1Value::Bytes32(key), Nvm1Value::Bytes32(value)) = (key, value) else {
+                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_SET type mismatch"));
+                };
+                storage.insert(key, value);
+                pc += 1;
+            }
+            0x22 => {
+                let Some(key) = stack.pop() else {
+                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_DELETE stack underflow"));
+                };
+                let Nvm1Value::Bytes32(key) = key else {
+                    return Ok(trap_result(stack, executed, "NVM1 STORAGE_DELETE type mismatch"));
+                };
+                storage.remove(&key);
+                pc += 1;
+            }
             0x40 => {
                 return Ok(Nvm1ExecutionResult {
                     halt: Nvm1Halt::Return(memory),
                     stack,
                     instructions_executed: executed,
+                    committed_storage: Some(storage),
                 });
             }
             0x41 => {
@@ -447,9 +489,10 @@ pub fn execute_nvm1_core_with_context(
                     halt: Nvm1Halt::Revert(memory),
                     stack,
                     instructions_executed: executed,
+                    committed_storage: Some(storage),
                 });
             }
-            0x20..=0x30 => {
+            0x30 => {
                 return Ok(trap_result(
                     stack,
                     executed,
@@ -508,6 +551,7 @@ fn trap_result(stack: Vec<Nvm1Value>, executed: u32, message: &str) -> Nvm1Execu
         halt: Nvm1Halt::Trap(message.to_string()),
         stack,
         instructions_executed: executed,
+        committed_storage: None,
     }
 }
 
@@ -596,6 +640,7 @@ mod tests {
             input: vec![1, 2, 3, 4, 5],
             caller_payload: [0u8; 20],
             call_value: 42,
+            storage: BTreeMap::new(),
         };
         let result = execute_nvm1_core_with_context(&code, &context).unwrap();
         assert_eq!(result.halt, Nvm1Halt::Stop);
@@ -613,6 +658,7 @@ mod tests {
             input: Vec::new(),
             caller_payload: payload,
             call_value: 0,
+            storage: BTreeMap::new(),
         };
         let result = execute_nvm1_core_with_context(&code, &context).unwrap();
         let mut expected = [0u8; 32];
@@ -632,6 +678,7 @@ mod tests {
             input: vec![10, 20, 30, 40, 50],
             caller_payload: [0u8; 20],
             call_value: 0,
+            storage: BTreeMap::new(),
         };
         let result = execute_nvm1_core_with_context(&code, &context).unwrap();
         assert_eq!(result.halt, Nvm1Halt::Return(vec![20, 30, 40]));
@@ -649,6 +696,7 @@ mod tests {
             input: vec![1, 2, 3],
             caller_payload: [0u8; 20],
             call_value: 0,
+            storage: BTreeMap::new(),
         };
         assert_eq!(
             execute_nvm1_core_with_context(&out_of_range, &context)
@@ -674,6 +722,7 @@ mod tests {
                     input,
                     caller_payload: [0u8; 20],
                     call_value: 0,
+            storage: BTreeMap::new(),
                 }
             )
             .unwrap()
@@ -693,6 +742,7 @@ mod tests {
             input: vec![7, 8],
             caller_payload: [0u8; 20],
             call_value: 0,
+            storage: BTreeMap::new(),
         };
         assert_eq!(
             execute_nvm1_core_with_context(&code, &context)
