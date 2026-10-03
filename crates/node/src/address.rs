@@ -116,15 +116,25 @@ impl NiahciaAddressV1 {
         preimage
     }
 
+    pub fn contract_derivation_digest(
+        network: AddressNetwork,
+        chain_id: u64,
+        creator_payload: [u8; ADDRESS_PAYLOAD_LEN],
+        creator_nonce: u64,
+    ) -> [u8; 32] {
+        let preimage =
+            Self::contract_derivation_preimage(network, chain_id, creator_payload, creator_nonce);
+        Keccak256::digest(&preimage).into()
+    }
+
     pub fn contract_from_creator(
         network: AddressNetwork,
         chain_id: u64,
         creator_payload: [u8; ADDRESS_PAYLOAD_LEN],
         creator_nonce: u64,
     ) -> Self {
-        let preimage =
-            Self::contract_derivation_preimage(network, chain_id, creator_payload, creator_nonce);
-        let digest = Keccak256::digest(&preimage);
+        let digest =
+            Self::contract_derivation_digest(network, chain_id, creator_payload, creator_nonce);
         let mut payload = [0u8; ADDRESS_PAYLOAD_LEN];
         payload.copy_from_slice(&digest[12..]);
         Self::new(network, AddressKind::Contract, payload)
@@ -258,10 +268,14 @@ mod tests {
                 let preimage = NiahciaAddressV1::contract_derivation_preimage(
                     network, chain_id, creator, nonce,
                 );
+                let digest = NiahciaAddressV1::contract_derivation_digest(
+                    network, chain_id, creator, nonce,
+                );
                 let address =
                     NiahciaAddressV1::contract_from_creator(network, chain_id, creator, nonce);
                 (
                     hex::encode(preimage),
+                    hex::encode(digest),
                     hex::encode(address.payload),
                     address.to_string(),
                 )
@@ -271,9 +285,24 @@ mod tests {
         assert_eq!(
             actual,
             vec![
-                ("TODO".to_string(), "TODO".to_string(), "TODO".to_string()),
-                ("TODO".to_string(), "TODO".to_string(), "TODO".to_string()),
-                ("TODO".to_string(), "TODO".to_string(), "TODO".to_string()),
+                (
+                    "4e4941484349412f434f4e54524143542f5631000000000000004e494148001a642f0e3c3af545e7acbd38b07251b3990914f1000000000000000007".to_string(),
+                    "TODO".to_string(),
+                    "1508350cddc8a39443c7957fbd0e667ef04dfe42".to_string(),
+                    "niah1qyq32zp4pnwu3gu5g0re2laapen8auzdlepq2x9wz7".to_string(),
+                ),
+                (
+                    "4e4941484349412f434f4e54524143542f56310001000000000154494148001a642f0e3c3af545e7acbd38b07251b3990914f1000000000000000007".to_string(),
+                    "TODO".to_string(),
+                    "7829f303530b6bbf75282f5f8c8f19dcdca0c651".to_string(),
+                    "tniah1qyqhs20nqdfsk6alw55z7huv3uvaeh9qcegst5axuu".to_string(),
+                ),
+                (
+                    "4e4941484349412f434f4e54524143542f56310002000000000244494148001a642f0e3c3af545e7acbd38b07251b3990914f1000000000000000007".to_string(),
+                    "TODO".to_string(),
+                    "aeeeb31d0d11c1f819b79f8a39ccbc790f4f2516".to_string(),
+                    "dniah1qyq6am4nr5x3rs0crxmelz3eej78jr60y5tqzdp2wa".to_string(),
+                ),
             ]
         );
     }
