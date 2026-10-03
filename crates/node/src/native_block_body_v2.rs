@@ -352,7 +352,10 @@ mod tests {
     fn empty_body_v2_is_canonical_and_zero_fee_recipient_is_required() {
         let body = NativeBlockBodyV2::empty();
         let encoded = body.canonical_bytes().unwrap();
-        assert_eq!(NativeBlockBodyV2::from_canonical_bytes(&encoded).unwrap(), body);
+        assert_eq!(
+            NativeBlockBodyV2::from_canonical_bytes(&encoded).unwrap(),
+            body
+        );
         body.validate_fee_recipient_canonicality(0).unwrap();
 
         let nonzero = NativeBlockBodyV2::new([0x01; 20], Vec::new()).unwrap();
