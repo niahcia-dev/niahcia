@@ -296,3 +296,34 @@ The opcode requires one `Bytes32` operand. Stack underflow or a non-`Bytes32` op
 This intentionally narrow primitive keeps NVM1 hashing deterministic without introducing arbitrary memory-range hashing. Contracts that need to hash shorter structured values must first represent or derive the exact 32-byte preimage through protocol-defined operations. A later runtime version may add explicit byte-memory hashing if required.
 
 This section does not activate Runtime ID 1. Gas/resource charging remains required before activation.
+
+
+## Gas schedule V1
+
+Status: **CANDIDATE / INACTIVE**.
+
+NVM1 gas is deterministic protocol accounting. It is measured against the enclosing NativeTransaction `gas_limit`; NVM1 does not define a second contract-specific gas-limit field.
+
+GasScheduleV1 charges before an instruction mutates VM state. If the remaining gas is less than the complete charge for the next instruction, execution halts with `OutOfGas`. The failing instruction MUST NOT partially execute. Out-of-gas is a trap: persistent storage changes are discarded.
+
+| Operation | Gas |
+| --- | ---: |
+| STOP, POP, DUP | 1 |
+| PUSH_U64, PUSH_BYTES32 | 2 |
+| ADD_U64, SUB_U64, EQ | 3 |
+| JUMP, JUMP_IF | 3 |
+| INPUT_LEN, CALLER, CALL_VALUE | 2 |
+| INPUT_COPY | 3 + ceil(length / 32) |
+| STORAGE_GET | 50 |
+| STORAGE_SET | 200 |
+| STORAGE_DELETE | 100 |
+| KECCAK256 | 30 |
+| RETURN, REVERT | 1 |
+
+The V1 costs are native NIAHCIA schedule constants, not host timing measurements and not inherited EVM constants.
+
+`gas_used` starts at zero and increases only for instructions whose complete charge was successfully reserved. Therefore an instruction rejected for insufficient remaining gas does not add its charge to `gas_used`.
+
+The existing inactive execution-step limit remains a defensive implementation ceiling while NVM1 is inactive. Gas is the consensus resource bound intended for activation; the inactive step ceiling is not part of GasScheduleV1.
+
+GasScheduleV1 is versioned with NVM1. Changing any cost or accounting rule requires an explicit successor schedule/runtime rule and must not reinterpret already-executed blocks.
