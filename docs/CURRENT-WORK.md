@@ -18,6 +18,7 @@
 
 - CPU PoW is canonical chain authority; RandomX is current candidate.
 - GPU/accelerator AI compute is separate from mining.
+- Smart contracts are a core base-chain requirement, not a future optional feature. NativeTransaction V1 already reserves `ContractCall` and `ContractCreate`; their deterministic native runtime remains intentionally unimplemented until separately specified.
 - Decentralized storage/service nodes are optional service providers, never fork-choice/finality authorities, and are not required for ordinary AI inference.
 - Agents/models/jobs/capabilities/memory/verification/payment are explicit protocol objects.
 - NIAHCIA native execution is now the active node execution path. The legacy Reth/EVM/Engine API/JWT integration, replay journals, and external execution-hash mappings have been removed from the reference node.
@@ -175,7 +176,34 @@ P2P Version 3 is now the active devnet implementation path for native blocks and
 
 P2P Version 2 remains protocol history/specification only; the active reference-node runtime is V3.
 
-Do not implement ContractCall/ContractCreate runtime semantics until their native runtime behavior is explicitly specified. Do not invent a base-fee adjustment algorithm; Native Execution V1 currently consumes an explicit base fee and the evolution rule remains separate protocol work.
+Do not improvise ContractCall/ContractCreate runtime semantics. Smart-contract execution is required, but it must be implemented from an explicit versioned native contract-runtime specification with deterministic state/storage, gas, failure/revert, receipt, persistence, and vector rules. Do not invent a base-fee adjustment algorithm; Native Execution V1 currently consumes an explicit base fee and the evolution rule remains separate protocol work.
+
+## Smart-contract execution requirement
+
+Smart contracts have been a core NIAHCIA concept from the beginning. They are part of the base-chain execution model, alongside native value transfer and compute settlement; they are not an optional AI/service-layer feature.
+
+Already reserved in NativeTransaction V1:
+
+- `ContractCall`;
+- `ContractCreate`;
+- Contract Address V1;
+- native `value`, `gas_limit`, fee caps, nonce, and deterministic transaction identity.
+
+Still required before those actions can be activated:
+
+- a versioned native contract runtime/code format;
+- canonical contract state/storage commitments;
+- deterministic create/call/revert/failure semantics;
+- native-value semantics for contract execution;
+- bounded deterministic memory and instruction/resource metering;
+- contract gas schedule;
+- receipts/execution commitments;
+- persistence/restart/reorg behavior;
+- canonical vectors and an explicit activation/version boundary.
+
+Consensus contract execution must not perform AI inference or depend on external network/filesystem/wall-clock services. Off-chain AI may provide signed/committed evidence to contracts only through explicitly specified deterministic verification rules.
+
+See `spec/native-contract-runtime-v1.md`.
 
 ## Native addresses
 

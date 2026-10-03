@@ -8,7 +8,7 @@ NIAHCIA separates base-chain consensus from decentralized AI services.
                          NIAHCIA
 
 Layer 1 — CPU PoW blockchain
-consensus / transactions / balances / commitments / settlement
+consensus / native value / smart contracts / commitments / settlement
                          |
           +--------------+--------------+
           |                             |
@@ -25,7 +25,15 @@ CPU Proof-of-Work alone determines the canonical chain by cumulative valid work.
 
 The active reference node uses native NIAHCIA execution and state. It does not require an external EVM execution engine.
 
-Full nodes validate PoW/header rules, execute native transactions, verify state transitions and commitments, persist canonical state, and participate in P2P synchronization.
+Full nodes validate PoW/header rules, execute native transactions and the active deterministic smart-contract runtime, verify state transitions and commitments, persist canonical state, and participate in P2P synchronization.
+
+## Smart contracts
+
+Smart contracts are a core NIAHCIA base-chain capability. NativeTransaction V1 already reserves `ContractCall` and `ContractCreate`; those actions are intentionally not executable until a separately versioned native contract-runtime specification defines deterministic code, state/storage, gas, call/create, failure/revert, receipt, and persistence semantics.
+
+The contract runtime is part of deterministic blockchain execution and remains subordinate to CPU-PoW consensus. It must not depend on external AI workers, storage providers, websites, network access, filesystem access, wall-clock time, or other nondeterministic host services.
+
+AI inference remains off-chain. Contracts may eventually verify authenticated commitments, receipts, signatures, or other versioned evidence produced by off-chain services without executing inference inside consensus.
 
 ## Compute workers
 

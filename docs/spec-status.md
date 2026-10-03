@@ -35,6 +35,7 @@ This file is a living audit of protocol status. Implementation alone does not ma
 | Native Execution V1 | IMPLEMENTED + VECTORED | Active deterministic native execution path. |
 | NativeState V1 | IMPLEMENTED + VECTORED | Active accounts-only state/snapshot path. |
 | NativeBlockBody V1 | IMPLEMENTED | Active canonical non-empty block-body path. |
+| Native smart-contract runtime | REQUIRED + REVIEW REQUIRED + INACTIVE | Smart contracts are a core protocol requirement. ContractCall/ContractCreate are reserved in NativeTransaction V1, but runtime/state/storage/gas/revert/receipt semantics are not yet implemented. |
 | NativeState V2 | IMPLEMENTED (DEV) + VECTORED + INACTIVE | Accounts + ComputeChannel state; no activation height set. |
 | NativeTransaction V2 | IMPLEMENTED (DEV) + VECTORED + INACTIVE | Explicit ComputeChannel actions; not admitted to active mempool/P2P/mining. |
 | Compute action payloads | IMPLEMENTED (DEV) + VECTORED | Canonical Open/Settle/Refund payloads. |
@@ -122,13 +123,14 @@ The active reference node is native-execution only.
 ## Highest-priority open protocol work
 
 1. Define the versioned block-body and execution-commitment successor required to carry NativeTransactionV2 / NativeStateV2 without reinterpreting V1.
-2. Integrate inactive compute batches with that successor persistence boundary.
-3. Review and assign compute intrinsic gas/fee rules before any activation.
-3. Define explicit NativeStateV2 / NativeTransactionV2 activation parameters and migration vectors.
-4. Resolve stock miner/pool RandomX interoperability.
-5. Resolve difficulty/timestamp hardening.
-6. Finalize public-testnet genesis/network/monetary parameters.
-7. Keep `niahcia` and the retained `niahcia-protocol` mirror synchronized for protocol-visible changes.
+2. Specify the native smart-contract runtime boundary (code format, contract state/storage, deterministic call/create/revert, gas, receipts, persistence, activation) without reintroducing an external EVM dependency.
+3. Integrate inactive compute batches with that successor persistence boundary.
+4. Review and assign compute intrinsic gas/fee rules before any activation.
+5. Define explicit NativeStateV2 / NativeTransactionV2 activation parameters and migration vectors.
+6. Resolve stock miner/pool RandomX interoperability.
+7. Resolve difficulty/timestamp hardening.
+8. Finalize public-testnet genesis/network/monetary parameters.
+9. Keep `niahcia` and the retained `niahcia-protocol` mirror synchronized for protocol-visible changes.
 
 ## Documentation rule
 

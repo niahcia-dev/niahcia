@@ -19,6 +19,12 @@ Current implementation direction:
 
 The former Reth/EVM execution subsystem has been removed from the active reference node.
 
+## Smart contracts
+
+Smart contracts are a required part of NIAHCIA's native execution architecture. NativeTransaction V1 already defines `ContractCall` and `ContractCreate`, but the active reference node deliberately rejects/does not execute their runtime semantics until the native contract runtime is specified and implemented coherently.
+
+The runtime must define deterministic code format, contract state/storage, create/call/revert behavior, value movement, gas/resource metering, receipts/commitments, persistence/reorg behavior, canonical vectors, and activation/versioning. It must not expose nondeterministic host facilities or perform AI inference during consensus execution.
+
 ## Compute settlement
 
 NativeStateV2 adds consensus-committed ComputeChannel state. NativeTransaction V2 defines explicit ComputeChannelOpen, ComputeChannelSettle, and ComputeChannelRefund actions.

@@ -10,8 +10,10 @@ NIAHCIA is a pre-alpha permissionless CPU-PoW blockchain designed to support dec
 
 ```text
 CPU PoW blockchain
-  consensus / balances / transactions / commitments / settlement
+  consensus / balances / native transactions / commitments
         |
+        +-- deterministic native smart-contract execution
+        +-- compute-channel settlement
         +-- wallet-controlled Agents and chat
         +-- decentralized AI compute workers
         +-- optional storage/service providers
@@ -22,6 +24,7 @@ Core rules:
 - CPU Proof-of-Work is the sole chain-consensus authority.
 - AI workers, storage nodes, and service nodes receive no fork-choice or finality authority.
 - The base chain must remain valid and usable if every AI worker or storage provider disappears.
+- Smart contracts are a first-class base-chain requirement. `ContractCall` and `ContractCreate` are already reserved native actions; their deterministic runtime is not implemented yet.
 - The active reference node uses native NIAHCIA transactions, execution, state, persistence, mining RPC, and P2P.
 - Wallet/client-local encrypted chat history and Agent memory are the V1 default.
 - NativeTransaction V2 / NativeStateV2 compute-channel work is currently inactive and not accepted by active mempool/P2P/mining.
@@ -30,7 +33,7 @@ Core rules:
 
 The active devnet path includes RandomX CPU PoW, the 164-byte `BlockHeaderV1`, cumulative-work fork choice, NativeTransaction V1 transfer execution, NativeStateV1 snapshots/state roots, native block-body persistence, P2P Version 3, a shared native mempool, restart-safe recovery, and mining work/submission RPC.
 
-Inactive development work includes `ComputeChannelOpen`, `ComputeChannelSettle`, and `ComputeChannelRefund`. No compute intrinsic-gas constants or V2 activation height are currently assigned.
+Inactive development work includes `ComputeChannelOpen`, `ComputeChannelSettle`, and `ComputeChannelRefund`. Smart-contract runtime semantics, contract state/storage, and contract gas metering remain a required native-execution milestone rather than an optional future feature. No compute intrinsic-gas constants or V2 activation height are currently assigned.
 
 ## Releases
 

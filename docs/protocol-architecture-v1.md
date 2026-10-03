@@ -24,9 +24,12 @@ NIAHCIA reference node
         +-- RandomX PoW / cumulative-work chain selection
         +-- native block / transaction P2P V3
         +-- NativeTransaction V1 / NativeStateV1 active path
+        +-- required native smart-contract runtime (inactive / not yet specified)
         +-- native RPC and mining RPC
         +-- inactive NativeTransaction V2 / NativeStateV2 compute settlement
 ```
+
+Smart contracts are a first-class base-chain requirement. `ContractCall` and `ContractCreate` are already reserved by NativeTransaction V1, but no runtime semantics become consensus-valid until a separately versioned deterministic native contract-runtime specification, vectors, and activation boundary exist.
 
 The base chain must remain valid and usable without any AI worker or storage/service provider.
 
