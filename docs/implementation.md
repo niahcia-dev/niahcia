@@ -1,136 +1,44 @@
-# Prototype 0 Implementation Plan
+# Reference Implementation Plan
 
 ## Objective
 
-Build the smallest complete NIAHCIA network that proves:
+Build the smallest complete NIAHCIA system that proves a CPU-PoW blockchain can validate and settle value independently of AI infrastructure, while wallets can purchase decentralized compute without giving a worker custody of wallet funds.
 
-1. CPU-secured EVM chain operation across independent nodes.
-2. Decentralized AI job execution without a central scheduler.
-3. Independent compute-worker settlement.
-4. Independent service-node model distribution.
-5. End-to-end failure tolerance when individual miners, workers, or service nodes disappear.
+## Native chain
 
-## Workstream A — PoW + EVM
+Current implementation direction:
 
-Deliverables:
+- RandomX CPU PoW;
+- 164-byte BlockHeaderV1;
+- cumulative-work fork choice;
+- native transactions and deterministic native execution;
+- native state roots/snapshots;
+- native mining RPC;
+- P2P Version 3;
+- atomic persistence and restart/reorg recovery.
 
-- RandomX integration
-- PoW block header and validation rules
-- ~30 second target block time
-- difficulty adjustment
-- highest cumulative work fork choice
-- PoW consensus daemon
-- authenticated interface to Reth
-- block template creation
-- mined payload submission
-- reorganization handling
-- Ethereum-compatible JSON-RPC exposed by the execution node
+The former Reth/EVM execution subsystem has been removed from the active reference node.
 
-The PoW daemon owns consensus. Reth owns EVM execution and state.
+## Compute settlement
 
-## Workstream B — Smart contracts
+NativeStateV2 adds consensus-committed ComputeChannel state. NativeTransaction V2 defines explicit ComputeChannelOpen, ComputeChannelSettle, and ComputeChannelRefund actions.
 
-Initial contracts:
+The first implementation proves these transitions while they are inactive. Activation requires explicit network parameters, fee/gas rules, vectors, persistence/reorg coverage, and no regression to V1.
 
-- ModelRegistry
-- WorkerRegistry
-- ServiceRegistry
-- AIJobs
+## AI compute
 
-Prototype requirements:
+Workers advertise signed expiring capabilities, accept wallet-selected bounded sessions, execute through a replaceable runtime such as vLLM, stream results directly to the client, exchange signed usage evidence off-chain, and settle through ComputeChannels.
 
-- model and execution-profile registration
-- worker registration and test bonds
-- service-node registration and test bonds
-- AI job escrow
-- deterministic worker assignment hooks
-- result commitment submission
-- commit/reveal verification
-- final result commitment
-- compute and service settlement
+The chain does not execute AI inference.
 
-## Workstream C — Compute worker
+## Wallet / Agent
 
-The first worker daemon must:
+The wallet is the V1 Agent home. Spending authority remains distinct from chat encryption; conversation content is encrypted by default; local memory/history is the default persistence model; portals receive bounded delegated authority.
 
-- create/load a network identity
-- register supported execution profiles
-- advertise availability over P2P
-- receive assignments
-- retrieve the canonical input payload
-- verify model/runtime/profile hashes
-- execute via vLLM
-- stream tokens to the requester
-- construct canonical token-sequence commitments
-- submit signed result commitments
-- expose observed performance metrics
+## Optional storage/services
 
-## Workstream D — Service node
+Decentralized storage is deferred from the first ordinary AI milestone. Service providers never gain PoW fork-choice/finality authority.
 
-The first service node must:
+## Acceptance discipline
 
-- register its identity
-- ingest the canonical model manifest
-- store model chunks
-- advertise available manifests
-- serve chunks over P2P
-- verify content hashes
-- respond to basic availability challenges
-- report retrieval accounting for test settlement
-
-## Workstream E — P2P
-
-Logical protocols:
-
-### Chain P2P
-Blocks, headers, transactions, synchronization.
-
-### AI P2P
-Worker advertisements, jobs, assignments, input retrieval, streaming, results.
-
-### Storage P2P
-Model manifests, chunk discovery, chunk transfer, availability.
-
-Where practical, identity and transport primitives should be shared without merging protocol semantics.
-
-## Acceptance topology
-
-```text
-Chain:
-  Node A — miner/full node
-  Node B — miner/full node
-  Node C — miner/full node
-
-Compute:
-  Worker D
-  Worker E
-  Worker F
-
-Service:
-  Service G
-  Service H
-```
-
-A user submits a job, receives a streamed response, verification finalizes, and payments settle while CPU block rewards remain economically separate.
-
-## Failure tests
-
-- Stop one miner: chain continues.
-- Stop one compute worker: job can still succeed or reassign.
-- Stop one service node: canonical model remains retrievable.
-- Stop the original bootstrap/developer node: established peers continue.
-- Restart participants in a different order: network state recovers correctly.
-
-## Explicit non-goals for the first milestone
-
-These are deferred implementation tasks, not excluded protocol capabilities:
-
-- production monetary policy
-- distributed training
-- private inference
-- zkML
-- autonomous agent spending
-- persistent global agent memory
-- production slashing
-- multi-GPU distributed inference
-- polished web UI
+Each substantial implementation slice requires deterministic tests, canonical vectors when wire/consensus behavior changes, explicit negative paths, restart/reorg coverage where persistent state changes, synchronized documentation, and green formatting/build/tests/Clippy.
