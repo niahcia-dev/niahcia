@@ -2,12 +2,8 @@ use crate::native_block_body_v2::{NativeBlockBodyV2, VersionedSignedNativeTransa
 use crate::native_block_execution_v2::{
     InactiveVersionedBlockTransitionV2, InactiveVersionedTransactionTransitionV2,
 };
-use crate::native_transaction::{
-    NativeActionV1, SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION,
-};
-use crate::native_transaction_v2::{
-    NativeActionV2, SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION_V2,
-};
+use crate::native_transaction::{NativeActionV1, SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION};
+use crate::native_transaction_v2::{NativeActionV2, SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION_V2};
 use crate::work::{keccak256, Hash32};
 
 const RECEIPT_DOMAIN_V2: &[u8] = b"NIAHCIA/NATIVE-RECEIPT/V2";
@@ -67,7 +63,10 @@ impl NativeReceiptV2 {
             ));
         }
         if bytes[0] != 2 {
-            return Err(format!("unsupported native receipt V2 version: {}", bytes[0]));
+            return Err(format!(
+                "unsupported native receipt V2 version: {}",
+                bytes[0]
+            ));
         }
 
         Ok(Self {
@@ -168,10 +167,9 @@ impl NativeBlockExecutionResultV2 {
             ));
         }
 
-        let receipt_count = usize::try_from(u64::from_be_bytes(
-            bytes[169..177].try_into().unwrap(),
-        ))
-        .map_err(|_| "native receipt V2 count exceeds platform limits".to_string())?;
+        let receipt_count =
+            usize::try_from(u64::from_be_bytes(bytes[169..177].try_into().unwrap()))
+                .map_err(|_| "native receipt V2 count exceeds platform limits".to_string())?;
         let receipts_len = receipt_count
             .checked_mul(NativeReceiptV2::CANONICAL_LEN)
             .ok_or_else(|| "native execution result V2 length overflow".to_string())?;
@@ -380,7 +378,11 @@ mod tests {
 
     #[test]
     fn receipt_v2_round_trip_and_commitment_are_deterministic() {
-        let value = receipt(0x11, SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION_V2, NativeActionV2::Transfer as u64);
+        let value = receipt(
+            0x11,
+            SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION_V2,
+            NativeActionV2::Transfer as u64,
+        );
         let bytes = value.canonical_bytes();
         let decoded = NativeReceiptV2::from_canonical_bytes(&bytes).unwrap();
 
@@ -392,8 +394,16 @@ mod tests {
     #[test]
     fn execution_result_v2_round_trip_recomputes_commitments() {
         let receipts = vec![
-            receipt(0x21, SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION, NativeActionV1::Transfer as u64),
-            receipt(0x31, SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION_V2, NativeActionV2::Transfer as u64),
+            receipt(
+                0x21,
+                SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION,
+                NativeActionV1::Transfer as u64,
+            ),
+            receipt(
+                0x31,
+                SIGNED_NATIVE_TRANSACTION_SCHEMA_VERSION_V2,
+                NativeActionV2::Transfer as u64,
+            ),
         ];
         let receipts_root = native_receipts_root_v2(&receipts);
         let state_root = receipts.last().unwrap().state_root_after;

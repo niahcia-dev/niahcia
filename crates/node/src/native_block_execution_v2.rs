@@ -32,8 +32,9 @@ pub enum InactiveVersionedTransactionTransitionV2 {
 impl InactiveVersionedTransactionTransitionV2 {
     pub fn transaction_id(&self) -> Hash32 {
         match self {
-            Self::V1Transfer { transaction_id, .. }
-            | Self::V2Transfer { transaction_id, .. } => *transaction_id,
+            Self::V1Transfer { transaction_id, .. } | Self::V2Transfer { transaction_id, .. } => {
+                *transaction_id
+            }
             Self::Compute(result) => result.transition.transaction_id(),
         }
     }
