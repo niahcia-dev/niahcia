@@ -456,8 +456,7 @@ pub fn execute_inactive_compute_transaction_v2(
 
     let transition = match transaction.body.action {
         NativeActionV2::ComputeChannelOpen => {
-            let plan =
-                plan_compute_channel_open_v1(&next, transaction, network, current_height)?;
+            let plan = plan_compute_channel_open_v1(&next, transaction, network, current_height)?;
             apply_compute_channel_open_v1(&mut next, &plan)?;
             AppliedComputeTransitionV1::Open(plan)
         }
