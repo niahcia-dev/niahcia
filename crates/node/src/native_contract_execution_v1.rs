@@ -1,5 +1,7 @@
 use crate::address::{AddressNetwork, NiahciaAddressV1};
 use crate::native_contract_payload_v1::ContractCreatePayloadV1;
+use crate::native_execution::{AccountId, NativeExecutionContextV1};
+use crate::native_transaction_v2::{NativeActionV2, SignedNativeTransactionV2};
 use crate::native_contract_runtime_registry_v1::NativeContractRuntimeRegistryV1;
 use crate::native_contract_state_v1::ContractStateV1;
 use crate::native_contract_vm_v1::{
@@ -111,6 +113,172 @@ pub fn execute_inactive_contract_create_transition_v1(
         state_root_after,
         execution,
         contract_created,
+    })
+}
+
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InactiveAcceptedContractCreateV1 {
+    pub transaction_id: Hash32,
+    pub sender: AccountId,
+    pub contract_id: [u8; 20],
+    pub contract_created: bool,
+    pub gas_used: u64,
+    pub max_execution_charge: u128,
+    pub effective_fee_per_gas: u128,
+    pub base_fee_burned: u128,
+    pub producer_priority_fee: u128,
+    pub actual_fee: u128,
+    pub unused_fee_reserve: u128,
+    pub nonce_before: u64,
+    pub nonce_after: u64,
+    pub state_root_before: Hash32,
+    pub state_root_after: Hash32,
+    pub execution: Nvm1ExecutionResult,
+}
+
+/// Executes an accepted schema-V2 ContractCreate transaction against NativeStateV3.
+///
+/// Validation failures reject atomically before acceptance. Once accepted, the sender nonce is
+/// consumed and execution gas is charged regardless of constructor success. Constructor state and
+/// transferred value commit only for STOP/RETURN. REVERT preserves unused gas; a VM trap consumes
+/// the full transaction gas limit (including out-of-gas) and commits no contract/value state.
+pub fn execute_inactive_accepted_contract_create_v1(
+    state: &mut NativeStateV3,
+    registry: &NativeContractRuntimeRegistryV1,
+    transaction: &SignedNativeTransactionV2,
+    network: AddressNetwork,
+    current_height: u64,
+    context: NativeExecutionContextV1,
+) -> Result<InactiveAcceptedContractCreateV1, String> {
+    transaction.body.validate(network)?;
+    if transaction.body.action != NativeActionV2::ContractCreate {
+        return Err("accepted ContractCreate executor requires ContractCreate action".into());
+    }
+    let payload = ContractCreatePayloadV1::from_canonical_bytes(&transaction.body.data)?;
+    let sender = transaction.authenticated_sender(network)?.payload;
+    let sender_before = state.base().accounts().account(sender);
+    if sender_before.nonce != transaction.body.nonce {
+        return Err(format!(
+            "native account nonce mismatch: expected {}, found {}",
+            sender_before.nonce, transaction.body.nonce
+        ));
+    }
+    if transaction.body.max_fee_per_gas < context.base_fee_per_gas {
+        return Err(format!(
+            "native transaction V2 max_fee_per_gas {} is below base_fee_per_gas {}",
+            transaction.body.max_fee_per_gas, context.base_fee_per_gas
+        ));
+    }
+
+    let max_execution_charge = transaction
+        .body
+        .max_fee_per_gas
+        .checked_mul(transaction.body.gas_limit as u128)
+        .ok_or_else(|| "ContractCreate maximum execution charge overflow".to_string())?;
+    let required_balance = transaction
+        .body
+        .value
+        .checked_add(max_execution_charge)
+        .ok_or_else(|| "ContractCreate required balance overflow".to_string())?;
+    if sender_before.balance < required_balance {
+        return Err(format!(
+            "insufficient native account balance: required {}, available {}",
+            required_balance, sender_before.balance
+        ));
+    }
+
+    // Run the constructor against a clone. Its contract/value changes are provisional until its
+    // halt status is known; accepted transaction accounting is applied separately below.
+    let state_root_before = state.state_root()?;
+    let mut constructor_state = state.clone();
+    let transition = execute_inactive_contract_create_transition_v1(
+        &mut constructor_state,
+        registry,
+        &payload,
+        InactiveContractCreateRequestV1 {
+            network,
+            chain_id: transaction.body.chain_id,
+            current_height,
+            creator_payload: sender,
+            creator_nonce: transaction.body.nonce,
+            value: transaction.body.value,
+            gas_limit: transaction.body.gas_limit,
+        },
+    )?;
+
+    let gas_used = if matches!(transition.execution.halt, Nvm1Halt::Trap(_)) {
+        transaction.body.gas_limit
+    } else {
+        transition.execution.gas_used
+    };
+    let priority_headroom = transaction
+        .body
+        .max_fee_per_gas
+        .checked_sub(context.base_fee_per_gas)
+        .ok_or_else(|| "ContractCreate priority fee headroom underflow".to_string())?;
+    let priority_fee_per_gas = transaction
+        .body
+        .max_priority_fee_per_gas
+        .min(priority_headroom);
+    let effective_fee_per_gas = context
+        .base_fee_per_gas
+        .checked_add(priority_fee_per_gas)
+        .ok_or_else(|| "ContractCreate effective fee overflow".to_string())?;
+    let base_fee_burned = context
+        .base_fee_per_gas
+        .checked_mul(gas_used as u128)
+        .ok_or_else(|| "ContractCreate base fee burn overflow".to_string())?;
+    let producer_priority_fee = priority_fee_per_gas
+        .checked_mul(gas_used as u128)
+        .ok_or_else(|| "ContractCreate producer priority fee overflow".to_string())?;
+    let actual_fee = base_fee_burned
+        .checked_add(producer_priority_fee)
+        .ok_or_else(|| "ContractCreate actual fee overflow".to_string())?;
+    let unused_fee_reserve = max_execution_charge
+        .checked_sub(actual_fee)
+        .ok_or_else(|| "ContractCreate actual fee exceeds maximum reserve".to_string())?;
+
+    let contract_created = transition.contract_created;
+    let mut next = if contract_created {
+        constructor_state
+    } else {
+        state.clone()
+    };
+    next.base_mut()
+        .accounts_mut()
+        .consume_nonce(sender, transaction.body.nonce)?;
+
+    // Value moves only when creation succeeds. Failed constructors still pay their execution fee.
+    let sender_debit = actual_fee
+        .checked_add(if contract_created { transaction.body.value } else { 0 })
+        .ok_or_else(|| "ContractCreate sender debit overflow".to_string())?;
+    next.base_mut().accounts_mut().debit(sender, sender_debit)?;
+    next.base_mut()
+        .accounts_mut()
+        .credit(context.cpu_producer, producer_priority_fee)?;
+
+    let nonce_after = next.base().accounts().account(sender).nonce;
+    let state_root_after = next.state_root()?;
+    *state = next;
+
+    Ok(InactiveAcceptedContractCreateV1 {
+        transaction_id: transaction.tx_id()?,
+        sender,
+        contract_id: transition.contract_id,
+        contract_created,
+        gas_used,
+        max_execution_charge,
+        effective_fee_per_gas,
+        base_fee_burned,
+        producer_priority_fee,
+        actual_fee,
+        unused_fee_reserve,
+        nonce_before: sender_before.nonce,
+        nonce_after,
+        state_root_before,
+        state_root_after,
+        execution: transition.execution,
     })
 }
 
