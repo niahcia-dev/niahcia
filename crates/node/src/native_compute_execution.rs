@@ -1070,7 +1070,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            settle_result.transition,
+            &settle_result.transition,
             AppliedComputeTransitionV1::Settle(_)
         ));
         assert_eq!(
@@ -1090,7 +1090,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            refund_result.transition,
+            &refund_result.transition,
             AppliedComputeTransitionV1::Refund(_)
         ));
         assert_eq!(
