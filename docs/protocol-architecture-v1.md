@@ -1,41 +1,37 @@
 # NIAHCIA Protocol Architecture V1
 
-> **Protocol source of truth:** the authoritative architecture map now lives in [`niahcia/niahcia-protocol`](https://github.com/niahcia/niahcia-protocol/blob/main/docs/protocol-architecture-v1.md).
+The canonical working repository during pre-alpha development is `niahcia/niahcia`. It contains the reference implementation plus consolidated protocol/spec/test-vector material.
 
-This repository is the Rust reference implementation of NIAHCIA. Its `docs/` directory is for implementation-facing material such as building/running the node, devnet operations, RPC behavior, implementation milestones, debugging, and implementation-specific design notes.
-
-Normative protocol definitions, candidate protocol designs, canonical encodings, improvement proposals, and cross-implementation test vectors belong in `niahcia/niahcia-protocol`.
+`niahcia/niahcia-protocol` remains a synchronized protocol mirror during this transition and must not contradict the canonical working repository.
 
 ## Documentation rule
 
-When an implementation change alters protocol behavior:
+When implementation changes alter protocol behavior:
 
-1. update the affected specification in `niahcia-protocol`;
-2. update/add interoperability vectors when the change is consensus- or wire-critical;
-3. update this implementation and its implementation-facing documentation;
-4. explicitly mark or remove superseded behavior rather than leaving contradictory rules.
+1. update the affected canonical specification/status in `niahcia/niahcia`;
+2. update/add interoperability vectors for consensus- or wire-critical changes;
+3. update the reference implementation and implementation-facing documentation;
+4. synchronize the retained `niahcia-protocol` mirror where it carries the same material;
+5. remove or clearly mark superseded behavior.
 
-Implementation code does not silently redefine a locked protocol specification. If the implementation and specification disagree, the discrepancy must be resolved explicitly.
+Implementation code does not silently redefine locked protocol behavior.
 
 ## Current implementation architecture
 
-The reference node currently implements or is developing the following major boundaries:
-
 ```text
-NIAHCIA consensus daemon
+NIAHCIA reference node
         |
         +-- RandomX PoW / cumulative-work chain selection
-        +-- chain P2P / synchronization / reorg handling
-        +-- native transactions / native execution / native state
+        +-- native block / transaction P2P V3
+        +-- NativeTransaction V1 / NativeStateV1 active path
         +-- native RPC and mining RPC
+        +-- inactive NativeTransaction V2 / NativeStateV2 compute settlement
 ```
 
-AI compute, Agent, verification, and optional service/storage protocols are defined at the protocol level and will be integrated incrementally. The base chain must remain valid and usable without any AI worker or storage/service provider.
+The base chain must remain valid and usable without any AI worker or storage/service provider.
 
-For the first AI milestone, chat history and private Agent memory are wallet/client-local by default. Decentralized storage is optional and deferred.
+Wallet/client-local encrypted chat history and Agent memory are the V1 default. Decentralized storage is optional and deferred.
 
-## Current interoperability note
+## Interoperability note
 
-Stock common RandomX miner compatibility—especially stock XMRig through pool-facing interoperability—is an explicit protocol objective. The exact XMRig-compatible PoW preimage is still under review and is **not locked by this implementation document**.
-
-See the authoritative protocol architecture and future mining-interoperability specification in `niahcia-protocol` before treating a development mining blob as a production contract.
+Common RandomX miner/pool compatibility remains an explicit objective. The exact production mining preimage and public-network parameters are not frozen merely because development vectors exist.
