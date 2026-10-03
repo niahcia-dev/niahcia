@@ -226,28 +226,24 @@ pub fn execute_nvm1_core(code: &[u8]) -> Result<Nvm1ExecutionResult, String> {
             }
             0x01 => {
                 let value = u64::from_be_bytes(instruction.operand[..8].try_into().unwrap());
-                if let Some(result) =
-                    push_value(
-                        &mut stack,
-                        validated.header.max_stack_items,
-                        Nvm1Value::U64(value),
-                        executed,
-                    )
-                {
+                if let Some(result) = push_value(
+                    &mut stack,
+                    validated.header.max_stack_items,
+                    Nvm1Value::U64(value),
+                    executed,
+                ) {
                     return Ok(result);
                 }
                 pc += 1;
             }
             0x02 => {
                 let value: [u8; 32] = instruction.operand[..32].try_into().unwrap();
-                if let Some(result) =
-                    push_value(
-                        &mut stack,
-                        validated.header.max_stack_items,
-                        Nvm1Value::Bytes32(value),
-                        executed,
-                    )
-                {
+                if let Some(result) = push_value(
+                    &mut stack,
+                    validated.header.max_stack_items,
+                    Nvm1Value::Bytes32(value),
+                    executed,
+                ) {
                     return Ok(result);
                 }
                 pc += 1;
@@ -262,9 +258,12 @@ pub fn execute_nvm1_core(code: &[u8]) -> Result<Nvm1ExecutionResult, String> {
                 let Some(value) = stack.last().cloned() else {
                     return Ok(trap_result(stack, executed, "NVM1 DUP stack underflow"));
                 };
-                if let Some(result) =
-                    push_value(&mut stack, validated.header.max_stack_items, value, executed)
-                {
+                if let Some(result) = push_value(
+                    &mut stack,
+                    validated.header.max_stack_items,
+                    value,
+                    executed,
+                ) {
                     return Ok(result);
                 }
                 pc += 1;
