@@ -8,9 +8,9 @@ This document defines the first NIAHCIA-owned proof-of-work block header.
 
 The governing rule is:
 
-> **Reth calculates EVM execution results. NIAHCIA defines the block.**
+> **NIAHCIA defines both the block and the deterministic native execution commitment.**
 
-No Ethereum block hash, beacon-chain field, validator field, or Reth-specific identifier is part of NIAHCIA block identity.
+No external execution-client identifier is part of NIAHCIA block identity.
 
 ## Header fields
 
@@ -100,7 +100,7 @@ template_id =
   )
 ```
 
-Changing either miner-controlled value MUST NOT require EVM re-execution.
+Changing either miner-controlled value MUST NOT require rebuilding the non-search native execution result.
 
 ## Field semantics
 
@@ -170,13 +170,8 @@ Together, nonce and extra_nonce provide 128 bits of mutable mining search space 
 
 The V1 header does not contain:
 
-- Reth execution block hash
-- Ethereum block hash
-- Ethereum beacon block root
-- `prevRandao`
-- Ethereum validator/finality data
-- Ethereum difficulty
-- Ethereum nonce
+- external execution-client block hashes
+- external consensus/finality fields
 - AI work counters
 - compute-worker votes
 - service-node votes
@@ -190,7 +185,7 @@ These values either do not belong to NIAHCIA consensus identity or are committed
 
 The PoW algorithm is specified separately.
 
-For Prototype 0 the intended algorithm is RandomX.
+For the current pre-alpha chain the intended PoW algorithm is RandomX.
 
 The PoW preimage is the canonical NIAHCIA block header. RandomX parameters, seed derivation, and target comparison rules must be fixed before public testnet consensus is declared stable.
 
