@@ -339,6 +339,11 @@ mod tests {
         assert_eq!(state.accounts().account(sender).nonce, 2);
         assert_eq!(state.channel_count(), 0);
         assert_eq!(result.producer_priority_fee, 2_000);
+
+        let snapshot = state.canonical_bytes().unwrap();
+        let restored = NativeStateV2::from_canonical_bytes(&snapshot).unwrap();
+        assert_eq!(restored, state);
+        assert_eq!(restored.state_root().unwrap(), result.state_root_after);
     }
 
     #[test]
@@ -517,6 +522,41 @@ mod tests {
         );
         assert_eq!(state.accounts().account(funding).nonce, 2);
         assert_eq!(state.channel_count(), 1);
+    }
+
+    #[test]
+    fn smart_contract_action_remains_inactive_without_state_mutation() {
+        let key = SigningKey::from_slice(&[0x47; 32]).unwrap();
+        let transaction = sign_v2(
+            &key,
+            NativeTransactionBodyV2 {
+                network_id: DEVNET_NETWORK_ID,
+                chain_id: DEVNET_CHAIN_ID,
+                nonce: 0,
+                action: NativeActionV2::ContractCall,
+                target_payload: vec![0x91; 20],
+                value: 0,
+                gas_limit: 10_000,
+                max_fee_per_gas: 1,
+                max_priority_fee_per_gas: 0,
+                data: vec![0x01],
+            },
+        );
+
+        let mut state = NativeStateV2::default();
+        let before = state.clone();
+        let body = NativeBlockBodyV2::from_versioned_transactions(
+            [0_u8; 20],
+            &[VersionedSignedNativeTransaction::V2(transaction)],
+        )
+        .unwrap();
+
+        let error =
+            execute_inactive_versioned_block_v2(&mut state, &body, AddressNetwork::Devnet, 10, 0)
+                .unwrap_err();
+
+        assert!(error.contains("does not yet execute smart-contract actions"));
+        assert_eq!(state, before);
     }
 
     #[test]
