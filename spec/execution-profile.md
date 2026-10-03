@@ -82,9 +82,9 @@ For token-generating workloads, the profile MUST specify the canonical token/out
 3. Workers MUST advertise explicit supported profiles.
 4. Jobs MUST reference a concrete profile or a policy that deterministically resolves to one.
 
-## Prototype 0
+## first implementation milestone
 
-Prototype 0 uses a pinned vLLM version/build, one NVIDIA Ampere-class profile, fixed generation settings, and canonical token-sequence output hashing.
+first implementation milestone uses a pinned vLLM version/build, one NVIDIA Ampere-class profile, fixed generation settings, and canonical token-sequence output hashing.
 
 
 ## Long-running workloads
