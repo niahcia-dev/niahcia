@@ -9,6 +9,7 @@ pub mod native_activation_v2;
 pub mod native_block_body;
 pub mod native_block_body_v2;
 pub mod native_block_execution_v2;
+pub mod native_block_execution_v3;
 pub mod native_compute_execution;
 pub mod native_compute_fee_v1;
 pub mod native_compute_payloads;
