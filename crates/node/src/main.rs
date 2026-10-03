@@ -5,6 +5,7 @@ pub mod consensus;
 mod mining_rpc;
 pub mod monetary;
 pub mod monetary_state;
+pub mod native_activation_v2;
 pub mod native_block_body;
 pub mod native_block_body_v2;
 pub mod native_block_execution_v2;
