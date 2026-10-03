@@ -111,3 +111,89 @@ It locks header parsing, instruction decoding, operand widths, and jump-target i
 ## Compatibility
 
 Any incompatible change to header layout, opcode identity, operand width, or jump-target indexing requires a successor code-format version or runtime ID.
+
+
+## Candidate execution semantics — core stack/control slice
+
+Status: **CANDIDATE / INACTIVE**
+
+NVM1 uses a typed operand stack. The only V1 stack value classes in this core slice are:
+
+- `U64`: an unsigned 64-bit integer;
+- `Bytes32`: exactly 32 uninterpreted bytes.
+
+There are no implicit conversions between value classes.
+
+### Core stack effects
+
+```text
+STOP            [] -> halt success
+PUSH_U64 x      [] -> [U64(x)]
+PUSH_BYTES32 x  [] -> [Bytes32(x)]
+POP             [a] -> []
+DUP             [a] -> [a, a]
+ADD_U64         [U64(a), U64(b)] -> [U64(a + b)]
+SUB_U64         [U64(a), U64(b)] -> [U64(a - b)]
+EQ              [a, b] -> [U64(a == b ? 1 : 0)]
+JUMP i          [] -> pc=i
+JUMP_IF i       [U64(cond)] -> pc=i when cond != 0, otherwise fall through
+```
+
+For binary operations the rightmost displayed item is the top of stack. Therefore
+`SUB_U64` computes `a - b`, not `b - a`.
+
+`EQ` requires both operands to have the same value class. Comparing unlike value
+classes traps rather than coercing either operand.
+
+### Arithmetic
+
+`ADD_U64` and `SUB_U64` use checked unsigned arithmetic. Overflow or underflow
+traps. Arithmetic never wraps.
+
+### Stack bounds
+
+Every instruction must have all required operands with the required value classes.
+Stack underflow or a type mismatch traps.
+
+Execution must never exceed the module header's declared `max_stack_items`.
+Exceeding that declared bound traps even when the absolute protocol maximum of 256
+would not otherwise be exceeded.
+
+### Program counter and control flow
+
+The program counter is an instruction index. Execution begins at instruction index
+0. Static validation guarantees encoded JUMP/JUMP_IF targets are valid instruction
+indices.
+
+A taken JUMP/JUMP_IF sets the next instruction index exactly to its target. An
+untaken JUMP_IF advances to the following instruction.
+
+Falling past the final instruction without executing STOP, RETURN, or REVERT traps.
+This avoids an implicit success rule not represented by bytecode.
+
+### Core termination/failure classes
+
+For the core interpreter milestone:
+
+- `STOP` is successful termination with empty return bytes;
+- `RETURN` and `REVERT` remain reserved but are not executable until their
+  payload/memory semantics are locked;
+- stack underflow, stack overflow, type mismatch, arithmetic overflow/underflow,
+  unsupported-yet-reserved execution surfaces, and fall-through past the final
+  instruction are deterministic traps.
+
+A trap is not a node/process error. It is a deterministic VM execution result that
+all validating nodes must reproduce.
+
+### Deliberately deferred from this slice
+
+The following opcodes retain their locked identities but their execution semantics
+remain inactive until their respective surfaces are specified together:
+
+- INPUT_LEN, INPUT_COPY, CALLER, CALL_VALUE;
+- STORAGE_GET, STORAGE_SET, STORAGE_DELETE;
+- KECCAK256;
+- RETURN, REVERT.
+
+Gas accounting is also deferred from this core slice. No gas constants are implied
+by these semantics.
