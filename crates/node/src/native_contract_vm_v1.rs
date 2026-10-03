@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use sha3::{Digest, Keccak256};
+
 pub const NVM1_RUNTIME_ID: u32 = 1;
 pub const NVM1_CODE_FORMAT_VERSION: u32 = 1;
 pub const NVM1_MAGIC: [u8; 4] = *b"NVM1";
@@ -527,14 +529,22 @@ pub fn execute_nvm1_core_with_context(
                 });
             }
             0x30 => {
-                return Ok(trap_result(
-                    stack,
+                let Some(value) = stack.pop() else {
+                    return Ok(trap_result(stack, executed, "NVM1 KECCAK256 stack underflow"));
+                };
+                let Nvm1Value::Bytes32(value) = value else {
+                    return Ok(trap_result(stack, executed, "NVM1 KECCAK256 type mismatch"));
+                };
+                let digest: [u8; 32] = Keccak256::digest(value).into();
+                if let Some(result) = push_value(
+                    &mut stack,
+                    validated.header.max_stack_items,
+                    Nvm1Value::Bytes32(digest),
                     executed,
-                    &format!(
-                        "NVM1 opcode 0x{:02x} execution semantics are not active",
-                        instruction.opcode
-                    ),
-                ));
+                ) {
+                    return Ok(result);
+                }
+                pc += 1;
             }
             _ => unreachable!("static validation rejects unknown opcodes"),
         }
@@ -726,6 +736,36 @@ mod tests {
         let trap = execute_nvm1_core(&module(4, 2, &trap_bytes)).unwrap();
         assert!(matches!(trap.halt, Nvm1Halt::Trap(_)));
         assert_eq!(trap.committed_storage, None);
+    }
+
+    #[test]
+    fn keccak256_hashes_exact_bytes32_and_rejects_wrong_operands() {
+        let input = [0u8; 32];
+        let mut bytes = vec![0x02];
+        bytes.extend_from_slice(&input);
+        bytes.extend_from_slice(&[0x30, 0x00]);
+        let result = execute_nvm1_core(&module(3, 1, &bytes)).unwrap();
+        assert_eq!(result.halt, Nvm1Halt::Stop);
+        assert_eq!(
+            result.stack,
+            vec![Nvm1Value::Bytes32([
+                0x29, 0x0d, 0xec, 0xd9, 0x54, 0x8b, 0x62, 0xa8,
+                0xd6, 0x03, 0x45, 0xa9, 0x88, 0x38, 0x6f, 0xc8,
+                0x4b, 0xa6, 0xbc, 0x95, 0x48, 0x40, 0x08, 0xf6,
+                0x36, 0x2f, 0x93, 0x16, 0x0e, 0xf3, 0xe5, 0x63,
+            ])]
+        );
+
+        assert!(matches!(
+            execute_nvm1_core(&module(1, 1, &[0x30])).unwrap().halt,
+            Nvm1Halt::Trap(_)
+        ));
+        assert!(matches!(
+            execute_nvm1_core(&module(3, 1, &[0x01, 0, 0, 0, 0, 0, 0, 0, 1, 0x30, 0x00]))
+                .unwrap()
+                .halt,
+            Nvm1Halt::Trap(_)
+        ));
     }
 
     #[test]
